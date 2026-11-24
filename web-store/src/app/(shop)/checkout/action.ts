@@ -1,6 +1,7 @@
 "use server";
 import { serverDb } from "@/lib/db";
 import { getServerLang } from "@/lib/i18n-server";
+import { notifyOrderCreated } from "@/lib/notifications/events";
 import { normalizePhone } from "@/lib/phone";
 
 export type CheckoutResult = {
@@ -201,6 +202,9 @@ export async function checkout(
         : "خدمة تأكيد الطلب غير متاحة الآن. أعد المحاولة لاحقًا.",
     };
   }
+  // Fire-and-forget bilingual notifications (customer confirmation, admin alert, low-stock alerts)
+  void notifyOrderCreated(data.order_number);
+
   return {
     id: data.order_number,
     total: data.amount,

@@ -98,3 +98,51 @@
 1. Open `WhiteLabelCommerce/android-app` in Android Studio (or install `app-debug.apk` via `adb install -r android-app/app/build/outputs/apk/debug/app-debug.apk`).
 2. Optional font certs: populate official Google Play Services certificates in `app/src/main/res/values/font_certs.xml` via Android Studio Resource Manager (`IBM Plex Sans Arabic`) or drop `.ttf` weights into `app/src/main/res/font/`.
 3. End-to-end live verification against Supabase (after `shared/phase-2-storefront.sql` is applied in Supabase SQL Editor): browse catalog, select size/color variants, add to cart, complete a COD order, copy the UUID, track it in `طلباتي`, and submit a support ticket / open WhatsApp.
+
+
+---
+
+## 6. Phases 8b, 9 & 10 Feature Parity, Dual-Flavor CI/CD & Smart Notifications (2026-11-24)
+
+| Milestone | Status | Scope |
+| --- | --- | --- |
+| Phase 8b (Storefront Parity & Paymob) | Complete | Multi-tenant DataStore key isolation (`BuildConfig.STORE_ID`), Dynamic Hero Banner CMS, `search_products_fast` smart bilingual search + LRU cache + 15-category synonyms, Apple/Zara bilingual specs table + `SizeGuideSheet`, Paymob Card & Wallet WebView with cart protection & retry banners |
+| Dual-Flavor Distribution & Self-Updater | Complete | `github` (`ENABLE_GITHUB_UPDATER = true`, GitHub Releases APK updater) vs `playstore` (`ENABLE_GITHUB_UPDATER = false`, Google Play In-App Updates) product flavors, `.github/workflows/android-release.yml`, release signing & ProGuard rules |
+| Phase 9 & 10 (Auth, Locations, COD & Carousel) | Complete | Unified customer auth (`AuthScreen`, `AccountScreen`, `DataStoreSessionManager`), release `WEB_STORE_BASE_URL` + flavor `network_security_config.xml` + 15s WebView/OkHttp timeout, 27-governorate cascading `EgyptAddressPicker`, Home Search Bar, COD Retry Fallback (`switch_order_to_cod`), Animated `OrderTimelineStepper`, Multi-Banner `HorizontalPager` Carousel |
+| Phase 9 Smart Notification Engine (FCM + Realtime) | Complete | `firebase-bom:35.2.0` + `firebase-messaging`, conditional `google-services` plugin, `POST_NOTIFICATIONS` Android 13+ permission, `orders_channel` & `promotions_channel`, `push_subscriptions` token sync on startup/login/locale switch, deep-link routing, Top-Bar Notification Bell + `NotificationsScreen.kt` Supabase Realtime inbox, out-of-stock "Notify Me" on `ProductDetailScreen.kt` |
+
+### 6.1 Release Payment Gateway Config, LAN Security & Timeouts
+- **Release `WEB_STORE_BASE_URL`:** Configured in `android-app/app/build.gradle.kts` (`BuildConfig.WEB_STORE_BASE_URL`) and injected in CI from `${{ secrets.WEB_STORE_BASE_URL || vars.WEB_STORE_BASE_URL }}`.
+- **Flavor-Specific Network Security (`network_security_config.xml`):**
+  - `github` flavor permits cleartext local LAN testing with a strict runtime host allowlist in `PaymentFlow.kt`.
+  - `playstore` flavor enforces strict HTTPS-only transport (`cleartextTrafficPermitted="false"`).
+- **15-Second Timeout Hardening (`PaymentFlow.kt`):** Enforced 15-second OkHttp connect/read/write timeouts and a 15-second WebView load watchdog with main-frame error handling and localized **Retry** / **Switch to Cash on Delivery** actions.
+
+### 6.2 Cascading Egypt Addresses, Home Search, COD Retry, Animated Tracker & Banner Carousel
+- **27-Governorate Cascading Egypt Addresses (`EgyptLocations.kt`, `EgyptAddressPicker.kt`):** Bilingual (`AR`/`EN`) dataset of all 27 governorates and cities/districts integrated into Checkout and Account saved profile forms with searchable picker and automatic city reset on governorate change.
+- **Home Screen Search Bar (`HomeViewModel.kt`, `HomeScreen.kt`):** Top-of-Home bilingual search bar combining 0ms local fuzzy filtering with 180ms debounced `search_products_fast` full-catalog search and inline results.
+- **Cash on Delivery (`COD`) Retry Fallback (`OrdersScreen.kt`, `PaymentFlow.kt`):** Retry Payment sheet offers **Bank Card**, **Mobile Wallet**, and **Cash on Delivery** (calling `public.switch_order_to_cod` RPC to set `payment_method = 'cod'`, `payment_status = 'cod_pending'`, `status = 'confirmed'`).
+- **Animated Order Status Tracker (`StatusComponents.kt`):** `OrderTimelineStepper` upgraded with `animateFloatAsState` progress rail, `rememberInfiniteTransition` active-stage pulsing halo, `AnimatedContent` checkmarks, and localized Bosta/Aramex/Mylerz/Egypt Post tracking badges.
+- **Multi-Banner `HorizontalPager` Carousel (`HomeScreen.kt`, `StoreSettings.kt`):** Renders `ui_config.pages.home.promo_banners` with `graphicsLayer` scale/alpha transitions, touch-pausing auto-scroll, expanding dot indicators, and category/product deep-link routing (backward-compatible with single Hero Banner).
+
+### 6.3 Phase 9 Smart Notification Engine (FCM + Supabase Realtime + Back-in-Stock)
+- **Gradle & Secret Hygiene (`libs.versions.toml`, `build.gradle.kts`, `app/build.gradle.kts`, `.gitignore`, `proguard-rules.pro`):**
+  - Added `com.google.firebase:firebase-bom:35.2.0` and `com.google.firebase:firebase-messaging` (main module, NOT deprecated `-ktx`), plus `com.google.gms.google-services:4.4.2` applied conditionally (`if (file("google-services.json").exists())`) so local debug builds pass without secret files while CI builds with decoded Firebase config enable full FCM.
+  - Added `android-app/app/google-services.json` and `**/google-services.json` to `.gitignore` and `android-app/.gitignore`.
+  - Updated `.github/workflows/android-release.yml` to decode `secrets.GOOGLE_SERVICES_JSON_BASE64` into `android-app/app/google-services.json` before Gradle runs.
+  - Added Kotlinx Serialization ProGuard keep rules for `com.whitelabel.commerce.core.notifications.**`.
+- **Android 13+ Permission, Channels & FCM Service (`AndroidManifest.xml`, `WhiteLabelCommerceApp.kt`, `MainActivity.kt`, `core/notifications/`):**
+  - Declared `android.permission.POST_NOTIFICATIONS`, `default_notification_channel_id` (`orders_channel`), and `CommerceFirebaseMessagingService` (`com.google.firebase.MESSAGING_EVENT`).
+  - `NotificationChannels.ensureCreated(this)` creates high-importance `orders_channel` and default-importance `promotions_channel` on app startup.
+  - `MainActivity` requests `POST_NOTIFICATIONS` on Android 13+ (`Build.VERSION_CODES.TIRAMISU`), extracts `deep_link` extras on cold start & `onNewIntent`, and passes `pendingDeepLink` into `WhiteLabelAppShell`.
+  - `FcmTokenManager` safely checks `FirebaseApp.getApps(context).isNotEmpty()`, retrieves the FCM registration token, and syncs it via `public.register_push_subscription` RPC on startup, auth session changes (linking `user_id` + `phone` on login), and language toggles (`ar`/`en`).
+  - `CommerceFirebaseMessagingService` handles `onNewToken` and foreground/data `onMessageReceived` payloads, posting localized notifications to the appropriate channel with a `PendingIntent` carrying `deep_link` to `MainActivity`.
+- **Realtime Inbox, Top-Bar Bell & Back-in-Stock (`NotificationRepositoryImpl.kt`, `WhiteLabelAppShell.kt`, `feature/notifications/`, `ProductDetailScreen.kt`):**
+  - `NotificationRepositoryImpl` loads `public.notifications` scoped to `BuildConfig.STORE_ID`, subscribes to live `INSERT` events via Supabase Realtime (`postgresChangeFlow<PostgresAction.Insert>`), tracks read state (persisting server-side for signed-in users and locally in DataStore for public broadcasts), and calls `subscribe_back_in_stock` RPC.
+  - `WhiteLabelAppShell` renders a TopAppBar Notification Bell with a Material 3 `BadgedBox` live unread counter and routes deep links (`/`, `/products`, `/products/{id}`, `/products?category=...`, `/cart`, `/orders`, `/account`, `/support`) from both push taps and inbox taps.
+  - `NotificationsScreen.kt` + `NotificationsViewModel.kt` provide a 100% bilingual (`AR` RTL / `EN` LTR) notification center with refresh, mark-all-read, category icons, unread indicator dots, and tap-to-navigate deep linking.
+  - `ProductDetailScreen.kt` + `ProductDetailViewModel.kt` display a bilingual **"نبّهني عند التوفر / Notify Me When Available"** restock alert card on out-of-stock products (with optional phone input + automatic FCM token attachment).
+
+### 6.4 Latest Build Verification (2026-11-24)
+- **Command:** `$env:JAVA_HOME='C:\Users\moham\.jdks\jbr-21.0.11'; .\gradlew.bat assembleGithubDebug assemblePlaystoreDebug --no-daemon`
+- **Result:** `BUILD SUCCESSFUL` across both `github` and `playstore` product flavors with `firebase-bom:35.2.0`, `firebase-messaging`, Hilt DI, and Supabase Realtime.

@@ -4,6 +4,7 @@ import { requireAdmin, checked } from "@/lib/db";
 import { t } from "@/lib/i18n";
 import { getServerLang } from "@/lib/i18n-server";
 import { LanguageToggle } from "@/components/language-provider";
+import { NotificationBell } from "@/components/notifications/notification-bell";
 import { logout } from "../login/actions";
 import Navigation from "./nav";
 
@@ -15,10 +16,11 @@ export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
   const settings = checked(
     await db
       .from("store_settings")
-      .select("store_name")
+      .select("store_id,store_name")
       .eq("id", true)
-      .single<{ store_name: string }>(),
+      .single<{ store_id?: string | null; store_name: string }>(),
   );
+  const storeId = settings.store_id || "00000000-0000-0000-0000-000000000001";
   return (
     <div className="shell">
       <aside>
@@ -41,6 +43,7 @@ export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
             <PanelTop size={17} /> {settings.store_name || brand.storeName}
           </span>
           <div style={{ display: "flex", alignItems: "center", gap: "0.7rem" }}>
+            <NotificationBell storeId={storeId} userId={user.id} scope="admin" />
             <LanguageToggle className="lang-toggle-pill" />
             <span dir="ltr">
               <UserRound size={16} />

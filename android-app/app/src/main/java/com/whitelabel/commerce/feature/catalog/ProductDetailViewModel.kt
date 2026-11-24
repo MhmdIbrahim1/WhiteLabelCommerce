@@ -8,6 +8,8 @@ import androidx.lifecycle.viewModelScope
 import com.whitelabel.commerce.core.domain.model.Product
 import com.whitelabel.commerce.core.domain.repository.CartRepository
 import com.whitelabel.commerce.core.domain.repository.CatalogRepository
+import com.whitelabel.commerce.core.notifications.FcmTokenManager
+import com.whitelabel.commerce.core.notifications.NotificationRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,6 +25,9 @@ data class ProductDetailUiState(
     val quantity: Int = 1,
     val isLoading: Boolean = true,
     val errorMessage: String? = null,
+    val isSubscribingRestock: Boolean = false,
+    val restockSubscribed: Boolean = false,
+    val restockError: String? = null,
 ) {
     val canAddToCart: Boolean
         get() {
@@ -39,6 +44,8 @@ class ProductDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val catalogRepository: CatalogRepository,
     private val cartRepository: CartRepository,
+    private val notificationRepository: NotificationRepository,
+    private val fcmTokenManager: FcmTokenManager,
 ) : ViewModel() {
 
     private val productId: String = checkNotNull(savedStateHandle["productId"])
@@ -119,6 +126,42 @@ class ProductDetailViewModel @Inject constructor(
                 selectedColor = state.selectedColor,
             )
             onAdded(localized("تمت إضافة ${state.quantity} × \"${product.displayName}\" إلى السلة", "Added ${state.quantity} × ${product.displayName} to cart"))
+        }
+    }
+
+    fun subscribeBackInStock(phone: String?) {
+        val state = _uiState.value
+        val product = state.product ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSubscribingRestock = true, restockError = null) }
+            val variantKey = listOfNotNull(state.selectedSize, state.selectedColor)
+                .filter { it.isNotBlank() }
+                .joinToString(" / ")
+            val token = fcmTokenManager.fetchTokenOrNull() ?: fcmTokenManager.lastKnownToken
+            notificationRepository.subscribeBackInStock(
+                productId = product.id,
+                variantKey = variantKey,
+                phone = phone?.trim()?.takeIf { it.isNotEmpty() },
+                pushToken = token,
+            ).onSuccess {
+                _uiState.update {
+                    it.copy(
+                        isSubscribingRestock = false,
+                        restockSubscribed = true,
+                        restockError = null,
+                    )
+                }
+            }.onFailure {
+                _uiState.update {
+                    it.copy(
+                        isSubscribingRestock = false,
+                        restockError = localized(
+                            "أدخل رقم هاتف صحيح أو سجّل الدخول لتفعيل التنبيه.",
+                            "Enter a valid phone number or sign in to activate restock alerts.",
+                        ),
+                    )
+                }
+            }
         }
     }
 }

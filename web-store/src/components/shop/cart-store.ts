@@ -11,7 +11,45 @@ export type Line = {
   stock: number;
 };
 const key = "nova.cart.v2";
+const guestSessionKey = "nova.guest_session_id";
 let memory: string | null = null;
+let heartbeatTimer: ReturnType<typeof setTimeout> | null = null;
+
+export function getGuestSessionId(): string {
+  try {
+    let id = localStorage.getItem(guestSessionKey);
+    if (!id) {
+      id =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `guest-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      localStorage.setItem(guestSessionKey, id);
+    }
+    return id;
+  } catch {
+    return "guest-fallback";
+  }
+}
+
+function scheduleCartHeartbeat(rows: Line[]) {
+  if (typeof window === "undefined") return;
+  if (heartbeatTimer) clearTimeout(heartbeatTimer);
+  heartbeatTimer = setTimeout(() => {
+    const itemCount = rows.reduce((sum, l) => sum + l.quantity, 0);
+    const subtotal = rows.reduce((sum, l) => sum + l.price * l.quantity, 0);
+    const locale = document.documentElement.lang === "en" ? "en" : "ar";
+    void fetch("/api/notifications/cart-heartbeat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        guest_session_id: getGuestSessionId(),
+        item_count: itemCount,
+        subtotal,
+        locale,
+      }),
+    }).catch(() => {});
+  }, 1500);
+}
 function snapshot() {
   try {
     return localStorage.getItem(key) || "[]";
@@ -60,6 +98,7 @@ function save(rows: Line[]) {
     localStorage.setItem(key, memory);
   } catch {}
   window.dispatchEvent(new Event("shop-cart"));
+  scheduleCartHeartbeat(rows);
 }
 export function change(line: Line, delta: number) {
   const rows = decode(snapshot()),

@@ -35,6 +35,7 @@ export default async function Layout({
   const authUser = authRes.data.user;
   const userSummary = authUser
     ? {
+        id: authUser.id,
         email: authUser.email ?? "",
         name:
           (typeof authUser.user_metadata?.full_name === "string" &&
@@ -54,7 +55,12 @@ export default async function Layout({
       data-card={brand.presets.productCard}
       style={style}
     >
-      <Navigation name={s.name} admin={!!admin} user={userSummary} />
+      <Navigation
+        name={s.name}
+        storeId={s.storeId}
+        admin={!!admin}
+        user={userSummary}
+      />
       <main className="shop-main">{children}</main>
       <footer className="shop-footer-wrap">
         <div className="shop-footer">

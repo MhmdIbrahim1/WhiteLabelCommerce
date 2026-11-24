@@ -14,6 +14,13 @@ import {
   resolveCarrierLabel,
 } from "@/lib/shipping";
 import { requireAdmin } from "@/lib/db";
+import { adminDb } from "@/lib/supabase/admin";
+import { dispatchNotification } from "@/lib/notifications/dispatcher";
+import {
+  notifyBackInStock,
+  notifyOrderStatusChanged,
+  runRecoveryAutomations,
+} from "@/lib/notifications/events";
 import { normalizeSpecs } from "@/lib/specs";
 import { nextOrder, nextTicket } from "@/lib/workflow";
 
@@ -131,6 +138,19 @@ export async function saveProduct(f: FormData) {
     if (uploaded.error) finish(catalog, false);
   }
   const previous = text(f, "previous_image");
+  let previousStock: number | null = null;
+  let productStoreId = "00000000-0000-0000-0000-000000000001";
+  if (id) {
+    const { data: existingProd } = await db
+      .from("products")
+      .select("stock,store_id")
+      .eq("id", id)
+      .maybeSingle<{ stock: number; store_id: string }>();
+    if (existingProd) {
+      previousStock = Number(existingProd.stock ?? 0);
+      if (existingProd.store_id) productStoreId = existingProd.store_id;
+    }
+  }
   const values = image ? { ...row, image_path: image } : row;
   const products = db.from("products");
   let update = products.update(values).eq("id", id);
@@ -144,6 +164,9 @@ export async function saveProduct(f: FormData) {
   if (result.error && image) await bucket.remove([image]);
   if (!result.error && image && id && previous.startsWith("products/"))
     await bucket.remove([previous]);
+  if (!result.error && id && previousStock !== null && previousStock <= 0 && stock > 0) {
+    void notifyBackInStock(id, productStoreId);
+  }
   finish(catalog, !result.error);
 }
 export async function deleteProduct(f: FormData) {
@@ -227,6 +250,18 @@ export async function updateOrder(f: FormData) {
     .single();
 
   if (!result.error) {
+    void notifyOrderStatusChanged({
+      orderId: id,
+      status,
+      shippingCarrier:
+        typeof updatePayload.shipping_carrier === "string"
+          ? updatePayload.shipping_carrier
+          : null,
+      trackingNumber:
+        typeof updatePayload.tracking_number === "string"
+          ? updatePayload.tracking_number
+          : null,
+    });
     revalidatePath("/orders");
     revalidatePath("/products");
     revalidatePath("/");
@@ -566,4 +601,172 @@ export async function deleteCoupon(f: FormData) {
     .select("id")
     .single();
   finish("/admin/coupons", !error);
+}
+
+export type CampaignSendResult =
+  | {
+      ok: true;
+      recipientsCount: number;
+      pushDelivered: number;
+      suppressedByQuietHours: boolean;
+    }
+  | { ok: false; error: string };
+
+export async function sendPromoCampaign(
+  f: FormData,
+): Promise<CampaignSendResult> {
+  const { db } = await requireAdmin();
+
+  const titleAr = text(f, "title_ar").slice(0, 120);
+  const titleEn = text(f, "title_en").slice(0, 120);
+  const bodyAr = text(f, "body_ar").slice(0, 400);
+  const bodyEn = text(f, "body_en").slice(0, 400);
+  const audience = text(f, "audience") || "all";
+  const rawDeepLink = text(f, "deep_link") || "/";
+  const deepLink = rawDeepLink.startsWith("/") ? rawDeepLink : "/";
+  const bypassQuietHours = f.get("bypass_quiet_hours") === "true";
+
+  if (!titleAr || !titleEn || !bodyAr || !bodyEn) {
+    return { ok: false, error: "missing_fields" };
+  }
+  if (!["all", "registered", "buyers"].includes(audience)) {
+    return { ok: false, error: "invalid_audience" };
+  }
+
+  const { data: storeRow } = await db
+    .from("store_settings")
+    .select("store_id")
+    .eq("id", true)
+    .maybeSingle<{ store_id: string }>();
+
+  const storeId = storeRow?.store_id || "00000000-0000-0000-0000-000000000001";
+  const svc = adminDb();
+  const campaignId = `camp_${Date.now()}_${randomBytes(3).toString("hex")}`;
+
+  try {
+    if (audience === "all") {
+      // Public broadcast notification row visible to all customers (logged-in + guests)
+      // plus push dispatch to all active Android & Web push subscriptions for this store.
+      const { data: activeSubs } = await svc
+        .from("push_subscriptions")
+        .select("token,platform,locale")
+        .eq("store_id", storeId)
+        .eq("is_active", true);
+
+      const explicitTokens = ((activeSubs ?? []) as {
+        token: string;
+        platform: "android" | "web";
+        locale: "ar" | "en";
+      }[]).map((s) => ({
+        token: s.token,
+        platform: s.platform,
+        locale: s.locale,
+      }));
+
+      const res = await dispatchNotification({
+        storeId,
+        userId: null,
+        targetRole: "customer",
+        category: "promo_campaign",
+        titleAr,
+        titleEn,
+        bodyAr,
+        bodyEn,
+        deepLink,
+        dedupeKey: `${campaignId}:broadcast`,
+        explicitTokens,
+        bypassQuietHours,
+        data: { campaign_id: campaignId, audience: "all" },
+      });
+
+      revalidatePath("/admin/notifications");
+      return {
+        ok: true,
+        recipientsCount: Math.max(1, explicitTokens.length),
+        pushDelivered: res.pushDelivered,
+        suppressedByQuietHours: res.suppressedByQuietHours,
+      };
+    }
+
+    // Targeted audience: registered customers or active buyers
+    let targetUserIds: string[] = [];
+    if (audience === "registered") {
+      const { data: profiles } = await svc
+        .from("profiles")
+        .select("id")
+        .eq("store_id", storeId)
+        .neq("role", "admin");
+      targetUserIds = ((profiles ?? []) as { id: string }[]).map((p) => p.id);
+    } else if (audience === "buyers") {
+      const { data: buyerOrders } = await svc
+        .from("orders")
+        .select("user_id")
+        .eq("store_id", storeId)
+        .not("user_id", "is", null)
+        .neq("status", "cancelled");
+      targetUserIds = Array.from(
+        new Set(
+          ((buyerOrders ?? []) as { user_id: string | null }[])
+            .map((o) => o.user_id)
+            .filter((uid): uid is string => Boolean(uid)),
+        ),
+      );
+    }
+
+    if (targetUserIds.length === 0) {
+      return { ok: false, error: "empty_audience" };
+    }
+
+    let pushDelivered = 0;
+    let suppressed = false;
+    for (const uid of targetUserIds) {
+      const res = await dispatchNotification({
+        storeId,
+        userId: uid,
+        targetRole: "customer",
+        category: "promo_campaign",
+        titleAr,
+        titleEn,
+        bodyAr,
+        bodyEn,
+        deepLink,
+        dedupeKey: `${campaignId}:${uid}`,
+        bypassQuietHours,
+        data: { campaign_id: campaignId, audience },
+      });
+      pushDelivered += res.pushDelivered;
+      if (res.suppressedByQuietHours) suppressed = true;
+    }
+
+    revalidatePath("/admin/notifications");
+    return {
+      ok: true,
+      recipientsCount: targetUserIds.length,
+      pushDelivered,
+      suppressedByQuietHours: suppressed,
+    };
+  } catch (err) {
+    console.error("[notifications] sendPromoCampaign failed", {
+      code: err instanceof Error ? err.message : "unknown",
+    });
+    return { ok: false, error: "dispatch_failed" };
+  }
+}
+
+export async function triggerRecoveryScan(): Promise<{
+  ok: boolean;
+  abandonedCartsNotified: number;
+  unpaidOrdersNotified: number;
+}> {
+  const { db } = await requireAdmin();
+  const { data: storeRow } = await db
+    .from("store_settings")
+    .select("store_id")
+    .eq("id", true)
+    .maybeSingle<{ store_id: string }>();
+
+  const storeId = storeRow?.store_id || "00000000-0000-0000-0000-000000000001";
+  const result = await runRecoveryAutomations(storeId);
+  revalidatePath("/admin/notifications");
+  return { ok: true, ...result };
 }

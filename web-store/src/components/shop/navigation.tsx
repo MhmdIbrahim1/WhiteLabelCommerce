@@ -34,17 +34,20 @@ import {
 } from "@/lib/smart-search";
 import { getInstantSearchHints } from "@/lib/searchSynonyms";
 import { LanguageToggle, useLanguage } from "@/components/language-provider";
+import { NotificationBell } from "@/components/notifications/notification-bell";
 import { logout } from "@/app/login/actions";
 import { useCart } from "./cart-store";
 
 export function Navigation({
   name,
+  storeId,
   admin = false,
   user = null,
 }: {
   name: string;
+  storeId: string;
   admin?: boolean;
-  user?: { email: string; name: string } | null;
+  user?: { id?: string; email: string; name: string } | null;
 }) {
   const pathname = usePathname();
   const { lang, t } = useLanguage();
@@ -479,6 +482,12 @@ export function Navigation({
               <Sun className="light-icon" size={17} />
               <Moon className="dark-icon" size={17} />
             </button>
+
+            <NotificationBell
+              storeId={storeId}
+              userId={user?.id ?? null}
+              scope="customer"
+            />
 
             <Link
               href="/cart"

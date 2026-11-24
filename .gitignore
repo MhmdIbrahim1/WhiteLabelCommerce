@@ -10,6 +10,9 @@ web-store/.env*
 !web-store/.env.example
 android-app/local.properties
 !android-app/local.properties.example
+android-app/app/google-services.json
+**/google-services.json
+*firebase-adminsdk*.json
 keystore.properties
 *.jks
 *.keystore

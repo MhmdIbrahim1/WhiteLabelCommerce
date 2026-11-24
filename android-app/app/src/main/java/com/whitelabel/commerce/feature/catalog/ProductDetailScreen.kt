@@ -26,6 +26,7 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AddShoppingCart
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Checklist
+import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.Straighten
 import androidx.compose.material3.Button
@@ -39,6 +40,8 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -82,6 +85,8 @@ fun ProductDetailScreen(
     val brandColors = LocalBrandColors.current
     val settings = LocalStoreSettings.current
     var showSizeGuide by remember { mutableStateOf(false) }
+    var showRestockInput by remember { mutableStateOf(false) }
+    var restockPhone by remember { mutableStateOf("") }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -448,8 +453,103 @@ fun ProductDetailScreen(
                         }
                     }
 
-                    // 5. Quantity Stepper
-                    if (product.isInStock) {
+                    // 5. Quantity Stepper OR Back-in-Stock ("Notify Me") Card
+                    if (!product.isInStock) {
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f),
+                            ),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
+                            shape = MaterialTheme.shapes.medium,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                if (state.restockSubscribed) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Check,
+                                            contentDescription = null,
+                                            tint = brandColors.success,
+                                        )
+                                        Text(
+                                            text = localized(
+                                                "تم تسجيل طلبك! سننبّهك فور توفر المنتج من جديد.",
+                                                "You're on the list! We'll notify you as soon as it's back in stock.",
+                                            ),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = brandColors.success,
+                                        )
+                                    }
+                                } else if (!showRestockInput) {
+                                    OutlinedButton(
+                                        onClick = { showRestockInput = true },
+                                        modifier = Modifier.fillMaxWidth(),
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.NotificationsActive,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                        Text(
+                                            text = localized("نبّهني عند التوفر", "Notify Me When Available"),
+                                            modifier = Modifier.padding(start = 8.dp),
+                                        )
+                                    }
+                                } else {
+                                    Text(
+                                        text = localized(
+                                            "أدخل رقم هاتفك (اختياري للمسجلين) ليصلك تنبيه فوري عند عودة المخزون.",
+                                            "Enter your phone (optional if signed in) for an instant restock alert.",
+                                        ),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    OutlinedTextField(
+                                        value = restockPhone,
+                                        onValueChange = { restockPhone = it },
+                                        singleLine = true,
+                                        label = {
+                                            Text(localized("رقم الهاتف", "Phone Number"))
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
+                                    state.restockError?.let { err ->
+                                        Text(
+                                            text = err,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.error,
+                                        )
+                                    }
+                                    Button(
+                                        onClick = { viewModel.subscribeBackInStock(restockPhone) },
+                                        enabled = !state.isSubscribingRestock,
+                                        modifier = Modifier.fillMaxWidth(),
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.NotificationsActive,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                        Text(
+                                            text = if (state.isSubscribingRestock) {
+                                                localized("جارٍ التسجيل…", "Subscribing…")
+                                            } else {
+                                                localized("تفعيل التنبيه", "Activate Alert")
+                                            },
+                                            modifier = Modifier.padding(start = 8.dp),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    } else {
                         Surface(
                             color = MaterialTheme.colorScheme.surface,
                             shape = MaterialTheme.shapes.medium,

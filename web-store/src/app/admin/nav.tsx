@@ -9,6 +9,7 @@ import {
   Users,
   TicketPercent,
   MessagesSquare,
+  BellRing,
   Palette,
   Settings,
 } from "lucide-react";
@@ -21,6 +22,7 @@ const sections: { url: string; key: DictKey; icon: typeof LayoutDashboard }[] = 
   { url: "/admin/orders", key: "adminOrders", icon: ClipboardList },
   { url: "/admin/customers", key: "adminCustomers", icon: Users },
   { url: "/admin/coupons", key: "adminCoupons", icon: TicketPercent },
+  { url: "/admin/notifications", key: "adminNotifications", icon: BellRing },
   { url: "/admin/tickets", key: "adminTickets", icon: MessagesSquare },
   { url: "/admin/customizer", key: "adminCustomizer", icon: Palette },
   { url: "/admin/settings", key: "adminSettings", icon: Settings },

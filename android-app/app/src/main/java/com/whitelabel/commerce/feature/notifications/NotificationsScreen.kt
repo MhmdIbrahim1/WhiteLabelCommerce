@@ -1,0 +1,238 @@
+package com.whitelabel.commerce.feature.notifications
+
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.outlined.NotificationsNone
+import androidx.compose.material.icons.rounded.Campaign
+import androidx.compose.material.icons.rounded.DoneAll
+import androidx.compose.material.icons.rounded.Inventory2
+import androidx.compose.material.icons.rounded.NotificationsActive
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.ShoppingCart
+import androidx.compose.material.icons.rounded.WarningAmber
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.whitelabel.commerce.core.designsystem.LocalBrandColors
+import com.whitelabel.commerce.core.designsystem.components.BrandEmptyState
+import com.whitelabel.commerce.core.designsystem.localized
+import com.whitelabel.commerce.core.notifications.AppNotification
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun NotificationsScreen(
+    onBack: () -> Unit,
+    onOpenDeepLink: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    viewModel: NotificationsViewModel = hiltViewModel(),
+) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val brandColors = LocalBrandColors.current
+
+    Scaffold(
+        modifier = modifier.fillMaxSize(),
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        text = localized("الإشعارات", "Notifications"),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = localized("رجوع", "Back"),
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(onClick = viewModel::refresh) {
+                        Icon(
+                            imageVector = Icons.Rounded.Refresh,
+                            contentDescription = localized("تحديث", "Refresh"),
+                        )
+                    }
+                    if (state.items.any { !it.isRead }) {
+                        IconButton(onClick = viewModel::markAllAsRead) {
+                            Icon(
+                                imageVector = Icons.Rounded.DoneAll,
+                                contentDescription = localized("تحديد الكل كمقروء", "Mark all read"),
+                            )
+                        }
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface,
+                ),
+            )
+        },
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
+        ) {
+            if (state.isRefreshing) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
+
+            if (state.items.isEmpty() && !state.isRefreshing) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    BrandEmptyState(
+                        icon = Icons.Outlined.NotificationsNone,
+                        title = localized("لا توجد إشعارات بعد", "No notifications yet"),
+                        subtitle = localized(
+                            "ستظهر هنا تحديثات طلباتك وعروض المتجر وتنبيهات توفر المنتجات فور وصولها.",
+                            "Order updates, store promotions, and restock alerts will appear here in real time.",
+                        ),
+                        actionLabel = localized("تحديث", "Refresh"),
+                        onAction = viewModel::refresh,
+                    )
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    items(state.items, key = { it.id }) { item ->
+                        NotificationItemCard(
+                            item = item,
+                            hairlineColor = brandColors.hairline,
+                            onClick = {
+                                viewModel.markAsRead(item.id)
+                                onOpenDeepLink(item.deepLink)
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NotificationItemCard(
+    item: AppNotification,
+    hairlineColor: androidx.compose.ui.graphics.Color,
+    onClick: () -> Unit,
+) {
+    val icon = when (item.category) {
+        "order_update" -> Icons.Rounded.Inventory2
+        "abandoned_cart" -> Icons.Rounded.ShoppingCart
+        "payment_recovery", "admin_alert" -> Icons.Rounded.WarningAmber
+        "back_in_stock" -> Icons.Rounded.NotificationsActive
+        else -> Icons.Rounded.Campaign
+    }
+
+    Card(
+        onClick = onClick,
+        shape = MaterialTheme.shapes.medium,
+        border = BorderStroke(
+            width = 1.dp,
+            color = if (item.isRead) hairlineColor else MaterialTheme.colorScheme.primary.copy(alpha = 0.45f),
+        ),
+        colors = CardDefaults.cardColors(
+            containerColor = if (item.isRead) {
+                MaterialTheme.colorScheme.surface
+            } else {
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.28f)
+            },
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Surface(
+                shape = MaterialTheme.shapes.small,
+                color = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(40.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
+
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = item.displayTitle,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = if (item.isRead) FontWeight.Medium else FontWeight.Bold,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (!item.isRead) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary),
+                        )
+                    }
+                }
+                Text(
+                    text = item.displayBody,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}

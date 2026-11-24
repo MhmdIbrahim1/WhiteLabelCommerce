@@ -5,9 +5,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccountCircle
+import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.LightMode
+import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.SupportAgent
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -29,6 +31,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,6 +60,7 @@ import com.whitelabel.commerce.feature.checkout.CheckoutScreen
 import com.whitelabel.commerce.feature.checkout.PaymentFlowOutcome
 import com.whitelabel.commerce.feature.home.HomeScreen
 import com.whitelabel.commerce.feature.home.parseHeroCategoryParam
+import com.whitelabel.commerce.feature.notifications.NotificationsScreen
 import com.whitelabel.commerce.feature.orders.OrdersScreen
 import com.whitelabel.commerce.feature.support.SupportScreen
 import kotlinx.coroutines.launch
@@ -66,6 +70,9 @@ import kotlinx.coroutines.launch
 fun WhiteLabelAppShell(
     storeSettings: StoreSettings,
     cartItemCount: Int,
+    unreadNotificationCount: Int = 0,
+    pendingDeepLink: String? = null,
+    onConsumeDeepLink: () -> Unit = {},
     isDarkTheme: Boolean,
     isSignedIn: Boolean,
     onToggleTheme: () -> Unit,
@@ -99,10 +106,12 @@ fun WhiteLabelAppShell(
 
     fun handleHeroRoute(link: String) {
         val clean = link.trim()
-        val productIdMatch = Regex("^/products/([0-9a-fA-F-]{8,64})$").matchEntire(clean)
+        val productIdMatch = Regex("^/products/([0-9a-fA-F-]{8,64}).*$").matchEntire(clean)
         when {
+            clean == "/" -> navigateToTab(AppRoutes.HOME)
             productIdMatch != null ->
                 navController.navigate(AppRoutes.productDetail(productIdMatch.groupValues[1]))
+            clean.startsWith("/cart") -> navigateToTab(AppRoutes.CART)
             clean.startsWith("/orders") -> navigateToTab(AppRoutes.ORDERS)
             clean.startsWith("/account") || clean.startsWith("/login") ->
                 navController.navigate(AppRoutes.ACCOUNT)
@@ -113,6 +122,12 @@ fun WhiteLabelAppShell(
                 navigateToTab(AppRoutes.CATEGORIES)
             }
         }
+    }
+
+    LaunchedEffect(pendingDeepLink) {
+        val link = pendingDeepLink?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
+        handleHeroRoute(link)
+        onConsumeDeepLink()
     }
 
     fun showSnackbar(message: String, showCartAction: Boolean = false) {
@@ -151,6 +166,33 @@ fun WhiteLabelAppShell(
                                 text = if (storeSettings.isRtl) "EN" else "عربي",
                                 fontWeight = FontWeight.Bold,
                             )
+                        }
+                        IconButton(onClick = { navController.navigate(AppRoutes.NOTIFICATIONS) }) {
+                            if (unreadNotificationCount > 0) {
+                                BadgedBox(
+                                    badge = {
+                                        Badge(
+                                            containerColor = MaterialTheme.colorScheme.error,
+                                            contentColor = MaterialTheme.colorScheme.onError,
+                                        ) {
+                                            Text(
+                                                text = if (unreadNotificationCount > 99) "99+" else unreadNotificationCount.toString(),
+                                                style = MaterialTheme.typography.labelSmall,
+                                            )
+                                        }
+                                    },
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Notifications,
+                                        contentDescription = localized("الإشعارات", "Notifications"),
+                                    )
+                                }
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Outlined.Notifications,
+                                    contentDescription = localized("الإشعارات", "Notifications"),
+                                )
+                            }
                         }
                         IconButton(onClick = { navController.navigate(AppRoutes.ACCOUNT) }) {
                             Icon(
@@ -346,6 +388,16 @@ fun WhiteLabelAppShell(
                         navigateToTab(AppRoutes.ORDERS)
                     },
                     onShowMessage = { msg -> showSnackbar(msg) },
+                )
+            }
+
+            composable(AppRoutes.NOTIFICATIONS) {
+                NotificationsScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenDeepLink = { deepLink ->
+                        navController.popBackStack()
+                        handleHeroRoute(deepLink)
+                    },
                 )
             }
 

@@ -11,6 +11,10 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 val localProps = Properties().apply {
     val file = rootProject.file("local.properties")
     if (file.exists()) {
@@ -238,6 +242,10 @@ dependencies {
     // Google Play In-App Updates (used by playstore flavor when ENABLE_GITHUB_UPDATER == false)
     implementation(libs.play.app.update)
     implementation(libs.play.app.update.ktx)
+
+    // Firebase Cloud Messaging (BoM 35.2.0)
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.messaging)
 
     // Testing
     testImplementation(libs.junit)

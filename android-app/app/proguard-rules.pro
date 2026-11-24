@@ -29,3 +29,10 @@
 -keepclasseswithmembers class com.whitelabel.commerce.core.updater.** {
     kotlinx.serialization.KSerializer serializer(...);
 }
+-keep,includedescriptorclasses class com.whitelabel.commerce.core.notifications.**$$serializer { *; }
+-keepclassmembers class com.whitelabel.commerce.core.notifications.** {
+    *** Companion;
+}
+-keepclasseswithmembers class com.whitelabel.commerce.core.notifications.** {
+    kotlinx.serialization.KSerializer serializer(...);
+}

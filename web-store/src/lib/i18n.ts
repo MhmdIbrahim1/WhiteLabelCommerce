@@ -406,6 +406,25 @@ export const DICT = {
     adminVariantCol: "الخيارات (مقاس / لون)",
     adminQtyCol: "الكمية",
     adminUnitPriceCol: "سعر الوحدة",
+
+    // Phase 9: Smart Notifications & Admin Campaign Studio
+    adminNotifications: "الإشعارات والحملات",
+    notifTitle: "الإشعارات",
+    notifMarkAllRead: "تحديد الكل كمقروء",
+    notifEmpty: "لا توجد إشعارات حتى الآن.",
+    notifEnablePush: "تفعيل إشعارات المتصفح",
+    notifPushEnabled: "إشعارات المتصفح مفعّلة",
+    notifPushDenied: "تم رفض إذن الإشعارات من المتصفح",
+    notifPushUnavailable: "إشعارات الدفع غير مهيأة بعد على هذا الخادم",
+    notifLoading: "جارٍ تحميل الإشعارات…",
+    notifClose: "إغلاق الإشعارات",
+    notifJustNow: "الآن",
+    restockNotifyBtn: "نبّهني عند التوفر",
+    restockPhonePlaceholder: "رقم الهاتف للتنبيه (مثال: 010xxxxxxxx)",
+    restockSubmitting: "جارٍ التسجيل…",
+    restockSuccess: "تم تسجيل طلبك! سننبّهك فور توفر المنتج من جديد.",
+    restockError: "أدخل رقم هاتف صحيح أو سجّل الدخول لتفعيل التنبيه.",
+    restockHint: "أدخل رقم هاتفك أو سجّل الدخول ليصلك تنبيه فوري عند عودة المخزون.",
   },
   en: {
     // Storefront Navbar & Footer
@@ -665,6 +684,25 @@ export const DICT = {
     adminVariantCol: "Variant (Size / Color)",
     adminQtyCol: "Qty",
     adminUnitPriceCol: "Unit Price",
+
+    // Phase 9: Smart Notifications & Admin Campaign Studio
+    adminNotifications: "Notifications & Campaigns",
+    notifTitle: "Notifications",
+    notifMarkAllRead: "Mark all read",
+    notifEmpty: "No notifications yet.",
+    notifEnablePush: "Enable browser alerts",
+    notifPushEnabled: "Browser alerts active",
+    notifPushDenied: "Browser notification permission blocked",
+    notifPushUnavailable: "Push notifications are not configured on this server yet",
+    notifLoading: "Loading notifications…",
+    notifClose: "Close notifications",
+    notifJustNow: "Just now",
+    restockNotifyBtn: "Notify Me When Available",
+    restockPhonePlaceholder: "Phone number for restock alert (e.g. 010xxxxxxxx)",
+    restockSubmitting: "Subscribing…",
+    restockSuccess: "You're on the list! We'll notify you as soon as this item is back in stock.",
+    restockError: "Enter a valid phone number or sign in to receive a restock alert.",
+    restockHint: "Enter your phone or sign in to get an instant alert when stock returns.",
   },
 } as const;
 

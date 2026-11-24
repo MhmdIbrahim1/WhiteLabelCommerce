@@ -1,5 +1,9 @@
 package com.whitelabel.commerce
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -11,12 +15,15 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.whitelabel.commerce.app.MainViewModel
 import com.whitelabel.commerce.app.navigation.WhiteLabelAppShell
 import com.whitelabel.commerce.core.designsystem.WhiteLabelCommerceTheme
+import com.whitelabel.commerce.core.notifications.NotificationChannels
 import com.whitelabel.commerce.core.updater.AppUpdateDialog
 import com.whitelabel.commerce.core.updater.AppUpdateViewModel
 import com.whitelabel.commerce.core.updater.PlayStoreUpdater
@@ -24,9 +31,25 @@ import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    private val pendingDeepLinkState = mutableStateOf<String?>(null)
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        extractDeepLink(intent)?.let { pendingDeepLinkState.value = it }
+    }
+
+    private fun extractDeepLink(intent: Intent?): String? {
+        return intent?.getStringExtra(NotificationChannels.EXTRA_DEEP_LINK)
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        extractDeepLink(intent)?.let { pendingDeepLinkState.value = it }
 
         setContent {
             val mainViewModel: MainViewModel = hiltViewModel()
@@ -47,9 +70,26 @@ class MainActivity : ComponentActivity() {
                 contract = ActivityResultContracts.StartIntentSenderForResult(),
             ) { /* Play Store handles flexible/immediate update lifecycle */ }
 
+            val notificationPermissionLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.RequestPermission(),
+            ) { granted ->
+                if (granted) {
+                    mainViewModel.syncPushToken(uiState.storeSettings.locale)
+                }
+            }
+
             LaunchedEffect(Unit) {
                 if (!BuildConfig.ENABLE_GITHUB_UPDATER) {
                     PlayStoreUpdater.checkAndPromptIfAvailable(context, playStoreUpdateLauncher)
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    val granted = ContextCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.POST_NOTIFICATIONS,
+                    ) == PackageManager.PERMISSION_GRANTED
+                    if (!granted) {
+                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
                 }
             }
 
@@ -91,6 +131,9 @@ class MainActivity : ComponentActivity() {
                 WhiteLabelAppShell(
                     storeSettings = settings,
                     cartItemCount = uiState.cartItemCount,
+                    unreadNotificationCount = uiState.unreadNotificationCount,
+                    pendingDeepLink = pendingDeepLinkState.value,
+                    onConsumeDeepLink = { pendingDeepLinkState.value = null },
                     isDarkTheme = useDarkTheme,
                     isSignedIn = uiState.isSignedIn,
                     onToggleTheme = { mainViewModel.toggleDarkTheme(currentlyDark = useDarkTheme) },
@@ -98,6 +141,7 @@ class MainActivity : ComponentActivity() {
                         val next = if (settings.isRtl) "en" else "ar"
                         prefs.edit().putString("language", next).apply()
                         language.value = next
+                        mainViewModel.syncPushToken(next)
                     },
                     onRefreshStore = mainViewModel::refreshStoreSettings,
                 )

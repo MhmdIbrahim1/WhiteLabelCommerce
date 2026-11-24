@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ShoppingBag, Check, SlidersHorizontal, Ruler } from "lucide-react";
+import { ShoppingBag, Check, SlidersHorizontal, Ruler, BellRing } from "lucide-react";
 import type { Product } from "@/lib/shop";
 import { translateColor } from "@/lib/i18n";
 import { useLanguage } from "@/components/language-provider";
@@ -19,7 +19,38 @@ export function Buy({ p, detail = false }: { p: Product; detail?: boolean }) {
     ),
     [message, setMessage] = useState(""),
     [error, setError] = useState(""),
-    [guideOpen, setGuideOpen] = useState(false);
+    [guideOpen, setGuideOpen] = useState(false),
+    [restockOpen, setRestockOpen] = useState(false),
+    [restockPhone, setRestockPhone] = useState(""),
+    [restockBusy, setRestockBusy] = useState(false),
+    [restockDone, setRestockDone] = useState(false),
+    [restockErr, setRestockErr] = useState("");
+
+  async function handleRestockSubscribe() {
+    setRestockBusy(true);
+    setRestockErr("");
+    try {
+      const variantKey = [size, color].filter(Boolean).join(" / ");
+      const res = await fetch("/api/notifications/back-in-stock", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          product_id: p.id,
+          variant_key: variantKey,
+          phone: restockPhone.trim() || undefined,
+        }),
+      });
+      if (!res.ok) {
+        setRestockErr(t("restockError"));
+      } else {
+        setRestockDone(true);
+      }
+    } catch {
+      setRestockErr(t("restockError"));
+    } finally {
+      setRestockBusy(false);
+    }
+  }
 
   if (!detail && (p.sizes.length || p.colors.length))
     return (
@@ -147,6 +178,55 @@ export function Buy({ p, detail = false }: { p: Product; detail?: boolean }) {
         )}
         {detail && message && <small role="status">{message}</small>}
       </form>
+      {detail && p.stock <= 0 && (
+        <div className="restock-box">
+          {restockDone ? (
+            <p className="restock-success" role="status">
+              <Check size={16} />
+              <span>{t("restockSuccess")}</span>
+            </p>
+          ) : !restockOpen ? (
+            <button
+              type="button"
+              className="restock-trigger-btn"
+              onClick={() => setRestockOpen(true)}
+            >
+              <BellRing size={16} />
+              <span>{t("restockNotifyBtn")}</span>
+            </button>
+          ) : (
+            <div className="restock-form">
+              <p className="restock-hint">{t("restockHint")}</p>
+              <div className="restock-row">
+                <input
+                  type="tel"
+                  dir="ltr"
+                  value={restockPhone}
+                  onChange={(e) => setRestockPhone(e.target.value)}
+                  placeholder={t("restockPhonePlaceholder")}
+                  aria-label={t("restockPhonePlaceholder")}
+                />
+                <button
+                  type="button"
+                  className="restock-submit-btn"
+                  disabled={restockBusy}
+                  onClick={() => void handleRestockSubscribe()}
+                >
+                  <BellRing size={15} />
+                  <span>
+                    {restockBusy ? t("restockSubmitting") : t("restockNotifyBtn")}
+                  </span>
+                </button>
+              </div>
+              {restockErr && (
+                <small role="alert" className="variant-error">
+                  {restockErr}
+                </small>
+              )}
+            </div>
+          )}
+        </div>
+      )}
       {detail && p.sizes.length > 0 && (
         <SizeGuideModal
           open={guideOpen}

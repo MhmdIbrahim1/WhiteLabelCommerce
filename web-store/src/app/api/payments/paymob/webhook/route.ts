@@ -1,4 +1,5 @@
 import { adminDb } from "@/lib/supabase/admin";
+import { notifyPaymentOutcome } from "@/lib/notifications/events";
 import {
   extractOrderUuidFromMerchantOrderId,
   verifyPaymobTransactionHmac,
@@ -135,6 +136,10 @@ export async function POST(req: Request) {
         { error: "Failed to record payment status." },
         { status: 500 },
       );
+    }
+
+    if (nextPaymentStatus === "paid" || nextPaymentStatus === "failed") {
+      void notifyPaymentOutcome(order.id, nextPaymentStatus);
     }
 
     return Response.json(

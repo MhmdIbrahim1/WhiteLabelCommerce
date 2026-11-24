@@ -608,3 +608,39 @@ Stored as `store_settings.ui_config.homeSections` (ordered array, up to 15 items
 - **Verification:**
   - `web-store/`: `npx tsc --noEmit`, `npm run lint -- --max-warnings 0`, and `npm run build` passed with **0 errors and 0 warnings**; live browser verification on `http://localhost:3000` passed across `/checkout`, `/`, `/orders`, `/account`, and `/login` with 0 console errors.
   - `android-app/`: `.\gradlew.bat testGithubDebugUnitTest assembleGithubDebug assemblePlaystoreDebug --no-daemon` passed (`BUILD SUCCESSFUL`, **27 / 27 JUnit unit tests passed** across 11 suites).
+
+
+### Phase 9 (Unified Smart Notification Engine — FCM + Web Push + Supabase Realtime + `/admin/notifications`) — 2026-11-24
+
+- **Database Schema, Strict Multi-Tenant RLS & Realtime (`shared/phase-9-notifications.sql`):**
+  - Applied idempotently in the live Supabase SQL Editor (`zpabcnskkbpplurngtle`) and verified via rolled-back transaction (`tables_count: 5`, `realtime_enabled: 1`, `rpc_push_ok: true`).
+  - **Tables created (all scoped by `store_id` referencing `store_settings(store_id)` with RLS enabled):**
+    1. `public.push_subscriptions` (`store_id`, `user_id`, `guest_session_id`, `phone`, `platform` in `('android','web')`, `token`, `locale` in `('ar','en')`, `is_active`, `last_seen_at`, `created_at`; unique on `(store_id, platform, token)`). Policies: `admin_manage_push_subscriptions` (`is_store_admin(store_id)`), `user_manage_own_push_subscriptions` (`user_id = auth.uid()`).
+    2. `public.notifications` (`store_id`, `user_id`, `target_role` in `('customer','admin')`, `category` in `('order_update','payment_recovery','abandoned_cart','back_in_stock','promo_campaign','admin_alert')`, `title_ar`, `title_en`, `body_ar`, `body_en`, `deep_link`, `data jsonb`, `dedupe_key text unique`, `is_read`, `sent_push`, `created_at`; `REPLICA IDENTITY FULL` + added to `supabase_realtime` publication). Policies: `admin_manage_notifications`, `customer_read_own_notifications`, `anon_read_public_promo_notifications`, `customer_mark_own_notifications_read`.
+    3. `public.back_in_stock_subscriptions` (`store_id`, `product_id`, `variant_key`, `user_id`, `phone`, `push_token`, `notified_at`, `created_at`; partial unique indexes for pending per-user and per-phone subscriptions). Policies: `admin_manage_back_in_stock`, `user_read_own_back_in_stock`.
+    4. `public.notification_preferences` (`user_id`, `store_id`, `order_updates`, `promotions`, `restock_alerts`, `quiet_hours_start` default `'23:00'`, `quiet_hours_end` default `'09:00'`). Policies: `admin_read_notification_prefs`, `user_manage_own_notification_prefs`.
+    5. `public.cart_sessions` (`store_id`, `user_id`, `guest_session_id`, `phone`, `push_token`, `locale`, `item_count`, `subtotal`, `abandoned_notified_at`, `updated_at`) for abandoned cart tracking.
+  - **`SECURITY DEFINER` RPCs:** `public.register_push_subscription(...)` and `public.subscribe_back_in_stock(...)` granted to `anon, authenticated` for safe guest + logged-in device/restock registration without exposing direct table writes.
+- **Backend Dispatch Engine (`web-store/src/lib/notifications/dispatcher.ts`):**
+  - Native Node `crypto` RS256 OAuth2 JWT token exchange + **FCM HTTP v1** (`https://fcm.googleapis.com/v1/projects/{projectId}/messages:send`) for both Android (`orders_channel` / `promotions_channel`) and Web Push (`webpush.fcm_options.link`).
+  - Gracefully stores in-app Supabase Realtime notifications when Firebase credentials are absent in local dev; automatically deactivates expired/unregistered tokens (`UNREGISTERED` / HTTP 404).
+  - Enforces `dedupe_key` idempotency, per-user `notification_preferences`, and **Africa/Cairo Quiet Hours (`23:00–09:00`)** suppressing non-urgent push notifications (`promo_campaign`, `abandoned_cart`) while allowing urgent transactional/restock alerts (plus optional admin flash-drop override).
+  - Includes `notifyStoreAdmins(...)` helper targeting all store admins for a tenant `store_id`.
+- **Automated Event Triggers (`web-store/src/lib/notifications/events.ts`) & API Routes:**
+  - **Checkout (`(shop)/checkout/action.ts`):** Fires `notifyOrderCreated` (customer COD confirmation, store admin new-order alert, and admin low-stock alerts whenever ordered product `stock <= 3`).
+  - **Paymob Webhook (`api/payments/paymob/webhook/route.ts`):** Fires `notifyPaymentOutcome` on verified HMAC-SHA512 `'paid'` or `'failed'` payment status updates.
+  - **Admin Order & Product Mutations (`admin/mutations.ts`):** `updateOrder` fires `notifyOrderStatusChanged` (`confirmed`, `shipped` with carrier/Bosta tracking number, `delivered`, `cancelled`); `saveProduct` detects `previousStock <= 0 && stock > 0` transitions and fires `notifyBackInStock` to all waiting subscribers.
+  - **Recovery Cron (`api/notifications/cron/recovery/route.ts`):** `GET`/`POST` endpoint (protected by optional `CRON_SECRET`) scanning `cart_sessions` inactive `> 1h` (abandoned cart reminder) and unpaid online `orders` `> 20m` (payment recovery alert).
+  - **Notification APIs:** `/api/notifications/register`, `/api/notifications/back-in-stock`, `/api/notifications/inbox` (`GET` & `PATCH`), `/api/notifications/cart-heartbeat`, and `/api/notifications/cron/recovery`.
+- **Storefront & Admin UI (`web-store/`):**
+  - **Web Push Service Worker:** `web-store/public/firebase-messaging-sw.js` handling background push display and `notificationclick` deep-link navigation.
+  - **Live Realtime Notification Bell & Drawer (`src/components/notifications/notification-bell.tsx`, `src/lib/supabase/browser.ts`):** Mounted in both Storefront topbar (`navigation.tsx`) and Admin topbar (`admin/layout.tsx`, `scope="admin"`), subscribed via Supabase Realtime (`postgres_changes` on `public.notifications` filtered by `store_id`), with live unread badge, browser Push subscription flow (`NEXT_PUBLIC_FIREBASE_VAPID_KEY`), mark-read / mark-all-read, and deep-link navigation in pure `AR` (RTL) / `EN` (LTR).
+  - **Back-in-Stock Widget (`src/components/shop/buy.tsx`) & Cart Heartbeat (`src/components/shop/cart-store.ts`):** Out-of-stock product detail pages render a bilingual **"نبّهني عند التوفر / Notify Me When Available"** form calling `/api/notifications/back-in-stock`; cart mutations sync debounced heartbeats to `/api/notifications/cart-heartbeat`.
+  - **Admin Campaign Studio (`/admin/notifications` — `page.tsx`, `campaign-studio.tsx`, `admin/nav.tsx`):** Bilingual KPI dashboard (Android FCM vs Web Push active subscribers, read rate, pending restock alerts), targeted broadcast composer (`all` / `registered` / `buyers`), Arabic & English title/body inputs, deep-link route picker (Home / Products / Specific Product / Category / Cart / Orders / Custom), live AR/EN push preview mock, quiet-hours bypass toggle, one-click Recovery Scan trigger, and sent campaigns & automated trigger log table.
+- **Required `.env.local` Keys (Documented in `web-store/.env.example`; never committed):**
+  - Server-only: `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`, `CRON_SECRET`.
+  - Public Web Push (optional): `NEXT_PUBLIC_FIREBASE_VAPID_KEY`, `NEXT_PUBLIC_FIREBASE_API_KEY`, `NEXT_PUBLIC_FIREBASE_PROJECT_ID`, `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`, `NEXT_PUBLIC_FIREBASE_APP_ID`.
+- **Verification:**
+  - `npx tsc --noEmit` (0 errors), `npm run lint -- --max-warnings 0` (0 errors, 0 warnings), and `npm run build` (21/21 routes compiled cleanly).
+  - Supabase SQL migration applied & rolled-back verification returned `tables_count: 5`, `realtime_enabled: 1`, `rpc_push_ok: true`.
+  - Live Chrome check at `http://localhost:3000` verified storefront Notification Bell, pure AR/EN slide-over Notification Drawer, cart heartbeat sync, and `/admin/notifications` auth guard with 0 console errors and 0 5xx responses.
