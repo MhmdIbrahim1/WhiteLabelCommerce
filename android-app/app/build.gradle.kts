@@ -1,4 +1,5 @@
 import org.gradle.api.GradleException
+import java.io.File
 import java.util.Properties
 
 plugins {
@@ -46,7 +47,7 @@ fun resolveSigningValue(key: String): String? {
 
 val releaseKeystorePath = resolveSigningValue("KEYSTORE_FILE")
 val releaseKeystoreFile = releaseKeystorePath?.let { rawPath ->
-    val candidate = java.io.File(rawPath)
+    val candidate = File(rawPath)
     if (candidate.isAbsolute) candidate else rootProject.file(rawPath)
 }
 val releaseKeystorePassword = resolveSigningValue("KEYSTORE_PASSWORD")
