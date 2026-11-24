@@ -69,9 +69,18 @@ class CatalogViewModel @Inject constructor(
         loadInitial()
     }
 
-    fun applyExternalCategory(categoryId: String?) {
-        if (_uiState.value.selectedCategoryId != categoryId) {
-            _uiState.update { it.copy(selectedCategoryId = categoryId) }
+    fun applyExternalCategory(categoryIdOrSlug: String?) {
+        val resolvedId = if (categoryIdOrSlug.isNullOrBlank()) {
+            null
+        } else {
+            val cats = _uiState.value.categories
+            cats.firstOrNull {
+                it.id.equals(categoryIdOrSlug, ignoreCase = true) ||
+                    it.slug.equals(categoryIdOrSlug, ignoreCase = true)
+            }?.id ?: categoryIdOrSlug
+        }
+        if (_uiState.value.selectedCategoryId != resolvedId) {
+            _uiState.update { it.copy(selectedCategoryId = resolvedId) }
             fetchProducts(isPullRefresh = false)
         }
     }

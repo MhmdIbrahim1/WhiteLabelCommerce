@@ -62,4 +62,21 @@ class PublishedSettingsTest {
         assertEquals(1, product.specifications.size)
         assertEquals("Water Resistance", product.specifications.first().keyEn)
     }
+
+    @Test
+    fun heroCarouselDecodesPromoBannersAndAutoplaySettings() {
+        val dto = json.decodeFromString<StoreSettingsDto>(
+            """{"store_name":"Nova Store","currency":"EGP","locale":"ar-EG","primary_color":"#164E63","secondary_color":"#C2410C",
+                "surface_color":"#FFFFFF","border_radius":12,
+                "ui_config":{"pages":{"home":{"hero_visible":true,"banner_autoplay_seconds":4.5,"promo_banners":[
+                  {"id":"s1","active":true,"badge_ar":"وصل حديثاً","badge_en":"New Arrivals","title_ar":"تشكيلة الموسم","title_en":"New Season","cta_link":"/products"},
+                  {"id":"s2","active":false,"title_ar":"مخفي","title_en":"Hidden","cta_link":"/cart"}
+                ]}}}}""",
+        )
+        val settings = dto.toDomain(BrandPresets())
+        assertEquals(4500, settings.hero.bannerSpeedMs)
+        assertEquals(2, settings.hero.promoBanners.size)
+        assertEquals(1, settings.hero.activePromoBanners.size)
+        assertEquals("New Season", settings.hero.activePromoBanners.first().titleEn)
+    }
 }

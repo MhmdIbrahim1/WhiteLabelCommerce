@@ -163,3 +163,16 @@
 - **External Push Tap Auto-Read (`CommerceFirebaseMessagingService.kt`, `MainActivity.kt`, `MainViewModel.kt`):**
   - `MainActivity` extracts `notification_id` (`NotificationChannels.EXTRA_NOTIFICATION_ID`) from both cold-start `intent` and `onNewIntent` and invokes `mainViewModel.markNotificationRead(notifId)` so tapping an OS push notification immediately marks it as read in Supabase.
 - **Build Verification:** `$env:JAVA_HOME='C:\Users\moham\.jdks\jbr-21.0.11'; .\gradlew.bat assembleGithubDebug assemblePlaystoreDebug --no-daemon` passed (`BUILD SUCCESSFUL`, 0 errors) across both `github` and `playstore` flavors with `google-services.json` processed.
+
+
+### 6.7 Pure Compose Animated Multi-Slide Hero Carousel & `v1.1.1` Release (2026-11-25)
+- **Native Jetpack Compose `HorizontalPager` Hero Carousel (`HomeScreen.kt`, `StoreSettings.kt`, `WhiteLabelAppShell.kt`, `CatalogViewModel.kt`):**
+  - Upgraded `MultiCampaignPromoCarousel` using pure Compose Foundation `HorizontalPager` (zero external pager libraries) with horizontal `contentPadding = PaddingValues(horizontal = 14.dp)` peek edges (`beyondViewportPageCount = 1`).
+  - Added fluid `graphicsLayer` motion driven by `pagerState.getOffsetDistanceInPages(page)`: smooth card scale (`0.93f -> 1f`), alpha fade (`0.72f -> 1f`), background image parallax (`scale = 1.10f` + directional `translationX`), and subtle RTL/LTR-aware inner content parallax.
+  - Upgraded smart auto-play inside `LaunchedEffect` honoring `bannerSpeedMs` / `banner_autoplay_seconds` (default `4500ms`), advancing via `animateScrollToPage(..., animationSpec = tween(650, easing = FastOutSlowInEasing))`, pausing automatically while `pagerState.isScrollInProgress` is true, and supporting RTL (Arabic) & LTR (English) natively.
+  - Upgraded expanding-width (`animateDpAsState`) pill indicators tinted with `MaterialTheme.colorScheme.primary` with tap-to-jump navigation.
+  - Enhanced deep-link routing in `WhiteLabelAppShell.handleHeroRoute` and `CatalogViewModel.applyExternalCategory` to route `/product/{id}`, `/products/{id}`, `/category/{idOrSlug}`, `/products?category={id}`, `/cart`, `/orders`, and `/offers` seamlessly.
+  - Added `heroCarouselDecodesPromoBannersAndAutoplaySettings` unit test in `PublishedSettingsTest.kt`.
+- **Release `v1.1.1` Version Bump (`android-app/app/build.gradle.kts`):**
+  - Bumped default `versionCode` to `21` and `versionName` to `"1.1.1"` (bundling Phase 9c/9d notification read/delete sync + the new Compose Multi-Slide Hero Carousel) and pushed release tag `v1.1.1` to trigger GitHub Actions signed APK publication.
+- **Build & Test Verification:** `$env:JAVA_HOME='C:\Users\moham\.jdks\jbr-21.0.11'; .\gradlew.bat testGithubDebugUnitTest assembleGithubDebug assemblePlaystoreDebug --no-daemon` passed (`BUILD SUCCESSFUL`, 0 errors) across both `github` and `playstore` flavors.

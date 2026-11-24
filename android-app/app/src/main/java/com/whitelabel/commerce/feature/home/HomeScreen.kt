@@ -2,7 +2,9 @@ package com.whitelabel.commerce.feature.home
 
 import android.net.Uri
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -58,6 +60,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -88,6 +91,7 @@ import com.whitelabel.commerce.core.domain.model.Product
 import com.whitelabel.commerce.core.domain.model.PromoBannerCampaign
 import com.whitelabel.commerce.core.domain.model.StoreSettings
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.absoluteValue
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -672,16 +676,25 @@ private fun MultiCampaignPromoCarousel(
     onNavigate: (String) -> Unit,
 ) {
     val pagerState = rememberPagerState(pageCount = { campaigns.size })
+    val coroutineScope = rememberCoroutineScope()
     val overlayAlpha = overlayOpacity.coerceIn(0, 80) / 100f
+    val hasMultiple = campaigns.size > 1
+    val effectiveIntervalMs = if (autoSlideMs == 0) 0L else autoSlideMs.toLong().coerceAtLeast(2000L)
 
-    // Auto-scroll smoothly, automatically pausing while user is dragging/touching
-    LaunchedEffect(campaigns.size, autoSlideMs, pagerState.isScrollInProgress) {
-        if (campaigns.size > 1 && autoSlideMs >= 500 && !pagerState.isScrollInProgress) {
+    // Smart auto-play: advances smoothly with tween(650, FastOutSlowInEasing) and pauses while dragging
+    LaunchedEffect(campaigns.size, effectiveIntervalMs, pagerState.isScrollInProgress) {
+        if (hasMultiple && effectiveIntervalMs >= 500L && !pagerState.isScrollInProgress) {
             while (true) {
-                delay(autoSlideMs.toLong().coerceAtLeast(2500L))
+                delay(effectiveIntervalMs)
                 if (!pagerState.isScrollInProgress) {
                     val next = (pagerState.currentPage + 1) % campaigns.size
-                    pagerState.animateScrollToPage(next)
+                    pagerState.animateScrollToPage(
+                        page = next,
+                        animationSpec = tween(
+                            durationMillis = 650,
+                            easing = FastOutSlowInEasing,
+                        ),
+                    )
                 }
             }
         }
@@ -690,18 +703,21 @@ private fun MultiCampaignPromoCarousel(
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         HorizontalPager(
             state = pagerState,
+            contentPadding = PaddingValues(horizontal = if (hasMultiple) 14.dp else 0.dp),
             pageSpacing = 12.dp,
+            beyondViewportPageCount = 1,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(216.dp),
+                .height(224.dp),
         ) { page ->
             val campaign = campaigns[page]
-            val pageOffset = ((pagerState.currentPage - page) + pagerState.currentPageOffsetFraction)
-                .absoluteValue
-                .coerceIn(0f, 1f)
+            val rawOffset = pagerState.getOffsetDistanceInPages(page)
+            val pageOffset = rawOffset.absoluteValue.coerceIn(0f, 1f)
+            val directionSign = if (isRtl) -1f else 1f
 
             val startColor = parseHexColorOrDefault(campaign.gradientStart, MaterialTheme.colorScheme.primary)
             val endColor = parseHexColorOrDefault(campaign.gradientEnd, MaterialTheme.colorScheme.secondary)
+            val fallbackGradient = Brush.linearGradient(colors = listOf(startColor, endColor))
 
             val badge = (if (isRtl) campaign.badgeAr.trim() else campaign.badgeEn.trim())
                 .ifBlank { if (isRtl) campaign.badgeEn.trim() else campaign.badgeAr.trim() }
@@ -718,13 +734,13 @@ private fun MultiCampaignPromoCarousel(
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer {
-                        val scale = 0.94f + (1f - pageOffset) * 0.06f
+                        val scale = 0.93f + (1f - pageOffset) * 0.07f
                         scaleX = scale
                         scaleY = scale
-                        alpha = 0.68f + (1f - pageOffset) * 0.32f
+                        alpha = 0.72f + (1f - pageOffset) * 0.28f
                     }
                     .clip(MaterialTheme.shapes.large)
-                    .background(Brush.linearGradient(colors = listOf(startColor, endColor)))
+                    .background(fallbackGradient)
                     .clickable { onNavigate(targetLink) },
             ) {
                 if (!campaign.imageUrl.isNullOrBlank()) {
@@ -732,12 +748,25 @@ private fun MultiCampaignPromoCarousel(
                         model = campaign.imageUrl,
                         contentDescription = title,
                         contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                scaleX = 1.10f
+                                scaleY = 1.10f
+                                translationX = rawOffset * 34f * directionSign
+                            },
                         loading = {
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .background(rememberShimmerBrush()),
+                            )
+                        },
+                        error = {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(fallbackGradient),
                             )
                         },
                     )
@@ -747,8 +776,8 @@ private fun MultiCampaignPromoCarousel(
                             .background(
                                 Brush.verticalGradient(
                                     colors = listOf(
-                                        Color.Black.copy(alpha = (overlayAlpha * 0.65f).coerceIn(0.15f, 0.7f)),
-                                        Color.Black.copy(alpha = overlayAlpha.coerceIn(0.35f, 0.85f)),
+                                        Color(0xFF0A0F1C).copy(alpha = (overlayAlpha * 0.65f).coerceIn(0.22f, 0.7f)),
+                                        Color(0xFF0A0F1C).copy(alpha = (overlayAlpha + 0.18f).coerceIn(0.52f, 0.88f)),
                                     ),
                                 ),
                             ),
@@ -758,7 +787,11 @@ private fun MultiCampaignPromoCarousel(
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(18.dp),
+                        .padding(18.dp)
+                        .graphicsLayer {
+                            translationX = rawOffset * -22f * directionSign
+                            alpha = 0.65f + (1f - pageOffset) * 0.35f
+                        },
                     verticalArrangement = Arrangement.SpaceBetween,
                 ) {
                     if (badge.isNotEmpty()) {
@@ -799,7 +832,7 @@ private fun MultiCampaignPromoCarousel(
                             Text(
                                 text = subtitle,
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.9f),
+                                color = Color.White.copy(alpha = 0.92f),
                                 maxLines = 2,
                             )
                         }
@@ -831,7 +864,7 @@ private fun MultiCampaignPromoCarousel(
             }
         }
 
-        if (campaigns.size > 1) {
+        if (hasMultiple) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Center,
@@ -840,7 +873,8 @@ private fun MultiCampaignPromoCarousel(
                 campaigns.indices.forEach { index ->
                     val selected = pagerState.currentPage == index
                     val width by animateDpAsState(
-                        targetValue = if (selected) 24.dp else 7.dp,
+                        targetValue = if (selected) 26.dp else 7.dp,
+                        animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing),
                         label = "promo_dot_width_$index",
                     )
                     val color by animateColorAsState(
@@ -857,7 +891,18 @@ private fun MultiCampaignPromoCarousel(
                             .height(7.dp)
                             .width(width)
                             .clip(CircleShape)
-                            .background(color),
+                            .background(color)
+                            .clickable {
+                                coroutineScope.launch {
+                                    pagerState.animateScrollToPage(
+                                        page = index,
+                                        animationSpec = tween(
+                                            durationMillis = 650,
+                                            easing = FastOutSlowInEasing,
+                                        ),
+                                    )
+                                }
+                            },
                     )
                 }
             }

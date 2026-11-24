@@ -96,9 +96,17 @@ data class HeroConfig(
     @SerialName("hero_overlay_opacity") val overlayOpacity: Int = 45,
     @SerialName("heroBg") val heroBg: String? = null,
     @SerialName("heroText") val heroText: String? = null,
-    @SerialName("bannerSpeedMs") val bannerSpeedMs: Int = 5000,
+    @SerialName("bannerSpeedMs") val bannerSpeedMsRaw: Int? = null,
+    @SerialName("banner_autoplay_seconds") val bannerAutoplaySeconds: Double? = null,
     @SerialName("promo_banners") val promoBanners: List<PromoBannerCampaign> = emptyList(),
 ) {
+    val bannerSpeedMs: Int
+        get() = when {
+            bannerSpeedMsRaw != null -> bannerSpeedMsRaw.coerceIn(0, 15000)
+            bannerAutoplaySeconds != null -> (bannerAutoplaySeconds * 1000.0).toInt().coerceIn(0, 15000)
+            else -> 4500
+        }
+
     val activePromoBanners: List<PromoBannerCampaign>
         get() = promoBanners.filter { it.active }
 }

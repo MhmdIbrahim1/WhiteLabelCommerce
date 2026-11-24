@@ -23,6 +23,12 @@ import {
   ImageIcon,
   Eye,
   EyeOff,
+  SlidersHorizontal,
+  Maximize2,
+  Minimize2,
+  ChevronDown,
+  ChevronUp,
+  Images,
 } from "lucide-react";
 import {
   templates,
@@ -56,30 +62,91 @@ import { SectionsBuilder } from "./sections-builder";
 import { PromoBannersEditor } from "./promo-banners-editor";
 import "./customizer.css";
 
-type EditorTab = "global" | "sections" | PreviewPageKey;
+type StudioTab = "theme" | "banners" | "page";
+type ActivePageMode = PreviewPageKey | "sections";
 
-const TABS: {
-  key: EditorTab;
+const STUDIO_TABS: {
+  key: StudioTab;
   label_ar: string;
   label_en: string;
   icon: typeof Palette;
 }[] = [
-  { key: "global", label_ar: "عام", label_en: "Global", icon: Palette },
-  { key: "sections", label_ar: "الأقسام", label_en: "Sections", icon: ListOrdered },
-  { key: "home", label_ar: "الرئيسية", label_en: "Home", icon: Home },
-  { key: "products", label_ar: "المنتجات", label_en: "Products", icon: LayoutGrid },
-  { key: "product_details", label_ar: "تفاصيل المنتج", label_en: "Product Details", icon: Package },
-  { key: "cart_checkout", label_ar: "السلة والدفع", label_en: "Cart & Checkout", icon: ShoppingCart },
-  { key: "orders", label_ar: "تتبع الطلبات", label_en: "Orders", icon: Truck },
+  { key: "theme", label_ar: "المظهر والقوالب", label_en: "Theme & Presets", icon: Palette },
+  { key: "banners", label_ar: "البانرات والعروض", label_en: "Banners & Carousel", icon: Images },
+  { key: "page", label_ar: "تخصيص الصفحة", label_en: "Page Settings", icon: SlidersHorizontal },
 ];
 
-const PREVIEW_URLS: Record<PreviewPageKey, string> = {
-  home: "/",
-  products: "/products",
-  product_details: "/products/preview",
-  cart_checkout: "/checkout",
-  orders: "/orders",
-};
+const PAGE_SWITCHER_ITEMS: {
+  key: ActivePageMode;
+  previewKey: PreviewPageKey;
+  url: string;
+  label_ar: string;
+  label_en: string;
+  badge_ar: string;
+  badge_en: string;
+  icon: typeof Home;
+}[] = [
+  {
+    key: "home",
+    previewKey: "home",
+    url: "/",
+    label_ar: "الرئيسية",
+    label_en: "Home",
+    badge_ar: "الصفحة الرئيسية",
+    badge_en: "Home Page",
+    icon: Home,
+  },
+  {
+    key: "sections",
+    previewKey: "home",
+    url: "/#sections",
+    label_ar: "الأقسام",
+    label_en: "Sections",
+    badge_ar: "أقسام الرئيسية",
+    badge_en: "Home Sections",
+    icon: ListOrdered,
+  },
+  {
+    key: "products",
+    previewKey: "products",
+    url: "/products",
+    label_ar: "المنتجات",
+    label_en: "Products",
+    badge_ar: "صفحة المنتجات",
+    badge_en: "Products Page",
+    icon: LayoutGrid,
+  },
+  {
+    key: "product_details",
+    previewKey: "product_details",
+    url: "/products/preview",
+    label_ar: "التفاصيل",
+    label_en: "Details",
+    badge_ar: "تفاصيل المنتج",
+    badge_en: "Product Details",
+    icon: Package,
+  },
+  {
+    key: "cart_checkout",
+    previewKey: "cart_checkout",
+    url: "/checkout",
+    label_ar: "السلة",
+    label_en: "Bag",
+    badge_ar: "السلة والدفع",
+    badge_en: "Cart & Checkout",
+    icon: ShoppingCart,
+  },
+  {
+    key: "orders",
+    previewKey: "orders",
+    url: "/orders",
+    label_ar: "الطلبات",
+    label_en: "Orders",
+    badge_ar: "تتبع الطلبات",
+    badge_en: "Order Tracking",
+    icon: Truck,
+  },
+];
 
 function ColorControl({
   label,
@@ -152,9 +219,14 @@ export function CustomizerStudio({
   const [savedSnapshot, setSavedSnapshot] = useState<string>(() =>
     JSON.stringify(initialConfig),
   );
-  const [activeTab, setActiveTab] = useState<EditorTab>("global");
-  const [previewPage, setPreviewPage] = useState<PreviewPageKey>("home");
+  const [studioTab, setStudioTab] = useState<StudioTab>("theme");
+  const [activePage, setActivePage] = useState<ActivePageMode>("home");
   const [viewport, setViewport] = useState<"desktop" | "mobile">("desktop");
+  const [expandedPreview, setExpandedPreview] = useState(false);
+  const [layoutCardOpen, setLayoutCardOpen] = useState(true);
+  const [fallbackHeroOpen, setFallbackHeroOpen] = useState(
+    () => (initialConfig.pages.home.promo_banners ?? []).filter((b) => b.active).length === 0,
+  );
   const [animSeed, setAnimSeed] = useState(0);
   const [feedback, setFeedback] = useState<{
     type: "ok" | "error";
@@ -164,6 +236,11 @@ export function CustomizerStudio({
   const [isPending, startTransition] = useTransition();
 
   const isDirty = JSON.stringify(config) !== savedSnapshot;
+  const activePageMeta =
+    PAGE_SWITCHER_ITEMS.find((p) => p.key === activePage) ??
+    PAGE_SWITCHER_ITEMS[0];
+  const previewPage: PreviewPageKey = activePageMeta.previewKey;
+  const ActivePageIcon = activePageMeta.icon;
 
   const updateGlobal = <K extends keyof StoreUiConfig["global"]>(
     key: K,
@@ -262,6 +339,7 @@ export function CustomizerStudio({
       const prevHome = prev.pages.home;
       return {
         ...next,
+        defaultLanguage: prev.defaultLanguage,
         homeSections: prev.homeSections,
         pages: {
           ...next.pages,
@@ -281,6 +359,7 @@ export function CustomizerStudio({
             hero_cta_link: prevHome.hero_cta_link,
             hero_image_url: prevHome.hero_image_url,
             hero_overlay_opacity: prevHome.hero_overlay_opacity,
+            promo_banners: prevHome.promo_banners,
           },
         },
       };
@@ -337,13 +416,16 @@ export function CustomizerStudio({
     }
   };
 
-  const handleTabSelect = (tab: EditorTab) => {
-    setActiveTab(tab);
-    if (tab === "sections") {
-      setPreviewPage("home");
-    } else if (tab !== "global") {
-      setPreviewPage(tab);
+  const handleSelectStudioTab = (tab: StudioTab) => {
+    setStudioTab(tab);
+    if (tab === "banners" && previewPage !== "home") {
+      setActivePage("home");
     }
+  };
+
+  const handleSelectPreviewPage = (next: ActivePageMode) => {
+    setActivePage(next);
+    setStudioTab("page");
   };
 
   const handlePublish = () => {
@@ -367,37 +449,56 @@ export function CustomizerStudio({
 
   return (
     <div className="customizer-studio">
-      {/* Top Studio Action Bar */}
+      {/* Compact Top Studio Action Bar */}
       <header className="customizer-topbar">
         <div className="customizer-topbar-title">
-          <h1>
-            <Sparkles size={22} />{" "}
-            {isEn ? "Visual Theme & Layout Studio" : "تخصيص التصميم والمظهر"}
-          </h1>
+          <div className="customizer-title-row">
+            <h1>
+              <Sparkles size={20} />{" "}
+              {isEn ? "Theme & Storefront Studio" : "استوديو تخصيص المتجر"}
+            </h1>
+            <span
+              className={
+                "customizer-status-pill " +
+                (isDirty
+                  ? "customizer-status-pill--dirty"
+                  : "customizer-status-pill--synced")
+              }
+            >
+              {isDirty
+                ? isEn
+                  ? "Unsaved"
+                  : "غير محفوظ"
+                : isEn
+                  ? "Published"
+                  : "منشور ومتزامن"}
+            </span>
+          </div>
           <small>
             {isEn
-              ? "Customize colors, layout, home sections, and default storefront language with instant live preview."
-              : "عدّل الألوان والخلفيات والتخطيط والحركات لكل صفحة مع معاينة فورية قبل النشر."}
+              ? "Customize theme, hero carousel slides, and per-page styling with instant Web & Android sync."
+              : "عدّل القالب وبانرات الكاروسيل وإعدادات كل صفحة مع معاينة فورية وتزامن مباشر للموقع والتطبيق."}
           </small>
         </div>
 
         <div className="customizer-topbar-actions">
-          <span
-            className={
-              "customizer-status-pill " +
-              (isDirty
-                ? "customizer-status-pill--dirty"
-                : "customizer-status-pill--synced")
-            }
+          <button
+            type="button"
+            className="customizer-btn-secondary"
+            aria-pressed={expandedPreview}
+            onClick={() => setExpandedPreview((prev) => !prev)}
           >
-            {isDirty
-              ? isEn
-                ? "Unsaved changes"
-                : "تعديلات غير محفوظة"
-              : isEn
-                ? "Published & Synced"
-                : "منشور ومتزامن"}
-          </span>
+            {expandedPreview ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+            <span>
+              {expandedPreview
+                ? isEn
+                  ? "Show Controls"
+                  : "إظهار الأدوات"
+                : isEn
+                  ? "Expand Preview"
+                  : "توسيع المعاينة"}
+            </span>
+          </button>
 
           <button
             type="button"
@@ -427,7 +528,7 @@ export function CustomizerStudio({
             {isPending
               ? isEn
                 ? "Publishing…"
-                : "جارٍ الحفظ والنشر…"
+                : "جارٍ الحفظ…"
               : isEn
                 ? "Save & Publish"
                 : "حفظ ونشر التعديلات"}
@@ -454,917 +555,1130 @@ export function CustomizerStudio({
         </div>
       )}
 
-      {/* Split-Screen Studio: Controls + Live Preview */}
-      <div className="customizer-split">
-        <section
-          className="customizer-controls"
-          aria-label={isEn ? "Theme customization controls" : "أدوات تخصيص التصميم"}
-        >
-          {/* 1. Base Template Quick-Start Presets */}
-          <div>
-            <div className="customizer-section-head">
-              <h2>
-                <Layers size={16} />{" "}
-                {isEn ? "Quick-Start Presets" : "قوالب البدء السريع"}
-              </h2>
-              <small>{isEn ? "4 ready presets" : "4 قوالب جاهزة"}</small>
-            </div>
-            <div className="preset-grid">
-              {(Object.keys(templates) as TemplateId[]).map((id) => {
-                const tpl = templates[id];
-                const active = config.baseTemplate === id;
-                return (
+      {/* Streamlined Split-Screen Workspace */}
+      <div
+        className={
+          "customizer-split " +
+          (expandedPreview ? "customizer-split--expanded" : "")
+        }
+      >
+        {!expandedPreview && (
+          <section
+            className="customizer-controls"
+            aria-label={isEn ? "Theme customization controls" : "أدوات تخصيص التصميم"}
+          >
+            {/* Pinned 3 Top-Level Studio Tabs */}
+            <div className="studio-tabs-sticky">
+              <div
+                className="studio-top-tabs"
+                role="tablist"
+                aria-label={isEn ? "Studio panels" : "أقسام التخصيص الرئيسية"}
+              >
+                {STUDIO_TABS.map(({ key, label_ar, label_en, icon: Icon }) => (
                   <button
-                    key={id}
+                    key={key}
                     type="button"
-                    className="preset-card"
-                    aria-pressed={active}
-                    onClick={() => handleLoadPreset(id)}
+                    role="tab"
+                    aria-selected={studioTab === key}
+                    className="studio-top-tab"
+                    onClick={() => handleSelectStudioTab(key)}
                   >
-                    <span className="preset-card-top">
-                      <span>{isEn ? tpl.title_en : tpl.title}</span>
-                      {active && <Check size={15} />}
-                    </span>
-                    <span className="preset-swatches" aria-hidden="true">
-                      <i style={{ background: tpl.primary }} />
-                      <i style={{ background: tpl.accent }} />
-                      <i style={{ background: tpl.background }} />
-                      <i style={{ background: tpl.surface }} />
-                    </span>
+                    <Icon size={15} />
+                    <span>{isEn ? label_en : label_ar}</span>
                   </button>
-                );
-              })}
+                ))}
+              </div>
             </div>
-          </div>
 
-          {/* 2. Page Selector Tabs */}
-          <div>
-            <div className="customizer-section-head">
-              <h2>{isEn ? "Target Page" : "الصفحة المستهدفة"}</h2>
-              <small>
-                {isEn ? "Per-page customization" : "تخصيص مستقل لكل صفحة"}
-              </small>
-            </div>
-            <div
-              className="customizer-tabs"
-              role="tablist"
-              aria-label={isEn ? "Customization sections" : "أقسام التخصيص"}
-            >
-              {TABS.map(({ key, label_ar, label_en, icon: Icon }) => (
-                <button
-                  key={key}
-                  type="button"
-                  role="tab"
-                  aria-selected={activeTab === key}
-                  className="customizer-tab"
-                  onClick={() => handleTabSelect(key)}
-                >
-                  <Icon size={14} />
-                  <span>{isEn ? label_en : label_ar}</span>
-                </button>
-              ))}
-            </div>
-          </div>
+            <div className="customizer-controls-body">
+              {/* TAB 1: THEME & PRESETS */}
+              {studioTab === "theme" && (
+                <div className="control-stack">
+                  <div>
+                    <div className="customizer-section-head">
+                      <h2>
+                        <Layers size={15} />{" "}
+                        {isEn ? "Quick-Start Templates" : "قوالب البدء السريع"}
+                      </h2>
+                      <small>{isEn ? "4 ready presets" : "4 قوالب جاهزة"}</small>
+                    </div>
+                    <div className="preset-grid">
+                      {(Object.keys(templates) as TemplateId[]).map((id) => {
+                        const tpl = templates[id];
+                        const active = config.baseTemplate === id;
+                        return (
+                          <button
+                            key={id}
+                            type="button"
+                            className="preset-card"
+                            aria-pressed={active}
+                            onClick={() => handleLoadPreset(id)}
+                          >
+                            <span className="preset-card-top">
+                              <span>{isEn ? tpl.title_en : tpl.title}</span>
+                              {active && <Check size={14} />}
+                            </span>
+                            <span className="preset-swatches" aria-hidden="true">
+                              <i style={{ background: tpl.primary }} />
+                              <i style={{ background: tpl.accent }} />
+                              <i style={{ background: tpl.background }} />
+                              <i style={{ background: tpl.surface }} />
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
 
-          {/* 3. Dynamic Tab Controls */}
-          {activeTab === "global" && (
-            <div className="control-stack">
-              <div className="control-field">
-                <div className="control-label-row">
-                  <span>
-                    {isEn
-                      ? "Default Storefront Language"
-                      : "اللغة الافتراضية للمتجر"}
-                  </span>
-                </div>
-                <div className="choice-row">
-                  {(
-                    [
-                      ["ar", isEn ? "Arabic (RTL)" : "العربية"],
-                      ["en", isEn ? "English (LTR)" : "الإنجليزية"],
-                    ] as [DefaultLanguage, string][]
-                  ).map(([val, lbl]) => (
+                  <div className="control-field">
+                    <div className="control-label-row">
+                      <span>
+                        {isEn
+                          ? "Default Storefront Language"
+                          : "اللغة الافتراضية للمتجر"}
+                      </span>
+                    </div>
+                    <div className="choice-row">
+                      {(
+                        [
+                          ["ar", isEn ? "Arabic (RTL)" : "العربية (RTL)"],
+                          ["en", isEn ? "English (LTR)" : "الإنجليزية (LTR)"],
+                        ] as [DefaultLanguage, string][]
+                      ).map(([val, lbl]) => (
+                        <button
+                          key={val}
+                          type="button"
+                          className="choice-pill"
+                          aria-pressed={config.defaultLanguage === val}
+                          onClick={() => {
+                            setConfig((prev) => ({
+                              ...prev,
+                              defaultLanguage: val,
+                            }));
+                            setFeedback(null);
+                          }}
+                        >
+                          {lbl}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="color-grid">
+                    <ColorControl
+                      label={isEn ? "Primary Button Color" : "لون الزر الأساسي"}
+                      value={config.global.primaryButtonBg}
+                      onChange={(v) => updateGlobal("primaryButtonBg", v)}
+                    />
+                    <ColorControl
+                      label={isEn ? "Primary Button Text" : "لون نص الزر الأساسي"}
+                      value={config.global.primaryButtonText}
+                      onChange={(v) => updateGlobal("primaryButtonText", v)}
+                    />
+                    <ColorControl
+                      label={isEn ? "Page Background" : "خلفية الصفحة"}
+                      value={config.global.pageBg}
+                      onChange={(v) => updateGlobal("pageBg", v)}
+                    />
+                    <ColorControl
+                      label={isEn ? "Card Surface" : "خلفية البطاقات"}
+                      value={config.global.cardSurface}
+                      onChange={(v) => updateGlobal("cardSurface", v)}
+                    />
+                    <ColorControl
+                      label={isEn ? "Accent Badge Color" : "لون الشارات المميزة"}
+                      value={config.global.accentBadge}
+                      onChange={(v) => updateGlobal("accentBadge", v)}
+                    />
+                  </div>
+
+                  <div className="control-field">
+                    <div className="control-label-row">
+                      <label htmlFor="radius-slider">
+                        {isEn ? "Corner Border Radius" : "استدارة الحواف"}
+                      </label>
+                      <output htmlFor="radius-slider">
+                        {config.global.borderRadius}px
+                      </output>
+                    </div>
+                    <input
+                      id="radius-slider"
+                      type="range"
+                      className="range-input"
+                      min={0}
+                      max={24}
+                      step={1}
+                      value={config.global.borderRadius}
+                      onChange={(e) =>
+                        updateGlobal("borderRadius", Number(e.target.value))
+                      }
+                    />
+                  </div>
+
+                  <div className="control-field">
+                    <div className="control-label-row">
+                      <span>
+                        {isEn ? "Global Motion Intensity" : "شدة الحركة العامة"}
+                      </span>
+                    </div>
+                    <div className="choice-row">
+                      {(
+                        [
+                          ["none", isEn ? "None" : "بدون"],
+                          ["subtle", isEn ? "Subtle" : "هادئة"],
+                          ["smooth", isEn ? "Smooth" : "سلسة"],
+                          ["bouncy", isEn ? "Bouncy" : "مرنة"],
+                        ] as [MotionIntensity, string][]
+                      ).map(([val, lbl]) => (
+                        <button
+                          key={val}
+                          type="button"
+                          className="choice-pill"
+                          aria-pressed={config.global.motionIntensity === val}
+                          onClick={() => updateGlobal("motionIntensity", val)}
+                        >
+                          {lbl}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="theme-reset-footer">
                     <button
-                      key={val}
                       type="button"
-                      className="choice-pill"
-                      aria-pressed={config.defaultLanguage === val}
-                      onClick={() => {
-                        setConfig((prev) => ({
-                          ...prev,
-                          defaultLanguage: val,
-                        }));
-                        setFeedback(null);
-                      }}
+                      className="customizer-btn-secondary"
+                      onClick={() => handleLoadPreset(config.baseTemplate)}
                     >
-                      {lbl}
+                      <RotateCcw size={14} />
+                      <span>
+                        {isEn
+                          ? "Reset Theme Defaults"
+                          : "استعادة افتراضيات القالب"}
+                      </span>
                     </button>
-                  ))}
+                  </div>
                 </div>
-              </div>
+              )}
 
-              <div className="color-grid">
-                <ColorControl
-                  label={isEn ? "Primary Button Color" : "لون الزر الأساسي"}
-                  value={config.global.primaryButtonBg}
-                  onChange={(v) => updateGlobal("primaryButtonBg", v)}
-                />
-                <ColorControl
-                  label={isEn ? "Primary Button Text" : "لون نص الزر الأساسي"}
-                  value={config.global.primaryButtonText}
-                  onChange={(v) => updateGlobal("primaryButtonText", v)}
-                />
-                <ColorControl
-                  label={isEn ? "Page Background" : "خلفية الصفحة"}
-                  value={config.global.pageBg}
-                  onChange={(v) => updateGlobal("pageBg", v)}
-                />
-                <ColorControl
-                  label={isEn ? "Card Surface" : "خلفية البطاقات"}
-                  value={config.global.cardSurface}
-                  onChange={(v) => updateGlobal("cardSurface", v)}
-                />
-                <ColorControl
-                  label={isEn ? "Accent Badge Color" : "لون الشارات المميزة"}
-                  value={config.global.accentBadge}
-                  onChange={(v) => updateGlobal("accentBadge", v)}
-                />
-              </div>
-
-              <div className="control-field">
-                <div className="control-label-row">
-                  <label htmlFor="radius-slider">
-                    {isEn ? "Corner Border Radius" : "استدارة الحواف"}
-                  </label>
-                  <output htmlFor="radius-slider">
-                    {config.global.borderRadius}px
-                  </output>
-                </div>
-                <input
-                  id="radius-slider"
-                  type="range"
-                  className="range-input"
-                  min={0}
-                  max={24}
-                  step={1}
-                  value={config.global.borderRadius}
-                  onChange={(e) =>
-                    updateGlobal("borderRadius", Number(e.target.value))
-                  }
-                />
-              </div>
-
-              <div className="control-field">
-                <div className="control-label-row">
-                  <span>
-                    {isEn ? "Global Motion Intensity" : "شدة الحركة العامة"}
-                  </span>
-                </div>
-                <div className="choice-row">
-                  {(
-                    [
-                      ["none", isEn ? "None" : "بدون"],
-                      ["subtle", isEn ? "Subtle" : "هادئة"],
-                      ["smooth", isEn ? "Smooth" : "سلسة"],
-                      ["bouncy", isEn ? "Bouncy" : "مرنة"],
-                    ] as [MotionIntensity, string][]
-                  ).map(([val, lbl]) => (
-                    <button
-                      key={val}
-                      type="button"
-                      className="choice-pill"
-                      aria-pressed={config.global.motionIntensity === val}
-                      onClick={() => updateGlobal("motionIntensity", val)}
-                    >
-                      {lbl}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === "sections" && (
-            <SectionsBuilder
-              sections={config.homeSections}
-              categories={categories}
-              defaultAccent={config.global.primaryButtonBg}
-              onChange={updateHomeSections}
-            />
-          )}
-
-          {activeTab === "home" && (
-            <div className="control-stack">
-              {/* Bilingual Hero Banner CMS & Visibility Controls */}
-              <div className="hero-cms-card">
-                <div className="hero-cms-head">
-                  <strong>
-                    {isEn ? "Hero Banner Content" : "محتوى البانر الرئيسي"}
-                  </strong>
-                  <button
-                    type="button"
-                    className={`hero-master-toggle ${config.pages.home.hero_visible ? "is-on" : ""}`}
-                    aria-pressed={config.pages.home.hero_visible}
-                    onClick={() =>
-                      toggleHeroVisible(!config.pages.home.hero_visible)
+              {/* TAB 2: BANNERS & CAROUSEL */}
+              {studioTab === "banners" && (
+                <div className="control-stack">
+                  {/* Right at the top: Promotional Banner Carousel Manager */}
+                  <PromoBannersEditor
+                    banners={config.pages.home.promo_banners}
+                    categories={categories}
+                    isEn={isEn}
+                    onChange={(nextBanners) =>
+                      updateHome("promo_banners", nextBanners)
                     }
-                  >
-                    {config.pages.home.hero_visible ? (
-                      <Eye size={14} />
-                    ) : (
-                      <EyeOff size={14} />
-                    )}
-                    <span>
-                      {isEn
-                        ? "Show Hero Banner on Storefront"
-                        : "إظهار البانر الرئيسي في المتجر"}
-                    </span>
-                  </button>
-                </div>
+                    onError={(msg) => setFeedback({ type: "error", text: msg })}
+                  />
 
-                {config.pages.home.hero_visible && (
-                  <div className="hero-cms-body">
-                    {/* Promo Badge */}
-                    <div className="hero-cms-group">
-                      <label className="hero-cms-check">
-                        <input
-                          type="checkbox"
-                          checked={config.pages.home.hero_badge_visible}
-                          onChange={(e) =>
-                            updateHome("hero_badge_visible", e.target.checked)
-                          }
-                        />
-                        <span>
-                          {isEn ? "Show Promo Badge" : "إظهار شارة العرض"}
-                        </span>
-                      </label>
-                      {config.pages.home.hero_badge_visible && (
-                        <div className="hero-cms-pair">
-                          <label className="hero-cms-field">
-                            <span>
-                              {isEn ? "Promo Badge (AR)" : "شارة العرض (عربي)"}
-                            </span>
-                            <input
-                              type="text"
-                              value={config.pages.home.hero_badge_ar}
-                              onChange={(e) =>
-                                updateHome("hero_badge_ar", e.target.value)
-                              }
-                              placeholder={
-                                isEn
-                                  ? "Default seasonal badge"
-                                  : "الشارة الموسمية الافتراضية"
-                              }
-                            />
-                          </label>
-                          <label className="hero-cms-field">
-                            <span>
-                              {isEn ? "Promo Badge (EN)" : "شارة العرض (إنجليزي)"}
-                            </span>
-                            <input
-                              type="text"
-                              dir="ltr"
-                              value={config.pages.home.hero_badge_en}
-                              onChange={(e) =>
-                                updateHome("hero_badge_en", e.target.value)
-                              }
-                              placeholder={
-                                isEn ? "Season Collection" : "مثال: تشكيلة الموسم"
-                              }
-                            />
-                          </label>
-                        </div>
+                  {/* Expandable Sub-Card: Hero Layout, Colors & Auto-Play Speed */}
+                  <div className="collapsible-subcard">
+                    <button
+                      type="button"
+                      className="collapsible-subcard-trigger"
+                      aria-expanded={layoutCardOpen}
+                      onClick={() => setLayoutCardOpen((o) => !o)}
+                    >
+                      <span>
+                        <strong>
+                          {isEn
+                            ? "Hero Layout, Colors & Auto-Play"
+                            : "تخطيط البانر والألوان وسرعة التبديل"}
+                        </strong>
+                        <small>
+                          {isEn
+                            ? "Speed, scrim darkness, layout & visibility"
+                            : "السرعة والتعتيم والتخطيط وإظهار/إخفاء البانر"}
+                        </small>
+                      </span>
+                      {layoutCardOpen ? (
+                        <ChevronUp size={16} />
+                      ) : (
+                        <ChevronDown size={16} />
                       )}
-                    </div>
+                    </button>
 
-                    {/* Main Headline */}
-                    <div className="hero-cms-group">
-                      <div className="hero-cms-pair">
-                        <label className="hero-cms-field">
-                          <span>
-                            {isEn ? "Main Headline (AR)" : "العنوان الرئيسي (عربي)"}
-                          </span>
-                          <input
-                            type="text"
-                            value={config.pages.home.hero_title_ar}
-                            onChange={(e) =>
-                              updateHome("hero_title_ar", e.target.value)
-                            }
-                            placeholder={
-                              isEn
-                                ? "Default Arabic headline"
-                                : "اكتشف مجموعة المتجر"
-                            }
-                          />
-                        </label>
-                        <label className="hero-cms-field">
-                          <span>
-                            {isEn ? "Main Headline (EN)" : "العنوان الرئيسي (إنجليزي)"}
-                          </span>
-                          <input
-                            type="text"
-                            dir="ltr"
-                            value={config.pages.home.hero_title_en}
-                            onChange={(e) =>
-                              updateHome("hero_title_en", e.target.value)
-                            }
-                            placeholder={
-                              isEn ? "Discover our collection" : "عنوان البانر بالإنجليزية"
-                            }
-                          />
-                        </label>
-                      </div>
-                    </div>
-
-                    {/* Supporting Subtitle */}
-                    <div className="hero-cms-group">
-                      <div className="hero-cms-pair">
-                        <label className="hero-cms-field">
-                          <span>
-                            {isEn
-                              ? "Subtitle (AR · leave empty to hide)"
-                              : "الوصف الفرعي (عربي · اتركه فارغاً للإخفاء)"}
-                          </span>
-                          <textarea
-                            rows={2}
-                            value={config.pages.home.hero_subtitle_ar}
-                            onChange={(e) =>
-                              updateHome("hero_subtitle_ar", e.target.value)
-                            }
-                          />
-                        </label>
-                        <label className="hero-cms-field">
-                          <span>
-                            {isEn
-                              ? "Subtitle (EN · leave empty to hide)"
-                              : "الوصف الفرعي (إنجليزي · اتركه فارغاً للإخفاء)"}
-                          </span>
-                          <textarea
-                            rows={2}
-                            dir="ltr"
-                            value={config.pages.home.hero_subtitle_en}
-                            onChange={(e) =>
-                              updateHome("hero_subtitle_en", e.target.value)
-                            }
-                          />
-                        </label>
-                      </div>
-                    </div>
-
-                    {/* CTA Button */}
-                    <div className="hero-cms-group">
-                      <label className="hero-cms-check">
-                        <input
-                          type="checkbox"
-                          checked={config.pages.home.hero_cta_visible}
-                          onChange={(e) =>
-                            updateHome("hero_cta_visible", e.target.checked)
+                    {layoutCardOpen && (
+                      <div className="collapsible-subcard-body">
+                        <button
+                          type="button"
+                          className={`hero-master-toggle ${config.pages.home.hero_visible ? "is-on" : ""}`}
+                          aria-pressed={config.pages.home.hero_visible}
+                          onClick={() =>
+                            toggleHeroVisible(!config.pages.home.hero_visible)
                           }
-                        />
-                        <span>
-                          {isEn ? "Show CTA Button" : "إظهار زر الدعوة للتسوّق"}
-                        </span>
-                      </label>
-                      {config.pages.home.hero_cta_visible && (
-                        <>
-                          <div className="hero-cms-pair">
-                            <label className="hero-cms-field">
-                              <span>
-                                {isEn ? "CTA Button Text (AR)" : "نص الزر (عربي)"}
-                              </span>
-                              <input
-                                type="text"
-                                value={config.pages.home.hero_cta_text_ar}
-                                onChange={(e) =>
-                                  updateHome("hero_cta_text_ar", e.target.value)
-                                }
-                                placeholder={
-                                  isEn ? "Default Arabic CTA" : "تسوّق الآن"
-                                }
-                              />
+                        >
+                          {config.pages.home.hero_visible ? (
+                            <Eye size={14} />
+                          ) : (
+                            <EyeOff size={14} />
+                          )}
+                          <span>
+                            {isEn
+                              ? "Show Hero / Carousel on Storefront"
+                              : "إظهار البانر والكاروسيل في المتجر"}
+                          </span>
+                        </button>
+
+                        <div className="control-field">
+                          <div className="control-label-row">
+                            <label htmlFor="banner-speed">
+                              {isEn
+                                ? "Banner Auto-Play Speed"
+                                : "سرعة التبديل التلقائي للبانر"}
                             </label>
-                            <label className="hero-cms-field">
-                              <span>
-                                {isEn ? "CTA Button Text (EN)" : "نص الزر (إنجليزي)"}
-                              </span>
-                              <input
-                                type="text"
-                                dir="ltr"
-                                value={config.pages.home.hero_cta_text_en}
-                                onChange={(e) =>
-                                  updateHome("hero_cta_text_en", e.target.value)
-                                }
-                                placeholder={isEn ? "Shop Now" : "نص الزر بالإنجليزية"}
-                              />
-                            </label>
+                            <output htmlFor="banner-speed">
+                              {config.pages.home.bannerSpeedMs === 0
+                                ? isEn
+                                  ? "Off"
+                                  : "متوقف"
+                                : `${(config.pages.home.bannerSpeedMs / 1000).toFixed(1)} ${isEn ? "s" : "ث"}`}
+                            </output>
                           </div>
-                          <label className="hero-cms-field">
+                          <input
+                            id="banner-speed"
+                            type="range"
+                            className="range-input"
+                            min={0}
+                            max={10000}
+                            step={500}
+                            value={config.pages.home.bannerSpeedMs}
+                            onChange={(e) =>
+                              updateHome("bannerSpeedMs", Number(e.target.value))
+                            }
+                          />
+                        </div>
+
+                        <div className="control-field">
+                          <div className="control-label-row">
+                            <label htmlFor="hero-overlay-opacity">
+                              {isEn
+                                ? "Image Scrim Darkness"
+                                : "درجة تعتيم خلفية الصور"}
+                            </label>
+                            <output htmlFor="hero-overlay-opacity">
+                              {config.pages.home.hero_overlay_opacity}%
+                            </output>
+                          </div>
+                          <input
+                            id="hero-overlay-opacity"
+                            type="range"
+                            className="range-input"
+                            min={0}
+                            max={80}
+                            step={5}
+                            value={config.pages.home.hero_overlay_opacity}
+                            onChange={(e) =>
+                              updateHome(
+                                "hero_overlay_opacity",
+                                Number(e.target.value),
+                              )
+                            }
+                          />
+                        </div>
+
+                        <div className="control-field">
+                          <div className="control-label-row">
                             <span>
-                              {isEn ? "CTA Destination Link" : "رابط زر البانر"}
+                              {isEn ? "Hero Banner Layout" : "تخطيط البانر الرئيسي"}
                             </span>
-                            <input
-                              type="text"
-                              dir="ltr"
-                              value={config.pages.home.hero_cta_link}
-                              onChange={(e) =>
-                                updateHome("hero_cta_link", e.target.value)
-                              }
-                              placeholder="/products"
-                            />
-                          </label>
+                          </div>
                           <div className="choice-row">
                             {(
                               [
-                                ["/products", isEn ? "All Products" : "كل المنتجات"],
-                                ["/#latest", isEn ? "Latest" : "وصل حديثاً"],
-                                ["/orders", isEn ? "Track Orders" : "تتبع الطلبات"],
-                                ["/contact", isEn ? "Contact" : "تواصل معنا"],
-                              ] as [string, string][]
-                            ).map(([href, lbl]) => (
+                                ["split", isEn ? "Split" : "مقسّم"],
+                                ["full-bleed", isEn ? "Full Bleed" : "عرض كامل"],
+                                ["bento", isEn ? "Bento Grid" : "شبكة متعددة"],
+                              ] as [HeroLayout, string][]
+                            ).map(([val, lbl]) => (
                               <button
-                                key={href}
+                                key={val}
                                 type="button"
                                 className="choice-pill"
-                                aria-pressed={
-                                  config.pages.home.hero_cta_link === href
-                                }
-                                onClick={() => updateHome("hero_cta_link", href)}
+                                aria-pressed={config.pages.home.heroLayout === val}
+                                onClick={() => updateHome("heroLayout", val)}
                               >
                                 {lbl}
                               </button>
                             ))}
                           </div>
-                        </>
-                      )}
-                    </div>
-
-                    {/* Background Image & Overlay Darkness */}
-                    <div className="hero-cms-group">
-                      <span className="hero-cms-subhead">
-                        <ImageIcon size={14} />
-                        {isEn
-                          ? "Banner Background Image"
-                          : "صورة خلفية البانر الرئيسي"}
-                      </span>
-                      <div className="hero-img-actions">
-                        <label className="hero-upload-btn">
-                          <Upload size={14} />
-                          <span>
-                            {uploadingHeroImg
-                              ? isEn
-                                ? "Uploading…"
-                                : "جارٍ الرفع…"
-                              : isEn
-                                ? "Upload Image"
-                                : "رفع صورة"}
-                          </span>
-                          <input
-                            type="file"
-                            accept="image/png,image/jpeg,image/webp"
-                            disabled={uploadingHeroImg}
-                            onChange={handleHeroImageUpload}
-                            hidden
-                          />
-                        </label>
-                        {config.pages.home.hero_image_url && (
-                          <button
-                            type="button"
-                            className="hero-remove-btn"
-                            onClick={() => updateHome("hero_image_url", null)}
-                          >
-                            <Trash2 size={14} />
-                            <span>{isEn ? "Remove Image" : "حذف الصورة"}</span>
-                          </button>
-                        )}
-                      </div>
-                      <label className="hero-cms-field">
-                        <span>
-                          {isEn
-                            ? "Or Paste HTTPS Image URL"
-                            : "أو الصق رابط صورة مباشر"}
-                        </span>
-                        <input
-                          type="url"
-                          dir="ltr"
-                          value={config.pages.home.hero_image_url ?? ""}
-                          onChange={(e) =>
-                            updateHome(
-                              "hero_image_url",
-                              e.target.value.trim() || null,
-                            )
-                          }
-                          placeholder="https://..."
-                        />
-                      </label>
-                      <div className="control-field">
-                        <div className="control-label-row">
-                          <label htmlFor="hero-overlay-opacity">
-                            {isEn
-                              ? "Overlay Darkness"
-                              : "درجة تعتيم طبقة الخلفية"}
-                          </label>
-                          <output htmlFor="hero-overlay-opacity">
-                            {config.pages.home.hero_overlay_opacity}%
-                          </output>
                         </div>
-                        <input
-                          id="hero-overlay-opacity"
-                          type="range"
-                          className="range-input"
-                          min={0}
-                          max={80}
-                          step={5}
-                          value={config.pages.home.hero_overlay_opacity}
-                          onChange={(e) =>
-                            updateHome(
-                              "hero_overlay_opacity",
-                              Number(e.target.value),
-                            )
-                          }
-                        />
+
+                        <div className="color-grid">
+                          <ColorControl
+                            label={
+                              isEn ? "Hero Background" : "لون خلفية البانر"
+                            }
+                            value={config.pages.home.heroBg}
+                            onChange={(v) => updateHome("heroBg", v)}
+                          />
+                          <ColorControl
+                            label={isEn ? "Hero Text Color" : "لون نص البانر"}
+                            value={config.pages.home.heroText}
+                            onChange={(v) => updateHome("heroText", v)}
+                          />
+                        </div>
                       </div>
+                    )}
+                  </div>
+
+                  {/* Collapsible Sub-Card: Fallback Single Hero Banner Content (100% backward compatible) */}
+                  <div className="collapsible-subcard">
+                    <button
+                      type="button"
+                      className="collapsible-subcard-trigger"
+                      aria-expanded={fallbackHeroOpen}
+                      onClick={() => setFallbackHeroOpen((o) => !o)}
+                    >
+                      <span>
+                        <strong>
+                          {isEn
+                            ? "Fallback Single Hero Banner"
+                            : "محتوى البانر المفرد الاحتياطي"}
+                        </strong>
+                        <small>
+                          {isEn
+                            ? "Used automatically if all carousel slides are hidden or deleted"
+                            : "يُعرض تلقائياً عند إخفاء أو حذف جميع شرائح الكاروسيل"}
+                        </small>
+                      </span>
+                      {fallbackHeroOpen ? (
+                        <ChevronUp size={16} />
+                      ) : (
+                        <ChevronDown size={16} />
+                      )}
+                    </button>
+
+                    {fallbackHeroOpen && (
+                      <div className="collapsible-subcard-body">
+                        <div className="hero-cms-group" style={{ borderTop: 0, paddingTop: 0 }}>
+                          <label className="hero-cms-check">
+                            <input
+                              type="checkbox"
+                              checked={config.pages.home.hero_badge_visible}
+                              onChange={(e) =>
+                                updateHome("hero_badge_visible", e.target.checked)
+                              }
+                            />
+                            <span>
+                              {isEn ? "Show Promo Badge" : "إظهار شارة العرض"}
+                            </span>
+                          </label>
+                          {config.pages.home.hero_badge_visible && (
+                            <div className="hero-cms-pair promo-pair-cols">
+                              <label className="hero-cms-field">
+                                <span>
+                                  {isEn ? "Promo Badge (AR)" : "شارة العرض (عربي)"}
+                                </span>
+                                <input
+                                  type="text"
+                                  value={config.pages.home.hero_badge_ar}
+                                  onChange={(e) =>
+                                    updateHome("hero_badge_ar", e.target.value)
+                                  }
+                                  placeholder={
+                                    isEn
+                                      ? "Default seasonal badge"
+                                      : "الشارة الموسمية الافتراضية"
+                                  }
+                                />
+                              </label>
+                              <label className="hero-cms-field">
+                                <span>
+                                  {isEn
+                                    ? "Promo Badge (EN)"
+                                    : "شارة العرض (إنجليزي)"}
+                                </span>
+                                <input
+                                  type="text"
+                                  dir="ltr"
+                                  value={config.pages.home.hero_badge_en}
+                                  onChange={(e) =>
+                                    updateHome("hero_badge_en", e.target.value)
+                                  }
+                                  placeholder={
+                                    isEn ? "Season Collection" : "مثال: تشكيلة الموسم"
+                                  }
+                                />
+                              </label>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="hero-cms-group">
+                          <div className="hero-cms-pair promo-pair-cols">
+                            <label className="hero-cms-field">
+                              <span>
+                                {isEn
+                                  ? "Main Headline (AR)"
+                                  : "العنوان الرئيسي (عربي)"}
+                              </span>
+                              <input
+                                type="text"
+                                value={config.pages.home.hero_title_ar}
+                                onChange={(e) =>
+                                  updateHome("hero_title_ar", e.target.value)
+                                }
+                                placeholder={
+                                  isEn
+                                    ? "Default Arabic headline"
+                                    : "اكتشف مجموعة المتجر"
+                                }
+                              />
+                            </label>
+                            <label className="hero-cms-field">
+                              <span>
+                                {isEn
+                                  ? "Main Headline (EN)"
+                                  : "العنوان الرئيسي (إنجليزي)"}
+                              </span>
+                              <input
+                                type="text"
+                                dir="ltr"
+                                value={config.pages.home.hero_title_en}
+                                onChange={(e) =>
+                                  updateHome("hero_title_en", e.target.value)
+                                }
+                                placeholder={
+                                  isEn
+                                    ? "Discover our collection"
+                                    : "عنوان البانر بالإنجليزية"
+                                }
+                              />
+                            </label>
+                          </div>
+                        </div>
+
+                        <div className="hero-cms-group">
+                          <div className="hero-cms-pair">
+                            <label className="hero-cms-field">
+                              <span>
+                                {isEn
+                                  ? "Subtitle (AR · leave empty to hide)"
+                                  : "الوصف الفرعي (عربي · اتركه فارغاً للإخفاء)"}
+                              </span>
+                              <textarea
+                                rows={2}
+                                value={config.pages.home.hero_subtitle_ar}
+                                onChange={(e) =>
+                                  updateHome("hero_subtitle_ar", e.target.value)
+                                }
+                              />
+                            </label>
+                            <label className="hero-cms-field">
+                              <span>
+                                {isEn
+                                  ? "Subtitle (EN · leave empty to hide)"
+                                  : "الوصف الفرعي (إنجليزي · اتركه فارغاً للإخفاء)"}
+                              </span>
+                              <textarea
+                                rows={2}
+                                dir="ltr"
+                                value={config.pages.home.hero_subtitle_en}
+                                onChange={(e) =>
+                                  updateHome("hero_subtitle_en", e.target.value)
+                                }
+                              />
+                            </label>
+                          </div>
+                        </div>
+
+                        <div className="hero-cms-group">
+                          <label className="hero-cms-check">
+                            <input
+                              type="checkbox"
+                              checked={config.pages.home.hero_cta_visible}
+                              onChange={(e) =>
+                                updateHome("hero_cta_visible", e.target.checked)
+                              }
+                            />
+                            <span>
+                              {isEn
+                                ? "Show CTA Button"
+                                : "إظهار زر الدعوة للتسوّق"}
+                            </span>
+                          </label>
+                          {config.pages.home.hero_cta_visible && (
+                            <>
+                              <div className="hero-cms-pair promo-pair-cols">
+                                <label className="hero-cms-field">
+                                  <span>
+                                    {isEn
+                                      ? "CTA Button Text (AR)"
+                                      : "نص الزر (عربي)"}
+                                  </span>
+                                  <input
+                                    type="text"
+                                    value={config.pages.home.hero_cta_text_ar}
+                                    onChange={(e) =>
+                                      updateHome(
+                                        "hero_cta_text_ar",
+                                        e.target.value,
+                                      )
+                                    }
+                                    placeholder={
+                                      isEn ? "Default Arabic CTA" : "تسوّق الآن"
+                                    }
+                                  />
+                                </label>
+                                <label className="hero-cms-field">
+                                  <span>
+                                    {isEn
+                                      ? "CTA Button Text (EN)"
+                                      : "نص الزر (إنجليزي)"}
+                                  </span>
+                                  <input
+                                    type="text"
+                                    dir="ltr"
+                                    value={config.pages.home.hero_cta_text_en}
+                                    onChange={(e) =>
+                                      updateHome(
+                                        "hero_cta_text_en",
+                                        e.target.value,
+                                      )
+                                    }
+                                    placeholder={
+                                      isEn ? "Shop Now" : "نص الزر بالإنجليزية"
+                                    }
+                                  />
+                                </label>
+                              </div>
+                              <label className="hero-cms-field">
+                                <span>
+                                  {isEn ? "CTA Destination Link" : "رابط زر البانر"}
+                                </span>
+                                <input
+                                  type="text"
+                                  dir="ltr"
+                                  value={config.pages.home.hero_cta_link}
+                                  onChange={(e) =>
+                                    updateHome("hero_cta_link", e.target.value)
+                                  }
+                                  placeholder="/products"
+                                />
+                              </label>
+                              <div className="choice-row">
+                                {(
+                                  [
+                                    ["/products", isEn ? "All Products" : "كل المنتجات"],
+                                    ["/#latest", isEn ? "Latest" : "وصل حديثاً"],
+                                    ["/orders", isEn ? "Track Orders" : "تتبع الطلبات"],
+                                    ["/contact", isEn ? "Contact" : "تواصل معنا"],
+                                  ] as [string, string][]
+                                ).map(([href, lbl]) => (
+                                  <button
+                                    key={href}
+                                    type="button"
+                                    className="choice-pill"
+                                    aria-pressed={
+                                      config.pages.home.hero_cta_link === href
+                                    }
+                                    onClick={() => updateHome("hero_cta_link", href)}
+                                  >
+                                    {lbl}
+                                  </button>
+                                ))}
+                              </div>
+                            </>
+                          )}
+                        </div>
+
+                        <div className="hero-cms-group">
+                          <span className="hero-cms-subhead">
+                            <ImageIcon size={14} />
+                            {isEn
+                              ? "Fallback Banner Background Image"
+                              : "صورة خلفية البانر الاحتياطي"}
+                          </span>
+                          <div className="hero-img-actions">
+                            <label className="hero-upload-btn">
+                              <Upload size={14} />
+                              <span>
+                                {uploadingHeroImg
+                                  ? isEn
+                                    ? "Uploading…"
+                                    : "جارٍ الرفع…"
+                                  : isEn
+                                    ? "Upload Image"
+                                    : "رفع صورة"}
+                              </span>
+                              <input
+                                type="file"
+                                accept="image/png,image/jpeg,image/webp"
+                                disabled={uploadingHeroImg}
+                                onChange={handleHeroImageUpload}
+                                hidden
+                              />
+                            </label>
+                            {config.pages.home.hero_image_url && (
+                              <button
+                                type="button"
+                                className="hero-remove-btn"
+                                onClick={() => updateHome("hero_image_url", null)}
+                              >
+                                <Trash2 size={14} />
+                                <span>{isEn ? "Remove" : "حذف الصورة"}</span>
+                              </button>
+                            )}
+                          </div>
+                          <label className="hero-cms-field">
+                            <span>
+                              {isEn
+                                ? "Or Paste HTTPS Image URL"
+                                : "أو الصق رابط صورة مباشر"}
+                            </span>
+                            <input
+                              type="url"
+                              dir="ltr"
+                              value={config.pages.home.hero_image_url ?? ""}
+                              onChange={(e) =>
+                                updateHome(
+                                  "hero_image_url",
+                                  e.target.value.trim() || null,
+                                )
+                              }
+                              placeholder="https://..."
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 3: PAGE SETTINGS (SYNCED WITH SINGLE PREVIEW PAGE SWITCHER) */}
+              {studioTab === "page" && (
+                <div className="control-stack">
+                  <div className="active-page-sync-badge">
+                    <span className="active-page-sync-icon">
+                      <ActivePageIcon size={15} />
+                    </span>
+                    <div>
+                      <strong>
+                        {isEn
+                          ? `Editing: ${activePageMeta.badge_en}`
+                          : `تخصيص: ${activePageMeta.badge_ar}`}
+                      </strong>
+                      <small>
+                        {isEn
+                          ? "Switch pages in the preview toolbar to edit another page."
+                          : "اختر أي صفحة من شريط المعاينة للتبديل التلقائي لإعداداتها."}
+                      </small>
                     </div>
                   </div>
-                )}
-              </div>
 
-              <PromoBannersEditor
-                banners={config.pages.home.promo_banners}
-                categories={categories}
-                isEn={isEn}
-                onChange={(nextBanners) => updateHome("promo_banners", nextBanners)}
-              />
+                  {activePage === "home" && (
+                    <>
+                      <div className="control-field">
+                        <div className="control-label-row">
+                          <span>
+                            {isEn ? "Category Card Style" : "نمط بطاقات الأقسام"}
+                          </span>
+                        </div>
+                        <div className="choice-row">
+                          {(
+                            [
+                              ["pills", isEn ? "Pills" : "أقراص"],
+                              ["rounded-cards", isEn ? "Cards" : "بطاقات"],
+                              ["minimal", isEn ? "Minimal" : "بسيط"],
+                            ] as [CategoryCardStyle, string][]
+                          ).map(([val, lbl]) => (
+                            <button
+                              key={val}
+                              type="button"
+                              className="choice-pill"
+                              aria-pressed={
+                                config.pages.home.categoryCardStyle === val
+                              }
+                              onClick={() => updateHome("categoryCardStyle", val)}
+                            >
+                              {lbl}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
 
-              <div className="control-field">
-                <div className="control-label-row">
-                  <span>{isEn ? "Hero Banner Layout" : "تخطيط البانر الرئيسي"}</span>
-                </div>
-                <div className="choice-row">
-                  {(
-                    [
-                      ["split", isEn ? "Split" : "مقسّم"],
-                      ["full-bleed", isEn ? "Full Bleed" : "عرض كامل"],
-                      ["bento", isEn ? "Bento Grid" : "شبكة متعددة"],
-                    ] as [HeroLayout, string][]
-                  ).map(([val, lbl]) => (
-                    <button
-                      key={val}
-                      type="button"
-                      className="choice-pill"
-                      aria-pressed={config.pages.home.heroLayout === val}
-                      onClick={() => updateHome("heroLayout", val)}
-                    >
-                      {lbl}
-                    </button>
-                  ))}
-                </div>
-              </div>
+                      <div className="control-field">
+                        <div className="control-label-row">
+                          <span>
+                            {isEn ? "Entrance Animation" : "حركة دخول العناصر"}
+                          </span>
+                          <button
+                            type="button"
+                            className="preview-toggle"
+                            onClick={() => setAnimSeed((s) => s + 1)}
+                          >
+                            <Play size={12} /> {isEn ? "Replay" : "تشغيل"}
+                          </button>
+                        </div>
+                        <div className="choice-row">
+                          {(
+                            [
+                              ["fade-up", isEn ? "Fade Up" : "ظهور للأعلى"],
+                              ["zoom-in", isEn ? "Zoom In" : "تكبير ناعم"],
+                              ["slide-rtl", isEn ? "Slide In" : "انزلاق جانبي"],
+                              ["none", isEn ? "None" : "بدون"],
+                            ] as [EntranceAnimation, string][]
+                          ).map(([val, lbl]) => (
+                            <button
+                              key={val}
+                              type="button"
+                              className="choice-pill"
+                              aria-pressed={
+                                config.pages.home.entranceAnimation === val
+                              }
+                              onClick={() => {
+                                updateHome("entranceAnimation", val);
+                                setAnimSeed((s) => s + 1);
+                              }}
+                            >
+                              {lbl}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
 
-              <div className="color-grid">
-                <ColorControl
-                  label={isEn ? "Hero Background / Overlay" : "خلفية / طبقة البانر"}
-                  value={config.pages.home.heroBg}
-                  onChange={(v) => updateHome("heroBg", v)}
-                />
-                <ColorControl
-                  label={isEn ? "Hero Text Color" : "لون نص البانر"}
-                  value={config.pages.home.heroText}
-                  onChange={(v) => updateHome("heroText", v)}
-                />
-              </div>
+                      <div className="page-quick-links">
+                        <button
+                          type="button"
+                          className="customizer-btn-secondary"
+                          onClick={() => handleSelectStudioTab("banners")}
+                        >
+                          <Images size={14} />
+                          <span>
+                            {isEn
+                              ? "Manage Hero Carousel Slides"
+                              : "إدارة شرائح الكاروسيل والبانر"}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          className="customizer-btn-secondary"
+                          onClick={() => handleSelectPreviewPage("sections")}
+                        >
+                          <ListOrdered size={14} />
+                          <span>
+                            {isEn
+                              ? "Reorder Home Sections"
+                              : "ترتيب أقسام الرئيسية"}
+                          </span>
+                        </button>
+                      </div>
+                    </>
+                  )}
 
-              <div className="control-field">
-                <div className="control-label-row">
-                  <label htmlFor="banner-speed">
-                    {isEn ? "Banner Auto-Slide Speed" : "سرعة التبديل التلقائي للبانر"}
-                  </label>
-                  <output htmlFor="banner-speed">
-                    {config.pages.home.bannerSpeedMs === 0
-                      ? isEn
-                        ? "Off"
-                        : "متوقف"
-                      : `${(config.pages.home.bannerSpeedMs / 1000).toFixed(1)} ${isEn ? "s" : "ث"}`}
-                  </output>
-                </div>
-                <input
-                  id="banner-speed"
-                  type="range"
-                  className="range-input"
-                  min={0}
-                  max={10000}
-                  step={500}
-                  value={config.pages.home.bannerSpeedMs}
-                  onChange={(e) =>
-                    updateHome("bannerSpeedMs", Number(e.target.value))
-                  }
-                />
-              </div>
+                  {activePage === "sections" && (
+                    <SectionsBuilder
+                      sections={config.homeSections}
+                      categories={categories}
+                      defaultAccent={config.global.primaryButtonBg}
+                      onChange={updateHomeSections}
+                    />
+                  )}
 
-              <div className="control-field">
-                <div className="control-label-row">
-                  <span>{isEn ? "Category Card Style" : "نمط بطاقات الأقسام"}</span>
-                </div>
-                <div className="choice-row">
-                  {(
-                    [
-                      ["pills", isEn ? "Pills" : "أقراص"],
-                      ["rounded-cards", isEn ? "Cards" : "بطاقات"],
-                      ["minimal", isEn ? "Minimal" : "بسيط"],
-                    ] as [CategoryCardStyle, string][]
-                  ).map(([val, lbl]) => (
-                    <button
-                      key={val}
-                      type="button"
-                      className="choice-pill"
-                      aria-pressed={config.pages.home.categoryCardStyle === val}
-                      onClick={() => updateHome("categoryCardStyle", val)}
-                    >
-                      {lbl}
-                    </button>
-                  ))}
-                </div>
-              </div>
+                  {activePage === "products" && (
+                    <>
+                      <div className="control-field">
+                        <div className="control-label-row">
+                          <span>
+                            {isEn
+                              ? "Product Grid Columns"
+                              : "عدد أعمدة شبكة المنتجات"}
+                          </span>
+                        </div>
+                        <div className="choice-row">
+                          {([2, 3, 4] as GridColumns[]).map((cols) => (
+                            <button
+                              key={cols}
+                              type="button"
+                              className="choice-pill"
+                              aria-pressed={
+                                config.pages.products.gridColumns === cols
+                              }
+                              onClick={() => updateProducts("gridColumns", cols)}
+                            >
+                              {isEn ? `${cols} columns` : `${cols} أعمدة`}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
 
-              <div className="control-field">
-                <div className="control-label-row">
-                  <span>{isEn ? "Entrance Animation" : "حركة دخول العناصر"}</span>
-                  <button
-                    type="button"
-                    className="preview-toggle"
-                    onClick={() => setAnimSeed((s) => s + 1)}
-                  >
-                    <Play size={12} /> {isEn ? "Replay" : "تشغيل"}
-                  </button>
+                      <div className="control-field">
+                        <div className="control-label-row">
+                          <span>
+                            {isEn ? "Card Hover Effect" : "تأثير تمرير البطاقة"}
+                          </span>
+                        </div>
+                        <div className="choice-row">
+                          {(
+                            [
+                              ["zoom", isEn ? "Image Zoom" : "تكبير الصورة"],
+                              ["lift", isEn ? "Card Lift" : "رفع البطاقة"],
+                              ["glow", isEn ? "Border Glow" : "توهّج الإطار"],
+                              ["none", isEn ? "None" : "بدون"],
+                            ] as [CardHoverEffect, string][]
+                          ).map(([val, lbl]) => (
+                            <button
+                              key={val}
+                              type="button"
+                              className="choice-pill"
+                              aria-pressed={
+                                config.pages.products.cardHoverEffect === val
+                              }
+                              onClick={() =>
+                                updateProducts("cardHoverEffect", val)
+                              }
+                            >
+                              {lbl}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="color-grid">
+                        <ColorControl
+                          label={isEn ? "Price Badge Color" : "لون شارة السعر"}
+                          value={config.pages.products.priceBadgeColor}
+                          onChange={(v) => updateProducts("priceBadgeColor", v)}
+                        />
+                      </div>
+
+                      <div className="control-field">
+                        <div className="control-label-row">
+                          <span>
+                            {isEn
+                              ? "Add-to-Bag Button Style"
+                              : "نمط زر الإضافة للسلة"}
+                          </span>
+                        </div>
+                        <div className="choice-row">
+                          {(
+                            [
+                              ["solid", isEn ? "Solid" : "ممتلئ"],
+                              ["outline", isEn ? "Outline" : "محدد بإطار"],
+                              ["pill", isEn ? "Rounded Pill" : "دائري ناعم"],
+                              ["soft", isEn ? "Soft Fill" : "ناعم"],
+                            ] as [AddToCartStyle, string][]
+                          ).map(([val, lbl]) => (
+                            <button
+                              key={val}
+                              type="button"
+                              className="choice-pill"
+                              aria-pressed={
+                                config.pages.products.addToCartStyle === val
+                              }
+                              onClick={() =>
+                                updateProducts("addToCartStyle", val)
+                              }
+                            >
+                              {lbl}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {activePage === "product_details" && (
+                    <>
+                      <div className="control-field">
+                        <div className="control-label-row">
+                          <span>
+                            {isEn ? "Image Gallery Layout" : "نمط معرض الصور"}
+                          </span>
+                        </div>
+                        <div className="choice-row">
+                          {(
+                            [
+                              [
+                                "thumbnails-bottom",
+                                isEn ? "Bottom Thumbnails" : "مصغرات بالأسفل",
+                              ],
+                              [
+                                "side-stack",
+                                isEn ? "Side Stack" : "عمود جانبي",
+                              ],
+                            ] as [GalleryStyle, string][]
+                          ).map(([val, lbl]) => (
+                            <button
+                              key={val}
+                              type="button"
+                              className="choice-pill"
+                              aria-pressed={
+                                config.pages.product_details.galleryStyle ===
+                                val
+                              }
+                              onClick={() => updateDetails("galleryStyle", val)}
+                            >
+                              {lbl}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="color-grid">
+                        <ColorControl
+                          label={
+                            isEn
+                              ? "Primary CTA Button Color"
+                              : "لون زر الشراء الرئيسي"
+                          }
+                          value={config.pages.product_details.ctaButtonColor}
+                          onChange={(v) => updateDetails("ctaButtonColor", v)}
+                        />
+                      </div>
+
+                      <div className="control-field">
+                        <div className="control-label-row">
+                          <span>
+                            {isEn
+                              ? "Variant Selector Style"
+                              : "نمط اختيار المقاسات والألوان"}
+                          </span>
+                        </div>
+                        <div className="choice-row">
+                          {(
+                            [
+                              ["pills", isEn ? "Rounded Pills" : "أقراص دائرية"],
+                              ["boxed", isEn ? "Crisp Boxes" : "مربعات واضحة"],
+                            ] as [VariantSelectorStyle, string][]
+                          ).map(([val, lbl]) => (
+                            <button
+                              key={val}
+                              type="button"
+                              className="choice-pill"
+                              aria-pressed={
+                                config.pages.product_details
+                                  .variantSelectorStyle === val
+                              }
+                              onClick={() =>
+                                updateDetails("variantSelectorStyle", val)
+                              }
+                            >
+                              {lbl}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {activePage === "cart_checkout" && (
+                    <div className="color-grid">
+                      <ColorControl
+                        label={
+                          isEn ? "Summary Card Background" : "خلفية بطاقة الملخص"
+                        }
+                        value={config.pages.cart_checkout.summaryCardBg}
+                        onChange={(v) => updateCart("summaryCardBg", v)}
+                      />
+                      <ColorControl
+                        label={
+                          isEn ? "Progress Bar Accent" : "لون شريط التقدم"
+                        }
+                        value={config.pages.cart_checkout.progressBarAccent}
+                        onChange={(v) => updateCart("progressBarAccent", v)}
+                      />
+                      <ColorControl
+                        label={
+                          isEn ? "Checkout Button Color" : "لون زر إتمام الطلب"
+                        }
+                        value={config.pages.cart_checkout.checkoutButtonColor}
+                        onChange={(v) => updateCart("checkoutButtonColor", v)}
+                      />
+                    </div>
+                  )}
+
+                  {activePage === "orders" && (
+                    <>
+                      <div className="color-grid">
+                        <ColorControl
+                          label={
+                            isEn
+                              ? "Active Timeline Step Color"
+                              : "لون الخطوة النشطة بالتتبع"
+                          }
+                          value={config.pages.orders.timelineActiveColor}
+                          onChange={(v) =>
+                            updateOrders("timelineActiveColor", v)
+                          }
+                        />
+                      </div>
+
+                      <div className="control-field">
+                        <div className="control-label-row">
+                          <span>
+                            {isEn
+                              ? "Status Badge Style"
+                              : "نمط شارة حالة الطلب"}
+                          </span>
+                        </div>
+                        <div className="choice-row">
+                          {(
+                            [
+                              ["pill", isEn ? "Soft Pill" : "قرص ناعم"],
+                              ["rounded", isEn ? "Filled Rounded" : "ممتلئ"],
+                              ["outline", isEn ? "Outlined" : "محدد بإطار"],
+                            ] as [StatusBadgeStyle, string][]
+                          ).map(([val, lbl]) => (
+                            <button
+                              key={val}
+                              type="button"
+                              className="choice-pill"
+                              aria-pressed={
+                                config.pages.orders.statusBadgeStyle === val
+                              }
+                              onClick={() =>
+                                updateOrders("statusBadgeStyle", val)
+                              }
+                            >
+                              {lbl}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="control-field">
+                        <div className="control-label-row">
+                          <span>
+                            {isEn ? "Card Elevation" : "ارتفاع وظل البطاقات"}
+                          </span>
+                        </div>
+                        <div className="choice-row">
+                          {(
+                            [
+                              ["flat", isEn ? "Flat" : "مسطح"],
+                              ["subtle", isEn ? "Subtle Shadow" : "ظل خفيف"],
+                              ["elevated", isEn ? "Elevated" : "بارز"],
+                            ] as [CardElevation, string][]
+                          ).map(([val, lbl]) => (
+                            <button
+                              key={val}
+                              type="button"
+                              className="choice-pill"
+                              aria-pressed={
+                                config.pages.orders.cardElevation === val
+                              }
+                              onClick={() => updateOrders("cardElevation", val)}
+                            >
+                              {lbl}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
-                <div className="choice-row">
-                  {(
-                    [
-                      ["fade-up", isEn ? "Fade Up" : "ظهور للأعلى"],
-                      ["zoom-in", isEn ? "Zoom In" : "تكبير ناعم"],
-                      ["slide-rtl", isEn ? "Slide In" : "انزلاق جانبي"],
-                      ["none", isEn ? "None" : "بدون"],
-                    ] as [EntranceAnimation, string][]
-                  ).map(([val, lbl]) => (
-                    <button
-                      key={val}
-                      type="button"
-                      className="choice-pill"
-                      aria-pressed={config.pages.home.entranceAnimation === val}
-                      onClick={() => {
-                        updateHome("entranceAnimation", val);
-                        setAnimSeed((s) => s + 1);
-                      }}
-                    >
-                      {lbl}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              )}
             </div>
-          )}
+          </section>
+        )}
 
-          {activeTab === "products" && (
-            <div className="control-stack">
-              <div className="control-field">
-                <div className="control-label-row">
-                  <span>{isEn ? "Product Grid Columns" : "عدد أعمدة شبكة المنتجات"}</span>
-                </div>
-                <div className="choice-row">
-                  {([2, 3, 4] as GridColumns[]).map((cols) => (
-                    <button
-                      key={cols}
-                      type="button"
-                      className="choice-pill"
-                      aria-pressed={config.pages.products.gridColumns === cols}
-                      onClick={() => updateProducts("gridColumns", cols)}
-                    >
-                      {isEn ? `${cols} columns` : `${cols} أعمدة`}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="control-field">
-                <div className="control-label-row">
-                  <span>{isEn ? "Card Hover Effect" : "تأثير تمرير البطاقة"}</span>
-                </div>
-                <div className="choice-row">
-                  {(
-                    [
-                      ["zoom", isEn ? "Image Zoom" : "تكبير الصورة"],
-                      ["lift", isEn ? "Card Lift" : "رفع البطاقة"],
-                      ["glow", isEn ? "Border Glow" : "توهّج الإطار"],
-                      ["none", isEn ? "None" : "بدون"],
-                    ] as [CardHoverEffect, string][]
-                  ).map(([val, lbl]) => (
-                    <button
-                      key={val}
-                      type="button"
-                      className="choice-pill"
-                      aria-pressed={
-                        config.pages.products.cardHoverEffect === val
-                      }
-                      onClick={() => updateProducts("cardHoverEffect", val)}
-                    >
-                      {lbl}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="color-grid">
-                <ColorControl
-                  label={isEn ? "Price Badge Color" : "لون شارة السعر"}
-                  value={config.pages.products.priceBadgeColor}
-                  onChange={(v) => updateProducts("priceBadgeColor", v)}
-                />
-              </div>
-
-              <div className="control-field">
-                <div className="control-label-row">
-                  <span>{isEn ? "Add-to-Bag Button Style" : "نمط زر الإضافة للسلة"}</span>
-                </div>
-                <div className="choice-row">
-                  {(
-                    [
-                      ["solid", isEn ? "Solid" : "ممتلئ"],
-                      ["outline", isEn ? "Outline" : "محدد بإطار"],
-                      ["pill", isEn ? "Rounded Pill" : "دائري ناعم"],
-                      ["soft", isEn ? "Soft Fill" : "ناعم"],
-                    ] as [AddToCartStyle, string][]
-                  ).map(([val, lbl]) => (
-                    <button
-                      key={val}
-                      type="button"
-                      className="choice-pill"
-                      aria-pressed={
-                        config.pages.products.addToCartStyle === val
-                      }
-                      onClick={() => updateProducts("addToCartStyle", val)}
-                    >
-                      {lbl}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === "product_details" && (
-            <div className="control-stack">
-              <div className="control-field">
-                <div className="control-label-row">
-                  <span>{isEn ? "Image Gallery Layout" : "نمط معرض الصور"}</span>
-                </div>
-                <div className="choice-row">
-                  {(
-                    [
-                      ["thumbnails-bottom", isEn ? "Bottom Thumbnails" : "مصغرات بالأسفل"],
-                      ["side-stack", isEn ? "Side Stack" : "عمود جانبي"],
-                    ] as [GalleryStyle, string][]
-                  ).map(([val, lbl]) => (
-                    <button
-                      key={val}
-                      type="button"
-                      className="choice-pill"
-                      aria-pressed={
-                        config.pages.product_details.galleryStyle === val
-                      }
-                      onClick={() => updateDetails("galleryStyle", val)}
-                    >
-                      {lbl}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="color-grid">
-                <ColorControl
-                  label={isEn ? "Primary CTA Button Color" : "لون زر الشراء الرئيسي"}
-                  value={config.pages.product_details.ctaButtonColor}
-                  onChange={(v) => updateDetails("ctaButtonColor", v)}
-                />
-              </div>
-
-              <div className="control-field">
-                <div className="control-label-row">
-                  <span>
-                    {isEn ? "Variant Selector Style" : "نمط اختيار المقاسات والألوان"}
-                  </span>
-                </div>
-                <div className="choice-row">
-                  {(
-                    [
-                      ["pills", isEn ? "Rounded Pills" : "أقراص دائرية"],
-                      ["boxed", isEn ? "Crisp Boxes" : "مربعات واضحة"],
-                    ] as [VariantSelectorStyle, string][]
-                  ).map(([val, lbl]) => (
-                    <button
-                      key={val}
-                      type="button"
-                      className="choice-pill"
-                      aria-pressed={
-                        config.pages.product_details.variantSelectorStyle ===
-                        val
-                      }
-                      onClick={() => updateDetails("variantSelectorStyle", val)}
-                    >
-                      {lbl}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === "cart_checkout" && (
-            <div className="control-stack">
-              <div className="color-grid">
-                <ColorControl
-                  label={isEn ? "Summary Card Background" : "خلفية بطاقة الملخص"}
-                  value={config.pages.cart_checkout.summaryCardBg}
-                  onChange={(v) => updateCart("summaryCardBg", v)}
-                />
-                <ColorControl
-                  label={isEn ? "Progress Bar Accent" : "لون شريط التقدم"}
-                  value={config.pages.cart_checkout.progressBarAccent}
-                  onChange={(v) => updateCart("progressBarAccent", v)}
-                />
-                <ColorControl
-                  label={isEn ? "Checkout Button Color" : "لون زر إتمام الطلب"}
-                  value={config.pages.cart_checkout.checkoutButtonColor}
-                  onChange={(v) => updateCart("checkoutButtonColor", v)}
-                />
-              </div>
-            </div>
-          )}
-
-          {activeTab === "orders" && (
-            <div className="control-stack">
-              <div className="color-grid">
-                <ColorControl
-                  label={isEn ? "Active Timeline Step Color" : "لون الخطوة النشطة بالتتبع"}
-                  value={config.pages.orders.timelineActiveColor}
-                  onChange={(v) => updateOrders("timelineActiveColor", v)}
-                />
-              </div>
-
-              <div className="control-field">
-                <div className="control-label-row">
-                  <span>{isEn ? "Status Badge Style" : "نمط شارة حالة الطلب"}</span>
-                </div>
-                <div className="choice-row">
-                  {(
-                    [
-                      ["pill", isEn ? "Soft Pill" : "قرص ناعم"],
-                      ["rounded", isEn ? "Filled Rounded" : "ممتلئ"],
-                      ["outline", isEn ? "Outlined" : "محدد بإطار"],
-                    ] as [StatusBadgeStyle, string][]
-                  ).map(([val, lbl]) => (
-                    <button
-                      key={val}
-                      type="button"
-                      className="choice-pill"
-                      aria-pressed={
-                        config.pages.orders.statusBadgeStyle === val
-                      }
-                      onClick={() => updateOrders("statusBadgeStyle", val)}
-                    >
-                      {lbl}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="control-field">
-                <div className="control-label-row">
-                  <span>{isEn ? "Card Elevation" : "ارتفاع وظل البطاقات"}</span>
-                </div>
-                <div className="choice-row">
-                  {(
-                    [
-                      ["flat", isEn ? "Flat" : "مسطح"],
-                      ["subtle", isEn ? "Subtle Shadow" : "ظل خفيف"],
-                      ["elevated", isEn ? "Elevated" : "بارز"],
-                    ] as [CardElevation, string][]
-                  ).map(([val, lbl]) => (
-                    <button
-                      key={val}
-                      type="button"
-                      className="choice-pill"
-                      aria-pressed={config.pages.orders.cardElevation === val}
-                      onClick={() => updateOrders("cardElevation", val)}
-                    >
-                      {lbl}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-        </section>
-
-        {/* Live Interactive Preview */}
+        {/* Sticky, Generous Live Interactive Preview */}
         <section
           className="customizer-preview-shell"
           aria-label={isEn ? "Live interactive preview" : "المعاينة التفاعلية المباشرة"}
@@ -1376,35 +1690,26 @@ export function CustomizerStudio({
                 <i />
                 <i />
               </span>
-              <span className="preview-url-bar">
-                {PREVIEW_URLS[previewPage]}
-              </span>
+              <span className="preview-url-bar">{activePageMeta.url}</span>
             </div>
 
-            <div className="preview-toolbar-group">
-              {(
-                [
-                  ["home", isEn ? "Home" : "الرئيسية"],
-                  ["products", isEn ? "Products" : "المنتجات"],
-                  ["product_details", isEn ? "Details" : "التفاصيل"],
-                  ["cart_checkout", isEn ? "Bag" : "السلة"],
-                  ["orders", isEn ? "Orders" : "الطلبات"],
-                ] as [PreviewPageKey, string][]
-              ).map(([pKey, pLabel]) => (
+            {/* Single Unified Synchronized Page Switcher (6 pages) */}
+            <nav
+              className="preview-page-switcher"
+              aria-label={isEn ? "Preview & edit page" : "التبديل بين صفحات المتجر"}
+            >
+              {PAGE_SWITCHER_ITEMS.map(({ key, label_ar, label_en }) => (
                 <button
-                  key={pKey}
+                  key={key}
                   type="button"
                   className="preview-toggle"
-                  aria-pressed={previewPage === pKey}
-                  onClick={() => {
-                    setPreviewPage(pKey);
-                    if (activeTab !== "global") setActiveTab(pKey);
-                  }}
+                  aria-pressed={activePage === key}
+                  onClick={() => handleSelectPreviewPage(key)}
                 >
-                  {pLabel}
+                  {isEn ? label_en : label_ar}
                 </button>
               ))}
-            </div>
+            </nav>
 
             <div
               className="preview-toolbar-group"
@@ -1442,8 +1747,8 @@ export function CustomizerStudio({
               products={products}
               categories={categories}
               onNavigate={(next) => {
-                setPreviewPage(next);
-                if (activeTab !== "global") setActiveTab(next);
+                setActivePage(next);
+                if (studioTab === "page") setStudioTab("page");
               }}
             />
           </div>

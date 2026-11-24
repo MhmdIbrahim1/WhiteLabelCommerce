@@ -80,12 +80,12 @@ val resolvedVersionCode = (project.findProperty("VERSION_CODE") as? String)
     ?.trim()
     ?.toIntOrNull()
     ?.takeIf { it > 0 }
-    ?: 20
+    ?: 21
 
 val resolvedVersionName = (project.findProperty("VERSION_NAME") as? String)
     ?.trim()
     ?.takeIf { it.isNotEmpty() }
-    ?: "1.1.0"
+    ?: "1.1.1"
 
 android {
     namespace = "com.whitelabel.commerce"

@@ -772,7 +772,11 @@ export function resolveUiConfig(
         ),
         heroText: pickHex(rawHome.heroText, base.pages.home.heroText),
         bannerSpeedMs: pickNumber(
-          rawHome.bannerSpeedMs,
+          rawHome.bannerSpeedMs !== undefined
+            ? rawHome.bannerSpeedMs
+            : typeof rawHome.banner_autoplay_seconds === "number"
+              ? Math.round(rawHome.banner_autoplay_seconds * 1000)
+              : undefined,
           0,
           15000,
           base.pages.home.bannerSpeedMs,

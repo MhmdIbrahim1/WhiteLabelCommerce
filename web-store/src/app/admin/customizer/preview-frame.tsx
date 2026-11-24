@@ -24,6 +24,7 @@ import {
 import { money } from "@/lib/brand";
 import { localizedText, orderStatusLabel, translateColor, translateHomeCopy } from "@/lib/i18n";
 import { useLanguage } from "@/components/language-provider";
+import { PromoBannerCarousel } from "@/components/shop/hero";
 import "../../(shop)/shop.css";
 
 export type PreviewPageKey =
@@ -267,6 +268,31 @@ export function PreviewFrame({
       case "hero_banner": {
         const home = config.pages.home;
         if (!home.hero_visible) return null;
+
+        const activePromoBanners = (home.promo_banners ?? []).filter((b) => b.active);
+        if (activePromoBanners.length > 0) {
+          return (
+            <div key={sec.id} data-home-section={sec.type}>
+              <PromoBannerCarousel
+                campaigns={activePromoBanners}
+                autoSlideMs={home.bannerSpeedMs}
+                overlayOpacity={home.hero_overlay_opacity}
+                isEn={isEn}
+                onPreviewNavigate={(href) => {
+                  if (href.startsWith("/cart") || href.startsWith("/checkout")) {
+                    onNavigate("cart_checkout");
+                  } else if (href.startsWith("/orders")) {
+                    onNavigate("orders");
+                  } else if (/^\/products\/[^/?#]+/.test(href)) {
+                    onNavigate("product_details");
+                  } else {
+                    onNavigate("products");
+                  }
+                }}
+              />
+            </div>
+          );
+        }
 
         const customImg = home.hero_image_url?.trim() || null;
         const heroImg = customImg || previewBanners[safeHeroIdx];

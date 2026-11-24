@@ -671,3 +671,23 @@ Stored as `store_settings.ui_config.homeSections` (ordered array, up to 15 items
   - Updated `dispatcher.ts` (`webpush.fcm_options.link`) and `public/firebase-messaging-sw.js` (`notificationclick`) to pass `notif_id=<notification_id>` and call `PATCH /api/notifications/inbox` on click.
   - Polished Arabic notifications in `events.ts` to format `EGP` as `ج.م` and wrap short order codes in Unicode LTR isolates (`\u2066#xxxxxxxx\u2069`) so `#` renders naturally in RTL prose.
 - **Verification:** `npx tsc --noEmit` (0 errors), `npm run lint -- --max-warnings 0` (0 errors, 0 warnings), `npm run build` (21/21 routes); live Chrome verification confirmed broadcast click -> `PATCH /api/notifications/inbox` HTTP 200 (`{"ok":true,"updatedCount":1}`), persisted `read_at` after reload, `?notif_id=` auto-read & URL cleanup, 0 console errors, and QA row cleanup verified (`0` remaining).
+
+
+### Pre-Phase 10: Streamlined `/admin/customizer` Studio UX + Animated Multi-Slide Hero Carousel (Web & Compose Android) + Android `v1.1.1` — 2026-11-25
+
+- **Streamlined `/admin/customizer` Studio UX (`customizer-studio.tsx`, `promo-banners-editor.tsx`, `preview-frame.tsx`, `customizer.css`):**
+  - Replaced the stacked vertical sidebar + 7-tab wall with **3 Clean Top-Level Tabs** pinned at the top of the independently scrollable controls column:
+    1. **المظهر والقوالب / Theme & Presets:** Compact 2×2 Quick-Start Templates (preserving `promo_banners`, `hero_*`, and `homeSections`), Default Storefront Language (`AR`/`EN`), global brand colors, corner border radius, motion intensity, and Reset Defaults.
+    2. **البانرات والعروض / Banners & Carousel:** Elevated **«كاروسيل البانرات الترويجية / Promotional Banner Carousel»** directly to the top with collapsible slide cards (thumbnail preview, Add, Edit, Move Up/Down, Toggle Active, Delete, **Supabase Storage Image Upload** + URL input, bilingual AR/EN badge/title/subtitle/CTA, and deep-link route target + category quick-picks), with Hero Layout/Colors/Auto-Play Speed/Scrim Darkness and Fallback Single Hero Banner CMS cleanly tucked into collapsible sub-cards underneath.
+    3. **تخصيص الصفحة / Page Settings:** Shows ONLY the active preview page's settings with a clear active-page indicator badge (`الرئيسية`, `الأقسام`, `المنتجات`, `التفاصيل`, `السلة`, `الطلبات`).
+  - Removed the duplicate «الصفحة المستهدفة» page selector from the sidebar; kept **ONE synchronized 6-page switcher** in the preview toolbar that updates both the Live Preview and auto-syncs the «تخصيص الصفحة» tab.
+  - Added **«توسيع المعاينة / Expand Preview»** toggle in the compact top action bar, sticky generous Live Preview (now rendering the live animated `PromoBannerCarousel` in real time), and single clean scroll without nested scrollbar traps.
+- **Seeded 3 Rich Bilingual Carousel Slides in Supabase (`store_settings.ui_config.pages.home.promo_banners`):**
+  - Populated Nova Store (`00000000-0000-0000-0000-000000000001`) with 3 bilingual slides (`bannerSpeedMs = 4500`):
+    1. `slide-new-season`: **تشكيلة الموسم الجديدة / New Season Collection** (`/products?category=0af2454c-8e56-49d6-ba06-c624b758887c`)
+    2. `slide-nova10-offer`: **خصم فوري 10% بكود NOVA10 / Instant 10% Off with NOVA10** (`/products`)
+    3. `slide-footwear-essentials`: **أحذية وإكسسوارات يومية / Footwear & Everyday Essentials** (`/products?category=9b6f175f-b22f-4c23-901a-643b1f2b6093`)
+- **Web Storefront Carousel Polish (`hero.tsx`, `globals.css`, `ui-config.ts`):**
+  - Upgraded `PromoBannerCarousel` to layered crossfade/scale transitions without image flicker, hover/touch/focus auto-play pause, pointer & touch swipe support (RTL & LTR), subtle prev/next arrows with non-overlapping horizontal safe padding, expanding pill indicators, crisp dual-layer scrim with guaranteed white contrast, and full route normalization (`/category/...`, `/product/...`, `/cart`, `/offers`).
+  - Preserved 100% backward compatibility with all existing `ui_config` fields (and added fallback support for `banner_autoplay_seconds`).
+- **Verification:** Passed `tsc --noEmit`, `eslint --max-warnings 0`, and `next build` (21/21 routes); live Chrome verification across `http://localhost:3000` and `http://localhost:3000/admin/customizer` in AR (RTL) & EN (LTR) at Desktop (`1440px`) and Mobile (`390px`) confirmed 3-slide carousel rendering, 3-tab studio UX, single synced 6-page switcher, live reorder/toggle preview sync, expand-preview toggle, 0 console errors, 0 HTTP `>= 400` responses, and 0 horizontal overflow.
