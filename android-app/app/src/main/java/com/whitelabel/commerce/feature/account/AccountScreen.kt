@@ -1,7 +1,6 @@
 package com.whitelabel.commerce.feature.account
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,8 +20,6 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.LocationCity
-import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Phone
 import androidx.compose.material.icons.rounded.Refresh
@@ -32,7 +29,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -55,42 +51,13 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.whitelabel.commerce.core.designsystem.LocalBrandColors
+import com.whitelabel.commerce.core.designsystem.components.EgyptCascadingAddressFields
 import com.whitelabel.commerce.core.designsystem.components.OrderStatusBadge
 import com.whitelabel.commerce.core.designsystem.formatPrice
 import com.whitelabel.commerce.core.designsystem.localized
 import com.whitelabel.commerce.core.domain.model.AuthSessionState
 import com.whitelabel.commerce.core.domain.model.Order
 import com.whitelabel.commerce.feature.orders.formatOrderDate
-
-private val POPULAR_GOVERNORATES_AR = listOf(
-    "القاهرة",
-    "الجيزة",
-    "الإسكندرية",
-    "الشرقية",
-    "الدقهلية",
-    "القليوبية",
-    "المنوفية",
-    "الغربية",
-    "السويس",
-    "الإسماعيلية",
-    "بورسعيد",
-    "أسيوط",
-)
-
-private val POPULAR_GOVERNORATES_EN = listOf(
-    "Cairo",
-    "Giza",
-    "Alexandria",
-    "Sharqia",
-    "Dakahlia",
-    "Qalyubia",
-    "Monufia",
-    "Gharbia",
-    "Suez",
-    "Ismailia",
-    "Port Said",
-    "Assiut",
-)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -146,7 +113,6 @@ fun AccountScreen(
 
         is AuthSessionState.SignedIn -> {
             val profileForm = state.profileForm
-            val governorateChips = if (state.storeSettings.isRtl) POPULAR_GOVERNORATES_AR else POPULAR_GOVERNORATES_EN
 
             Scaffold(
                 modifier = modifier.fillMaxSize(),
@@ -349,59 +315,13 @@ fun AccountScreen(
                                 modifier = Modifier.fillMaxWidth(),
                             )
 
-                            OutlinedTextField(
-                                value = profileForm.governorate,
-                                onValueChange = viewModel::onProfileGovernorateChange,
-                                label = { Text(localized("المحافظة", "Governorate")) },
-                                placeholder = { Text(localized("مثال: القاهرة / الجيزة", "e.g. Cairo / Giza")) },
-                                leadingIcon = { Icon(Icons.Rounded.Map, contentDescription = null) },
-                                singleLine = true,
-                                shape = MaterialTheme.shapes.small,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            ) {
-                                governorateChips.forEach { gov ->
-                                    FilterChip(
-                                        selected = profileForm.governorate.equals(gov, ignoreCase = true),
-                                        onClick = { viewModel.onProfileGovernorateChange(gov) },
-                                        label = { Text(gov, style = MaterialTheme.typography.labelSmall) },
-                                    )
-                                }
-                            }
-
-                            OutlinedTextField(
-                                value = profileForm.city,
-                                onValueChange = viewModel::onProfileCityChange,
-                                label = { Text(localized("المدينة / المنطقة", "City / Area")) },
-                                placeholder = { Text(localized("مثال: مدينة نصر / المعادي", "e.g. Nasr City / Maadi")) },
-                                leadingIcon = { Icon(Icons.Rounded.LocationCity, contentDescription = null) },
-                                singleLine = true,
-                                shape = MaterialTheme.shapes.small,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-
-                            OutlinedTextField(
-                                value = profileForm.address,
-                                onValueChange = viewModel::onProfileAddressChange,
-                                label = { Text(localized("عنوان الشارع بالتفصيل", "Street Address")) },
-                                placeholder = {
-                                    Text(
-                                        localized(
-                                            "اسم الشارع، رقم العمارة، الدور، الشقة",
-                                            "Street name, building, floor, apartment",
-                                        ),
-                                    )
-                                },
-                                minLines = 2,
-                                maxLines = 4,
-                                shape = MaterialTheme.shapes.small,
-                                modifier = Modifier.fillMaxWidth(),
+                            EgyptCascadingAddressFields(
+                                governorate = profileForm.governorate,
+                                city = profileForm.city,
+                                streetAddress = profileForm.address,
+                                onGovernorateSelected = viewModel::onProfileGovernorateChange,
+                                onCitySelected = viewModel::onProfileCityChange,
+                                onStreetAddressChange = viewModel::onProfileAddressChange,
                             )
 
                             Button(

@@ -65,4 +65,11 @@ interface OrderRepository {
      * during Retry Payment (e.g., switching from `paymob_wallet` to `paymob_card`).
      */
     suspend fun updateLocalOrderPaymentMethod(orderNumber: String, method: String)
+
+    /**
+     * Switches a failed or pending online order to Cash on Delivery (`payment_method = 'cod'`,
+     * `payment_status = 'cod_pending'`, `status = 'confirmed'`) via `public.switch_order_to_cod`,
+     * updates the local saved receipt, and clears the cart.
+     */
+    suspend fun switchOrderToCod(orderNumber: String, phone: String): Result<Unit>
 }

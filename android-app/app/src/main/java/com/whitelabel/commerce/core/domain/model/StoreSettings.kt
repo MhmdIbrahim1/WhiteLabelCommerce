@@ -61,6 +61,24 @@ data class StoreSettings(
 }
 
 @Serializable
+data class PromoBannerCampaign(
+    val id: String = "",
+    val active: Boolean = true,
+    @SerialName("badge_ar") val badgeAr: String = "",
+    @SerialName("badge_en") val badgeEn: String = "",
+    @SerialName("title_ar") val titleAr: String = "",
+    @SerialName("title_en") val titleEn: String = "",
+    @SerialName("subtitle_ar") val subtitleAr: String = "",
+    @SerialName("subtitle_en") val subtitleEn: String = "",
+    @SerialName("cta_text_ar") val ctaTextAr: String = "",
+    @SerialName("cta_text_en") val ctaTextEn: String = "",
+    @SerialName("cta_link") val ctaLink: String = "/products",
+    @SerialName("image_url") val imageUrl: String? = null,
+    @SerialName("gradient_start") val gradientStart: String = "#164E63",
+    @SerialName("gradient_end") val gradientEnd: String = "#0E7490",
+)
+
+@Serializable
 data class HeroConfig(
     @SerialName("hero_visible") val visible: Boolean = true,
     @SerialName("hero_badge_visible") val badgeVisible: Boolean = true,
@@ -79,4 +97,8 @@ data class HeroConfig(
     @SerialName("heroBg") val heroBg: String? = null,
     @SerialName("heroText") val heroText: String? = null,
     @SerialName("bannerSpeedMs") val bannerSpeedMs: Int = 5000,
-)
+    @SerialName("promo_banners") val promoBanners: List<PromoBannerCampaign> = emptyList(),
+) {
+    val activePromoBanners: List<PromoBannerCampaign>
+        get() = promoBanners.filter { it.active }
+}

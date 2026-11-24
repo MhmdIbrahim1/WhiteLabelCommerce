@@ -191,4 +191,21 @@ class OrdersViewModel @Inject constructor(
             orderRepository.updateLocalOrderPaymentMethod(orderNumber, method)
         }
     }
+
+    fun switchOrderToCod(
+        orderNumber: String,
+        phone: String,
+        onComplete: (Boolean) -> Unit,
+    ) {
+        viewModelScope.launch {
+            val result = orderRepository.switchOrderToCod(orderNumber, phone)
+            if (result.isSuccess) {
+                loadAccountOrders()
+                if (phone.isNotBlank()) {
+                    prefillAndTrack(orderNumber, phone)
+                }
+            }
+            onComplete(result.isSuccess)
+        }
+    }
 }

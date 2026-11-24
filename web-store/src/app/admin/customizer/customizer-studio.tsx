@@ -53,6 +53,7 @@ import {
   type PreviewCategory,
 } from "./preview-frame";
 import { SectionsBuilder } from "./sections-builder";
+import { PromoBannersEditor } from "./promo-banners-editor";
 import "./customizer.css";
 
 type EditorTab = "global" | "sections" | PreviewPageKey;
@@ -986,6 +987,13 @@ export function CustomizerStudio({
                   </div>
                 )}
               </div>
+
+              <PromoBannersEditor
+                banners={config.pages.home.promo_banners}
+                categories={categories}
+                isEn={isEn}
+                onChange={(nextBanners) => updateHome("promo_banners", nextBanners)}
+              />
 
               <div className="control-field">
                 <div className="control-label-row">

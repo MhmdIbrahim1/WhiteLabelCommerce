@@ -40,10 +40,14 @@ data class CheckoutFormState(
     val wallet: String = "",
     val customerName: String = "",
     val phone: String = "",
+    val governorate: String = "",
+    val city: String = "",
     val address: String = "",
     val paymentMethod: PaymentMethod = PaymentMethod.COD,
     val nameError: String? = null,
     val phoneError: String? = null,
+    val governorateError: String? = null,
+    val cityError: String? = null,
     val addressError: String? = null,
     val isSubmitting: Boolean = false,
     val submitError: String? = null,
@@ -87,7 +91,6 @@ class CheckoutViewModel @Inject constructor(
             authRepository.sessionState.collect { session ->
                 if (session is AuthSessionState.SignedIn) {
                     val profile = session.profile
-                    val combinedAddr = profile.combinedShippingAddress()
                     val normalizedPhone = PhoneNormalizer.normalize(profile.phone)
                     formState.update { current ->
                         current.copy(
@@ -96,7 +99,9 @@ class CheckoutViewModel @Inject constructor(
                             wallet = current.wallet.ifBlank {
                                 if (WALLET_REGEX.matches(normalizedPhone)) normalizedPhone else ""
                             },
-                            address = current.address.ifBlank { combinedAddr },
+                            governorate = current.governorate.ifBlank { profile.governorate },
+                            city = current.city.ifBlank { profile.city },
+                            address = current.address.ifBlank { profile.address },
                         )
                     }
                 }
@@ -182,6 +187,14 @@ class CheckoutViewModel @Inject constructor(
         formState.update { it.copy(phone = value, phoneError = null, submitError = null) }
     }
 
+    fun onGovernorateChange(value: String) {
+        formState.update { it.copy(governorate = value, governorateError = null, submitError = null) }
+    }
+
+    fun onCityChange(value: String) {
+        formState.update { it.copy(city = value, cityError = null, submitError = null) }
+    }
+
     fun onAddressChange(value: String) {
         formState.update { it.copy(address = value, addressError = null, submitError = null) }
     }
@@ -212,7 +225,9 @@ class CheckoutViewModel @Inject constructor(
         }
 
         val cleanName = form.customerName.trim()
-        val cleanAddress = form.address.trim()
+        val cleanGov = form.governorate.trim()
+        val cleanCity = form.city.trim()
+        val cleanStreet = form.address.trim()
         val rawPhone = form.phone.trim()
 
         val nameError = if (cleanName.length < 2) {
@@ -228,25 +243,43 @@ class CheckoutViewModel @Inject constructor(
         } else {
             null
         }
-        val addressError = if (cleanAddress.length < 5) {
+        val govError = if (cleanGov.isEmpty()) {
+            localized("يرجى اختيار المحافظة", "Please select a governorate.")
+        } else {
+            null
+        }
+        val cityError = if (cleanCity.isEmpty()) {
+            localized("يرجى اختيار المدينة / المركز", "Please select a city or district.")
+        } else {
+            null
+        }
+        val addressError = if (cleanStreet.length < 5) {
             localized(
-                "يرجى إدخال عنوان التوصيل بالتفصيل (المحافظة، المنطقة، الشارع)",
-                "Enter the full delivery address.",
+                "يرجى إدخال عنوان الشارع بالتفصيل (5 أحرف على الأقل)",
+                "Enter the detailed street address (at least 5 characters).",
             )
         } else {
             null
         }
 
-        if (nameError != null || phoneError != null || addressError != null) {
+        if (nameError != null || phoneError != null || govError != null || cityError != null || addressError != null) {
             formState.update {
                 it.copy(
                     nameError = nameError,
                     phoneError = phoneError,
+                    governorateError = govError,
+                    cityError = cityError,
                     addressError = addressError,
                 )
             }
             return
         }
+
+        val cleanAddress = com.whitelabel.commerce.core.domain.model.CustomerProfile(
+            governorate = cleanGov,
+            city = cleanCity,
+            address = cleanStreet,
+        ).combinedShippingAddress()
 
         if (current.cartItems.isEmpty()) {
             formState.update {

@@ -9,6 +9,8 @@ export default async function Checkout() {
   } = await db.auth.getUser();
   let defaultName = "";
   let defaultPhone = "";
+  let defaultGovernorate = "";
+  let defaultCity = "";
   let defaultAddress = "";
   if (user) {
     const { data: profile } = await db
@@ -32,14 +34,9 @@ export default async function Checkout() {
       (typeof user.user_metadata?.phone === "string"
         ? user.user_metadata.phone
         : "");
-    const parts: string[] = [];
-    const street = profile?.address?.trim() ?? "";
-    const city = profile?.city?.trim() ?? "";
-    const gov = profile?.governorate?.trim() ?? "";
-    if (gov && !street.includes(gov)) parts.push(gov);
-    if (city && !street.includes(city)) parts.push(city);
-    if (street) parts.push(street);
-    defaultAddress = parts.join(" - ");
+    defaultGovernorate = profile?.governorate?.trim() ?? "";
+    defaultCity = profile?.city?.trim() ?? "";
+    defaultAddress = profile?.address?.trim() ?? "";
   }
   return (
     <Basket
@@ -48,6 +45,8 @@ export default async function Checkout() {
       currency={s.currency}
       defaultName={defaultName}
       defaultPhone={defaultPhone}
+      defaultGovernorate={defaultGovernorate}
+      defaultCity={defaultCity}
       defaultAddress={defaultAddress}
       signedInEmail={user?.email ?? null}
       paymentOptions={s.payment}

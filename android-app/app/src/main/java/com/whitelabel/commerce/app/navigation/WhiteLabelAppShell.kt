@@ -99,7 +99,10 @@ fun WhiteLabelAppShell(
 
     fun handleHeroRoute(link: String) {
         val clean = link.trim()
+        val productIdMatch = Regex("^/products/([0-9a-fA-F-]{8,64})$").matchEntire(clean)
         when {
+            productIdMatch != null ->
+                navController.navigate(AppRoutes.productDetail(productIdMatch.groupValues[1]))
             clean.startsWith("/orders") -> navigateToTab(AppRoutes.ORDERS)
             clean.startsWith("/account") || clean.startsWith("/login") ->
                 navController.navigate(AppRoutes.ACCOUNT)

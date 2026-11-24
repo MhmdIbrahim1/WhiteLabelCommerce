@@ -1683,3 +1683,368 @@ details details,
   font-size: 0.84rem;
   color: var(--ink);
 }
+
+
+/* Phase 10: Cascading Egypt Addresses, Animated Order Tracker, COD Retry Sheet & Promo Carousel */
+.egypt-address-fields {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.egypt-gov-search-box {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) * 0.65);
+  background: var(--wash);
+  margin-bottom: 0.35rem;
+}
+
+.egypt-gov-search-box input {
+  border: 0;
+  background: transparent;
+  padding: 0.42rem 0.2rem;
+  font-size: 0.86rem;
+}
+
+.egypt-gov-search-box input:focus {
+  outline: none;
+}
+
+/* Animated Order Status Tracker */
+.animated-order-tracker {
+  position: relative;
+  padding: 0.85rem 0.25rem 0.35rem;
+}
+
+.tracker-rail {
+  position: absolute;
+  top: 25px;
+  inset-inline: 12%;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+  z-index: 0;
+}
+
+.tracker-rail-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #10b981, var(--primary));
+  transition: width 650ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.tracker-steps {
+  position: relative;
+  z-index: 1;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.35rem;
+}
+
+.tracker-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.45rem;
+  text-align: center;
+}
+
+.tracker-node {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  display: inline-grid;
+  place-items: center;
+}
+
+.tracker-node-circle {
+  position: relative;
+  z-index: 2;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background: var(--wash);
+  color: var(--muted);
+  border: 2px solid var(--line);
+  display: inline-grid;
+  place-items: center;
+  transition: transform 250ms ease, background-color 250ms ease, color 250ms ease;
+}
+
+.tracker-step.is-completed .tracker-node-circle {
+  background: #10b981;
+  border-color: #10b981;
+  color: #fff;
+}
+
+.tracker-step.is-active .tracker-node-circle {
+  background: var(--primary);
+  border-color: color-mix(in srgb, var(--primary) 30%, #fff);
+  color: #fff;
+  transform: scale(1.06);
+}
+
+.tracker-pulse-halo {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: var(--primary);
+  opacity: 0.35;
+  animation: orderPulseHalo 1.4s ease-out infinite;
+  z-index: 1;
+}
+
+@keyframes orderPulseHalo {
+  0% {
+    transform: scale(0.95);
+    opacity: 0.45;
+  }
+  100% {
+    transform: scale(1.55);
+    opacity: 0;
+  }
+}
+
+.tracker-step-label {
+  font-size: 0.76rem;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.tracker-step.is-completed .tracker-step-label,
+.tracker-step.is-active .tracker-step-label {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.tracker-step.is-active .tracker-step-label {
+  color: var(--primary);
+}
+
+.order-cancelled-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: calc(var(--radius) * 0.75);
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+}
+
+.order-cancelled-banner div {
+  display: grid;
+  gap: 0.1rem;
+}
+
+/* 3-Option Retry Payment Sheet (Card / Wallet / COD) */
+.retry-method-sheet {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.9rem;
+  border-radius: calc(var(--radius) * 0.8);
+  border: 1px solid var(--line);
+  background: var(--wash);
+}
+
+.retry-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.retry-options-grid {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.retry-option-card {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.65rem 0.8rem;
+  border-radius: calc(var(--radius) * 0.65);
+  border: 1.5px solid var(--line);
+  background: var(--surface);
+  cursor: pointer;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.retry-option-card input {
+  width: auto;
+  margin: 0;
+}
+
+.retry-option-card.is-selected {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 10%, var(--surface));
+  color: var(--primary);
+}
+
+/* Multi-Campaign Animated Promotional Banner Carousel */
+.promo-carousel-shell {
+  position: relative;
+  border-radius: calc(var(--radius) * 1.15);
+  overflow: hidden;
+  margin-bottom: 1.75rem;
+  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.12);
+}
+
+.promo-carousel-slide {
+  position: relative;
+  min-height: clamp(270px, 38vw, 410px);
+  display: flex;
+  align-items: flex-end;
+  padding: clamp(1.5rem, 4vw, 3rem);
+  color: #fff;
+  animation: promoFadeSlide 380ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes promoFadeSlide {
+  from {
+    opacity: 0.55;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.promo-carousel-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.promo-carousel-bg img {
+  object-fit: cover;
+}
+
+.promo-carousel-scrim {
+  position: absolute;
+  inset: 0;
+}
+
+.promo-carousel-copy {
+  position: relative;
+  z-index: 2;
+  max-width: 640px;
+  display: grid;
+  gap: 0.7rem;
+  padding-bottom: 1.25rem;
+}
+
+.promo-carousel-copy h1 {
+  color: #fff;
+  margin: 0;
+}
+
+.promo-carousel-copy .hero-subtitle {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.promo-carousel-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 3;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #fff;
+}
+
+.promo-carousel-arrow--start {
+  inset-inline-start: 0.85rem;
+}
+
+.promo-carousel-arrow--end {
+  inset-inline-end: 0.85rem;
+}
+
+.promo-carousel-dots {
+  position: absolute;
+  bottom: 0.95rem;
+  inset-inline: 0;
+  z-index: 3;
+  display: flex;
+  justify-content: center;
+  gap: 0.4rem;
+}
+
+.promo-carousel-pill {
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.45);
+  transition: width 260ms ease, background-color 260ms ease;
+}
+
+.promo-carousel-pill.is-active {
+  width: 26px;
+  background: #fff;
+}
+
+.promo-campaigns-editor {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.promo-empty-hint {
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin: 0;
+}
+
+.promo-editor-list {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.promo-editor-item {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.85rem;
+  border-radius: calc(var(--radius) * 0.75);
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.promo-editor-item.is-inactive {
+  opacity: 0.62;
+}
+
+.promo-editor-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.promo-editor-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.promo-gradient-pickers {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}

@@ -7,7 +7,6 @@ import {
   ArrowLeft,
   ArrowRight,
   LogOut,
-  MapPin,
   Sparkles,
   LockKeyhole,
 } from "lucide-react";
@@ -18,6 +17,7 @@ import { t } from "@/lib/i18n";
 import { getServerLang } from "@/lib/i18n-server";
 import { Timeline } from "@/components/shop/tracking";
 import { HybridAuthPanel } from "@/components/shop/hybrid-auth-panel";
+import { EgyptAddressFields } from "@/components/shop/egypt-address-fields";
 import type { Summary } from "../orders/actions";
 import { logout, saveCustomerAccount } from "../../login/actions";
 
@@ -231,46 +231,11 @@ export default async function AccountPage({
                 maxLength={24}
               />
             </label>
-            <label>
-              {lang === "en" ? "Governorate" : "المحافظة"}
-              <input
-                name="governorate"
-                defaultValue={profile?.governorate ?? ""}
-                placeholder={lang === "en" ? "e.g. Cairo / Giza" : "مثال: القاهرة / الجيزة"}
-                maxLength={80}
-              />
-            </label>
-            <label>
-              {t(lang, "accountCityLabel")}
-              <input
-                name="city"
-                defaultValue={profile?.city ?? ""}
-                placeholder={lang === "en" ? "e.g. Nasr City" : "مثال: مدينة نصر"}
-                maxLength={80}
-              />
-            </label>
-            <label>
-              <span
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "0.3rem",
-                }}
-              >
-                <MapPin size={14} /> {t(lang, "accountSavedAddrLabel")}
-              </span>
-              <textarea
-                name="address"
-                rows={3}
-                defaultValue={profile?.address ?? ""}
-                placeholder={
-                  lang === "en"
-                    ? "Detailed street shipping address..."
-                    : "العنوان التفصيلي للشحن..."
-                }
-                maxLength={500}
-              />
-            </label>
+            <EgyptAddressFields
+              initialGovernorate={profile?.governorate ?? ""}
+              initialCity={profile?.city ?? ""}
+              initialStreet={profile?.address ?? ""}
+            />
             <button>{t(lang, "accountSaveBtn")}</button>
           </form>
         </section>

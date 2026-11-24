@@ -2,11 +2,13 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Sparkles,
   ArrowLeft,
   ArrowRight,
+  ChevronLeft,
+  ChevronRight,
   Truck,
   ShieldCheck,
   Clock3,
@@ -15,6 +17,7 @@ import {
   defaultHeroBannerCms,
   type HeroBannerCmsConfig,
   type HeroLayout,
+  type PromoBannerCampaign,
 } from "@/lib/ui-config";
 import { useLanguage } from "@/components/language-provider";
 
@@ -40,6 +43,150 @@ function CtaLink({
     <Link href={href || "/products"} className={className}>
       {children}
     </Link>
+  );
+}
+
+function PromoBannerCarousel({
+  campaigns,
+  autoSlideMs,
+  overlayOpacity,
+  isEn,
+}: {
+  campaigns: PromoBannerCampaign[];
+  autoSlideMs: number;
+  overlayOpacity: number;
+  isEn: boolean;
+}) {
+  const [active, setActive] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const touchStartX = useRef<number | null>(null);
+  const ArrowIcon = isEn ? ArrowRight : ArrowLeft;
+  const total = campaigns.length;
+  const safeIdx = total > 0 ? active % total : 0;
+  const current = campaigns[safeIdx];
+
+  useEffect(() => {
+    if (paused || total <= 1 || autoSlideMs <= 0) return;
+    const id = setInterval(() => {
+      setActive((prev) => (prev + 1) % total);
+    }, Math.max(2500, autoSlideMs));
+    return () => clearInterval(id);
+  }, [paused, total, autoSlideMs]);
+
+  const goPrev = () => setActive((prev) => (prev - 1 + total) % total);
+  const goNext = () => setActive((prev) => (prev + 1) % total);
+
+  const pickLang = (ar: string, en: string) =>
+    isEn ? en.trim() || ar.trim() : ar.trim() || en.trim();
+
+  const badge = pickLang(current.badge_ar, current.badge_en);
+  const title = pickLang(current.title_ar, current.title_en);
+  const subtitle = pickLang(current.subtitle_ar, current.subtitle_en);
+  const cta =
+    pickLang(current.cta_text_ar, current.cta_text_en) ||
+    (isEn ? "Shop Now" : "تسوّق الآن");
+  const overlayAlpha = Math.min(80, Math.max(0, overlayOpacity)) / 100;
+
+  return (
+    <section
+      className="promo-carousel-shell shop-animate"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      onTouchStart={(e) => {
+        setPaused(true);
+        touchStartX.current = e.touches[0]?.clientX ?? null;
+      }}
+      onTouchEnd={(e) => {
+        const startX = touchStartX.current;
+        const endX = e.changedTouches[0]?.clientX ?? null;
+        if (startX !== null && endX !== null && Math.abs(endX - startX) > 40) {
+          if (endX < startX) {
+            if (isEn) goNext();
+            else goPrev();
+          } else {
+            if (isEn) goPrev();
+            else goNext();
+          }
+        }
+        touchStartX.current = null;
+        setPaused(false);
+      }}
+    >
+      <div
+        key={current.id}
+        className="promo-carousel-slide"
+        style={{
+          background: `linear-gradient(135deg, ${current.gradient_start}, ${current.gradient_end})`,
+        }}
+      >
+        {current.image_url && (
+          <div className="promo-carousel-bg" aria-hidden="true">
+            <Image
+              src={current.image_url}
+              unoptimized
+              fill
+              loading="eager"
+              alt={title}
+            />
+            <div
+              className="promo-carousel-scrim"
+              style={{
+                background: `linear-gradient(180deg, rgba(10,15,28,${(overlayAlpha * 0.65).toFixed(2)}) 0%, rgba(10,15,28,${Math.max(overlayAlpha, 0.35).toFixed(2)}) 100%)`,
+              }}
+            />
+          </div>
+        )}
+
+        <div className="promo-carousel-copy">
+          {badge && (
+            <span className="hero-eyebrow">
+              <Sparkles size={13} /> {badge}
+            </span>
+          )}
+          <h1>{title}</h1>
+          {subtitle && <p className="hero-subtitle">{subtitle}</p>}
+          <div className="hero-actions">
+            <CtaLink className="cta hero-cta-pill" href={current.cta_link || "/products"}>
+              {cta} <ArrowIcon size={16} />
+            </CtaLink>
+          </div>
+        </div>
+
+        {total > 1 && (
+          <>
+            <button
+              type="button"
+              className="promo-carousel-arrow promo-carousel-arrow--start"
+              aria-label={isEn ? "Previous banner" : "البانر السابق"}
+              onClick={goPrev}
+            >
+              {isEn ? <ChevronLeft size={20} /> : <ChevronRight size={20} />}
+            </button>
+            <button
+              type="button"
+              className="promo-carousel-arrow promo-carousel-arrow--end"
+              aria-label={isEn ? "Next banner" : "البانر التالي"}
+              onClick={goNext}
+            >
+              {isEn ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
+            </button>
+            <div className="promo-carousel-dots" role="tablist" aria-label={isEn ? "Promotional banners" : "الحملات الترويجية"}>
+              {campaigns.map((c, idx) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={idx === safeIdx}
+                  aria-label={`Banner ${idx + 1}`}
+                  className={`promo-carousel-pill ${idx === safeIdx ? "is-active" : ""}`}
+                  onClick={() => setActive(idx)}
+                />
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -84,6 +231,19 @@ export function Hero({
   // Master visibility switch: render nothing (zero spacer gap)
   if (!cms.hero_visible) {
     return null;
+  }
+
+  // Phase 10: Multi-campaign animated banner carousel when active campaigns are configured
+  const activePromoBanners = (cms.promo_banners ?? []).filter((b) => b.active);
+  if (activePromoBanners.length > 0) {
+    return (
+      <PromoBannerCarousel
+        campaigns={activePromoBanners}
+        autoSlideMs={autoSlideMs}
+        overlayOpacity={cms.hero_overlay_opacity}
+        isEn={isEn}
+      />
+    );
   }
 
   const pickLang = (ar: string, en: string) =>

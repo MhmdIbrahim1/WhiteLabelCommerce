@@ -1,5 +1,6 @@
 "use server";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { serverDb } from "@/lib/db";
 import { getServerLang } from "@/lib/i18n-server";
 import { normalizePhone } from "@/lib/phone";
@@ -17,6 +18,7 @@ export type Summary = {
   id: string;
   status: string;
   created_at: string;
+  phone?: string | null;
   payment_method?: string | null;
   payment_status?: string | null;
   shipping_carrier?: string | null;
@@ -55,12 +57,59 @@ export async function track(
           : "تعذر الاتصال بخدمة التتبع.",
       }
     : data
-      ? { row: data }
+      ? { row: { ...data, phone } }
       : {
           error: isEn
             ? "No order found matching these details."
             : "لم نعثر على طلب بهذه البيانات.",
         };
+}
+
+export async function switchOrderToCodAction(
+  orderId: string,
+  phoneRaw?: string,
+): Promise<{ ok: boolean; status?: string; error?: string }> {
+  const isEn = (await getServerLang()) === "en";
+  const cleanId = orderId.trim();
+  if (!/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(cleanId)) {
+    return {
+      ok: false,
+      error: isEn ? "Invalid order ID." : "رقم الطلب غير صالح.",
+    };
+  }
+
+  const db = await serverDb();
+  const { data: storeRow } = await db
+    .from("store_settings")
+    .select("store_id")
+    .eq("id", true)
+    .maybeSingle<{ store_id: string }>();
+
+  const storeId =
+    storeRow?.store_id ?? "00000000-0000-0000-0000-000000000001";
+  const phone = normalizePhone(phoneRaw ?? "");
+
+  const { data, error } = await db
+    .rpc("switch_order_to_cod", {
+      p_store: storeId,
+      p_order_id: cleanId,
+      p_phone: phone,
+    })
+    .maybeSingle<{ status: string }>();
+
+  if (error) {
+    return {
+      ok: false,
+      error: isEn
+        ? "Could not switch this order to Cash on Delivery."
+        : "تعذر تحويل هذا الطلب إلى الدفع عند الاستلام حالياً.",
+    };
+  }
+
+  revalidatePath("/orders");
+  revalidatePath("/account");
+  revalidatePath("/admin/orders");
+  return { ok: true, status: data?.status ?? "confirmed" };
 }
 
 export async function customerLogin(f: FormData) {

@@ -29,6 +29,7 @@ import {
 import { money } from "@/lib/brand";
 import { localizedText, translateColor } from "@/lib/i18n";
 import { useLanguage } from "@/components/language-provider";
+import { EgyptAddressFields } from "./egypt-address-fields";
 
 const EGYPT_WALLET_RE = /^01[0125][0-9]{8}$/;
 
@@ -47,6 +48,8 @@ export function Basket({
   currency,
   defaultName = "",
   defaultPhone = "",
+  defaultGovernorate = "",
+  defaultCity = "",
   defaultAddress = "",
   signedInEmail = null,
   paymentOptions = {
@@ -61,6 +64,8 @@ export function Basket({
   currency: string;
   defaultName?: string;
   defaultPhone?: string;
+  defaultGovernorate?: string;
+  defaultCity?: string;
   defaultAddress?: string;
   signedInEmail?: string | null;
   paymentOptions?: StorePaymentOptions;
@@ -493,17 +498,13 @@ export function Basket({
                   </>
                 )}
               </div>
-              <label>
-                {t("shippingAddressLabel")}
-                <textarea
-                  name="address"
-                  defaultValue={defaultAddress}
-                  required
-                  minLength={3}
-                  maxLength={500}
-                  autoComplete="street-address"
-                />
-              </label>
+              <EgyptAddressFields
+                initialGovernorate={defaultGovernorate}
+                initialCity={defaultCity}
+                initialStreet={defaultAddress}
+                required
+                emitCombinedAddressName="address"
+              />
               <label>
                 {t("trackingPhoneLabel")}
                 <input

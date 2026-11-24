@@ -63,6 +63,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.whitelabel.commerce.core.designsystem.LocalBrandColors
 import com.whitelabel.commerce.core.designsystem.components.ColorSwatchMapper
+import com.whitelabel.commerce.core.designsystem.components.EgyptCascadingAddressFields
 import com.whitelabel.commerce.core.designsystem.formatPrice
 import com.whitelabel.commerce.core.designsystem.localized
 import com.whitelabel.commerce.core.domain.model.PaymentMethod
@@ -339,24 +340,16 @@ fun CheckoutScreen(
                         modifier = Modifier.fillMaxWidth(),
                     )
 
-                    OutlinedTextField(
-                        value = state.form.address,
-                        onValueChange = viewModel::onAddressChange,
-                        label = { Text(localized("عنوان التوصيل بالتفصيل", "Delivery address")) },
-                        placeholder = {
-                            Text(
-                                localized(
-                                    "المحافظة، المنطقة، اسم الشارع، رقم العمارة والشقة",
-                                    "Governorate, district, street, building and apartment",
-                                ),
-                            )
-                        },
-                        isError = state.form.addressError != null,
-                        supportingText = state.form.addressError?.let { { Text(it) } },
-                        minLines = 3,
-                        maxLines = 5,
-                        shape = MaterialTheme.shapes.small,
-                        modifier = Modifier.fillMaxWidth(),
+                    EgyptCascadingAddressFields(
+                        governorate = state.form.governorate,
+                        city = state.form.city,
+                        streetAddress = state.form.address,
+                        onGovernorateSelected = viewModel::onGovernorateChange,
+                        onCitySelected = viewModel::onCityChange,
+                        onStreetAddressChange = viewModel::onAddressChange,
+                        governorateError = state.form.governorateError,
+                        cityError = state.form.cityError,
+                        streetError = state.form.addressError,
                     )
                 }
             }

@@ -27,6 +27,7 @@ import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.CreditCard
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.LocalShipping
+import androidx.compose.material.icons.rounded.Payments
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Replay
 import androidx.compose.material.icons.rounded.Search
@@ -130,6 +131,13 @@ fun OrdersScreen(
 
     val enabledOnlineMethods = remember(state.storeSettings) {
         state.storeSettings.paymentMethods.filter { it == PaymentMethod.CARD || it == PaymentMethod.WALLET }
+    }
+    val retryMethods = remember(state.storeSettings) {
+        buildList {
+            if (PaymentMethod.CARD in state.storeSettings.paymentMethods) add(PaymentMethod.CARD)
+            if (PaymentMethod.WALLET in state.storeSettings.paymentMethods) add(PaymentMethod.WALLET)
+            if (state.storeSettings.codEnabled) add(PaymentMethod.COD)
+        }
     }
 
     // Full-screen in-app WebView when retrying a pending/failed Paymob order
@@ -479,23 +487,44 @@ fun OrdersScreen(
         }
     }
 
-    // Payment Method Chooser Bottom Sheet for "إعادة محاولة الدفع / Retry Payment"
+    // Payment Method Chooser Bottom Sheet for "إعادة محاولة الدفع / Retry Payment" (Card + Wallet + COD)
     pendingRetryChooser?.let { selection ->
         RetryPaymentMethodSheet(
             storeSettings = state.storeSettings,
-            enabledMethods = enabledOnlineMethods,
+            enabledMethods = retryMethods,
             initialMethod = selection.currentMethod,
             defaultPhone = selection.orderPhone,
             onDismiss = { pendingRetryChooser = null },
             onConfirm = { chosenMethod, walletPhone ->
                 pendingRetryChooser = null
-                viewModel.updateRetryMethodLocally(selection.orderId, chosenMethod.rawValue)
-                activeRetrySession = ActiveRetrySession(
-                    orderId = selection.orderId,
-                    orderPhone = selection.orderPhone,
-                    method = chosenMethod.rawValue,
-                    walletPhone = if (chosenMethod == PaymentMethod.WALLET) walletPhone else "",
-                )
+                if (chosenMethod == PaymentMethod.COD) {
+                    viewModel.switchOrderToCod(selection.orderId, selection.orderPhone) { ok ->
+                        if (ok) {
+                            paymentBanner = PaymentFlowOutcome.SWITCHED_TO_COD
+                            onShowMessage(
+                                localized(
+                                    "تم تحويل الطلب إلى الدفع عند الاستلام بنجاح",
+                                    "Order switched to Cash on Delivery",
+                                ),
+                            )
+                        } else {
+                            onShowMessage(
+                                localized(
+                                    "تعذر تحويل الطلب إلى الدفع عند الاستلام حالياً",
+                                    "Could not switch order to Cash on Delivery right now",
+                                ),
+                            )
+                        }
+                    }
+                } else {
+                    viewModel.updateRetryMethodLocally(selection.orderId, chosenMethod.rawValue)
+                    activeRetrySession = ActiveRetrySession(
+                        orderId = selection.orderId,
+                        orderPhone = selection.orderPhone,
+                        method = chosenMethod.rawValue,
+                        walletPhone = if (chosenMethod == PaymentMethod.WALLET) walletPhone else "",
+                    )
+                }
             },
         )
     }
@@ -567,20 +596,23 @@ private fun RetryPaymentMethodSheet(
 
                 enabledMethods.forEach { method ->
                     val isSelected = selectedMethod == method
-                    val icon = if (method == PaymentMethod.CARD) {
-                        Icons.Rounded.CreditCard
-                    } else {
-                        Icons.Rounded.AccountBalanceWallet
+                    val icon = when (method) {
+                        PaymentMethod.CARD -> Icons.Rounded.CreditCard
+                        PaymentMethod.WALLET -> Icons.Rounded.AccountBalanceWallet
+                        PaymentMethod.COD -> Icons.Rounded.Payments
                     }
-                    val title = if (method == PaymentMethod.CARD) {
-                        localized("بطاقة بنكية (فيزا / ماستركارد)", "Bank Card (Visa / Mastercard)")
-                    } else {
-                        localized("محفظة إلكترونية", "Mobile Wallet")
+                    val title = when (method) {
+                        PaymentMethod.CARD -> localized("بطاقة بنكية (فيزا / ماستركارد)", "Bank Card (Visa / Mastercard)")
+                        PaymentMethod.WALLET -> localized("محفظة إلكترونية", "Mobile Wallet")
+                        PaymentMethod.COD -> localized("الدفع عند الاستلام (كاش)", "Cash on Delivery (COD)")
                     }
-                    val subtitle = if (method == PaymentMethod.CARD) {
-                        localized("دفع فوري وآمن عبر Paymob.", "Instant encrypted card checkout via Paymob.")
-                    } else {
-                        localized("فودافون كاش / اتصالات / أورنج / وي باي.", "Vodafone Cash / Etisalat / Orange / WE Pay.")
+                    val subtitle = when (method) {
+                        PaymentMethod.CARD -> localized("دفع فوري وآمن عبر Paymob.", "Instant encrypted card checkout via Paymob.")
+                        PaymentMethod.WALLET -> localized("فودافون كاش / اتصالات / أورنج / وي باي.", "Vodafone Cash / Etisalat / Orange / WE Pay.")
+                        PaymentMethod.COD -> localized(
+                            "حوّل الطلب فوراً إلى الدفع نقداً عند الاستلام وابدأ التجهيز.",
+                            "Switch immediately to pay cash on delivery and start processing.",
+                        )
                     }
 
                     Surface(
@@ -673,7 +705,11 @@ private fun RetryPaymentMethodSheet(
                         .height(48.dp),
                 ) {
                     Text(
-                        text = localized("متابعة إلى بوابة الدفع", "Continue to Payment"),
+                        text = if (selectedMethod == PaymentMethod.COD) {
+                            localized("تأكيد الدفع عند الاستلام", "Confirm Cash on Delivery")
+                        } else {
+                            localized("متابعة إلى بوابة الدفع", "Continue to Payment")
+                        },
                         style = MaterialTheme.typography.labelLarge,
                     )
                 }
@@ -688,14 +724,14 @@ private fun PaymentOutcomeBanner(
     onDismiss: () -> Unit,
 ) {
     val brandColors = LocalBrandColors.current
-    val isSuccess = outcome == PaymentFlowOutcome.SUCCESS
+    val isSuccess = outcome == PaymentFlowOutcome.SUCCESS || outcome == PaymentFlowOutcome.SWITCHED_TO_COD
     val bg = when (outcome) {
-        PaymentFlowOutcome.SUCCESS -> brandColors.success.copy(alpha = 0.14f)
+        PaymentFlowOutcome.SUCCESS, PaymentFlowOutcome.SWITCHED_TO_COD -> brandColors.success.copy(alpha = 0.14f)
         PaymentFlowOutcome.PENDING -> MaterialTheme.colorScheme.secondaryContainer
         PaymentFlowOutcome.FAILED, PaymentFlowOutcome.CANCELLED -> MaterialTheme.colorScheme.errorContainer
     }
     val fg = when (outcome) {
-        PaymentFlowOutcome.SUCCESS -> brandColors.success
+        PaymentFlowOutcome.SUCCESS, PaymentFlowOutcome.SWITCHED_TO_COD -> brandColors.success
         PaymentFlowOutcome.PENDING -> MaterialTheme.colorScheme.secondary
         PaymentFlowOutcome.FAILED, PaymentFlowOutcome.CANCELLED -> MaterialTheme.colorScheme.error
     }
@@ -721,6 +757,7 @@ private fun PaymentOutcomeBanner(
                 Text(
                     text = when (outcome) {
                         PaymentFlowOutcome.SUCCESS -> localized("تم الشراء والدفع بنجاح", "Purchase & Payment Confirmed")
+                        PaymentFlowOutcome.SWITCHED_TO_COD -> localized("تم التحويل إلى الدفع عند الاستلام", "Switched to Cash on Delivery")
                         PaymentFlowOutcome.PENDING -> localized("عملية الدفع قيد التأكيد", "Payment confirmation pending")
                         PaymentFlowOutcome.FAILED -> localized("لم تكتمل عملية الدفع", "Payment could not be completed")
                         PaymentFlowOutcome.CANCELLED -> localized("تم إلغاء عملية الدفع", "Payment was cancelled")
@@ -733,6 +770,10 @@ private fun PaymentOutcomeBanner(
                         PaymentFlowOutcome.SUCCESS -> localized(
                             "شكراً لتسوقك معنا! تم تفريغ السلة وحفظ فاتورتك أدناه.",
                             "Thank you! Your cart has been cleared and your receipt is saved below.",
+                        )
+                        PaymentFlowOutcome.SWITCHED_TO_COD -> localized(
+                            "تم تأكيد طلبك بالدفع نقداً عند الاستلام وجاري تجهيزه الآن.",
+                            "Your order is now confirmed for Cash on Delivery and being processed.",
                         )
                         else -> localized(
                             "سلة التسوق لا تزال محفوظة، ويمكنك الضغط على \"إعادة محاولة الدفع\" أسفل الطلب.",

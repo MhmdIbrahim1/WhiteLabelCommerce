@@ -62,6 +62,11 @@ data class StoreSettingsDto(
         val resolvedHero = rawHero.copy(
             imageUrl = SupabaseStorageUrls.resolveProductImageUrl(rawHero.imageUrl),
             overlayOpacity = rawHero.overlayOpacity.coerceIn(0, 80),
+            promoBanners = rawHero.promoBanners.map { campaign ->
+                campaign.copy(
+                    imageUrl = SupabaseStorageUrls.resolveProductImageUrl(campaign.imageUrl),
+                )
+            },
         )
         val heroSectionEntry = uiConfig?.homeSections?.firstOrNull { it.type == "hero_banner" }
 

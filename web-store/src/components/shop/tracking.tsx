@@ -1,24 +1,39 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Truck,
   Copy,
   Check,
   ExternalLink,
-  CheckCircle2,
   Clock3,
   FileText,
   Package,
   RefreshCw,
+  CreditCard,
+  Smartphone,
+  Banknote,
+  XCircle,
+  CheckCircle2,
+  X,
 } from "lucide-react";
-import { track, type Summary } from "@/app/(shop)/orders/actions";
+import {
+  track,
+  switchOrderToCodAction,
+  type Summary,
+} from "@/app/(shop)/orders/actions";
 import { orderStatusLabel, translateColor } from "@/lib/i18n";
 import { date } from "@/lib/brand";
 import { useLanguage } from "@/components/language-provider";
-import { setPendingOnlineOrder } from "./cart-store";
+import {
+  clearPendingOnlineOrder,
+  setPendingOnlineOrder,
+} from "./cart-store";
 
 const EGYPT_WALLET_RE = /^01[0125][0-9]{8}$/;
+
+type RetryOption = "paymob_card" | "paymob_wallet" | "cod";
 
 export function Timeline({
   row,
@@ -27,38 +42,95 @@ export function Timeline({
   row: Summary;
   index?: number;
 }) {
+  const router = useRouter();
   const { lang, t } = useLanguage();
+  const isEn = lang === "en";
   const [copiedId, setCopiedId] = useState(false);
   const [copiedAwb, setCopiedAwb] = useState(false);
+  const [retryOpen, setRetryOpen] = useState(false);
+  const [retryChoice, setRetryChoice] = useState<RetryOption>(
+    (row.payment_method ?? "").toLowerCase() === "paymob_wallet"
+      ? "paymob_wallet"
+      : "paymob_card",
+  );
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
-  const [showWalletRetry, setShowWalletRetry] = useState(false);
-  const [walletPhone, setWalletPhone] = useState("");
+  const [walletPhone, setWalletPhone] = useState(
+    row.phone && EGYPT_WALLET_RE.test(row.phone) ? row.phone : "",
+  );
+  const [localOverride, setLocalOverride] = useState<{
+    status: string;
+    payment_method: string;
+    payment_status: string;
+  } | null>(null);
+  const [codBanner, setCodBanner] = useState(false);
 
-  const paymentMethodLower = (row.payment_method ?? "cod").toLowerCase();
-  const paymentStatusLower = (row.payment_status ?? "").toLowerCase();
+  const effectiveStatus = localOverride?.status ?? row.status;
+  const effectiveMethod = (
+    localOverride?.payment_method ??
+    row.payment_method ??
+    "cod"
+  ).toLowerCase();
+  const effectivePaymentStatus = (
+    localOverride?.payment_status ??
+    row.payment_status ??
+    ""
+  ).toLowerCase();
+
   const canRetryOnlinePayment =
-    row.status !== "cancelled" &&
-    (paymentMethodLower === "paymob_card" ||
-      paymentMethodLower === "paymob_wallet") &&
-    (paymentStatusLower === "pending" || paymentStatusLower === "failed");
+    effectiveStatus !== "cancelled" &&
+    effectiveStatus !== "delivered" &&
+    (effectiveMethod === "paymob_card" ||
+      effectiveMethod === "paymob_wallet") &&
+    (effectivePaymentStatus === "pending" ||
+      effectivePaymentStatus === "failed");
 
-  const handleRetryPayment = async () => {
-    const method = paymentMethodLower === "paymob_wallet" ? "wallet" : "card";
-    const cleanWallet = walletPhone.replace(/\s+/g, "");
-    if (method === "wallet") {
-      if (!showWalletRetry) {
-        setShowWalletRetry(true);
-        setRetryError(null);
-        return;
-      }
-      if (!EGYPT_WALLET_RE.test(cleanWallet)) {
-        setRetryError(t("paymentWalletPhoneError"));
-        return;
-      }
-    }
-    setRetrying(true);
+  const handleConfirmRetry = async () => {
     setRetryError(null);
+
+    if (retryChoice === "cod") {
+      setRetrying(true);
+      try {
+        const res = await switchOrderToCodAction(row.id, row.phone ?? "");
+        if (!res.ok) {
+          setRetryError(
+            res.error ??
+              (isEn
+                ? "Could not switch to Cash on Delivery."
+                : "تعذر التحويل إلى الدفع عند الاستلام."),
+          );
+          setRetrying(false);
+          return;
+        }
+        clearPendingOnlineOrder();
+        setLocalOverride({
+          status: res.status ?? "confirmed",
+          payment_method: "cod",
+          payment_status: "cod_pending",
+        });
+        setRetryOpen(false);
+        setCodBanner(true);
+        router.refresh();
+      } catch {
+        setRetryError(
+          isEn
+            ? "Could not switch to Cash on Delivery."
+            : "تعذر التحويل إلى الدفع عند الاستلام.",
+        );
+      } finally {
+        setRetrying(false);
+      }
+      return;
+    }
+
+    const method = retryChoice === "paymob_wallet" ? "wallet" : "card";
+    const cleanWallet = walletPhone.replace(/\s+/g, "");
+    if (method === "wallet" && !EGYPT_WALLET_RE.test(cleanWallet)) {
+      setRetryError(t("paymentWalletPhoneError"));
+      return;
+    }
+
+    setRetrying(true);
     try {
       setPendingOnlineOrder(row.id);
       const res = await fetch("/api/payments/paymob/initiate", {
@@ -83,11 +155,21 @@ export function Timeline({
     }
   };
 
-  const sequence =
-    row.status === "cancelled"
-      ? ["pending", "cancelled"]
-      : ["pending", "confirmed", "shipped", "delivered"];
-  const currentIdx = sequence.indexOf(row.status);
+  const stages = [
+    { key: "pending", ar: "قيد الانتظار", en: "Pending", icon: Clock3 },
+    { key: "confirmed", ar: "قيد التجهيز", en: "Processing", icon: Package },
+    { key: "shipped", ar: "تم الشحن", en: "Shipped", icon: Truck },
+    { key: "delivered", ar: "تم التوصيل", en: "Delivered", icon: CheckCircle2 },
+  ] as const;
+
+  const isCancelled = effectiveStatus === "cancelled";
+  const currentIdx = Math.max(
+    0,
+    stages.findIndex((s) => s.key === effectiveStatus),
+  );
+  const progressPercent = isCancelled
+    ? 0
+    : Math.round((currentIdx / (stages.length - 1)) * 100);
 
   const hasShippingInfo = Boolean(
     row.shipping_carrier ||
@@ -112,17 +194,15 @@ export function Timeline({
   };
 
   const paymentBadge = (() => {
-    const status = (row.payment_status ?? "").toLowerCase();
-    const method = (row.payment_method ?? "cod").toLowerCase();
-    if (status === "paid")
+    if (effectivePaymentStatus === "paid")
       return { tone: "paid", label: t("paymentStatusPaid") };
-    if (status === "failed")
+    if (effectivePaymentStatus === "failed")
       return { tone: "failed", label: t("paymentStatusFailed") };
-    if (status === "refunded")
+    if (effectivePaymentStatus === "refunded")
       return { tone: "refunded", label: t("paymentStatusRefunded") };
-    if (status === "pending" || method !== "cod")
-      return { tone: "pending", label: t("paymentStatusPending") };
-    return { tone: "cod", label: t("paymentStatusCod") };
+    if (effectivePaymentStatus === "cod_pending" || effectiveMethod === "cod")
+      return { tone: "cod", label: t("paymentStatusCod") };
+    return { tone: "pending", label: t("paymentStatusPending") };
   })();
 
   return (
@@ -157,28 +237,67 @@ export function Timeline({
           >
             {paymentBadge.label}
           </span>
-          <span className="order-status-badge" data-status={row.status}>
-            {orderStatusLabel(row.status, lang)}
+          <span className="order-status-badge" data-status={effectiveStatus}>
+            {orderStatusLabel(effectiveStatus, lang)}
           </span>
         </div>
       </div>
 
-      <ol className="timeline" aria-label={t("orderNumberLabel")}>
-        {sequence.map((s, i) => {
-          const done = i <= currentIdx;
-          const active = s === row.status;
-          return (
-            <li
-              key={s}
-              aria-current={active ? "step" : undefined}
-              data-done={done}
-            >
-              {done && <CheckCircle2 size={13} />}
-              <span>{orderStatusLabel(s, lang)}</span>
-            </li>
-          );
-        })}
-      </ol>
+      {codBanner && (
+        <p className="account-notice account-notice--ok" role="status">
+          {isEn
+            ? "Switched to Cash on Delivery! Your order is now confirmed and being processed."
+            : "تم تحويل الطلب إلى الدفع عند الاستلام بنجاح! طلبك الآن مؤكد وقيد التجهيز."}
+        </p>
+      )}
+
+      {/* Animated Order Status Tracker */}
+      {isCancelled ? (
+        <div className="order-cancelled-banner" role="status">
+          <XCircle size={18} aria-hidden="true" />
+          <div>
+            <strong>{isEn ? "Order Cancelled" : "تم إلغاء الطلب"}</strong>
+            <small>
+              {isEn
+                ? "Contact support if you need help with this order."
+                : "في حال وجود أي استفسار يرجى التواصل مع فريق الدعم."}
+            </small>
+          </div>
+        </div>
+      ) : (
+        <div className="animated-order-tracker" aria-label={t("orderNumberLabel")}>
+          <div className="tracker-rail" aria-hidden="true">
+            <div
+              className="tracker-rail-fill"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+          <ol className="tracker-steps">
+            {stages.map((stage, i) => {
+              const Icon = stage.icon;
+              const isCompleted = i < currentIdx;
+              const isActive = i === currentIdx;
+              return (
+                <li
+                  key={stage.key}
+                  className={`tracker-step ${isCompleted ? "is-completed" : ""} ${isActive ? "is-active" : ""}`}
+                  aria-current={isActive ? "step" : undefined}
+                >
+                  <span className="tracker-node">
+                    {isActive && <span className="tracker-pulse-halo" aria-hidden="true" />}
+                    <span className="tracker-node-circle">
+                      {isCompleted ? <Check size={14} /> : <Icon size={14} />}
+                    </span>
+                  </span>
+                  <span className="tracker-step-label">
+                    {isEn ? stage.en : stage.ar}
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
+        </div>
+      )}
 
       {items.length > 0 && (
         <div className="order-items-strip">
@@ -213,36 +332,127 @@ export function Timeline({
 
       {canRetryOnlinePayment && (
         <div className="order-retry-payment-box">
-          {showWalletRetry && paymentMethodLower === "paymob_wallet" && (
-            <label className="order-retry-wallet-label">
-              <span>{t("paymentWalletPhoneLabel")}</span>
-              <input
-                type="tel"
-                dir="ltr"
-                inputMode="numeric"
-                maxLength={11}
-                value={walletPhone}
-                onChange={(e) => {
-                  setWalletPhone(e.target.value);
-                  if (retryError) setRetryError(null);
-                }}
-                placeholder={t("paymentWalletPhonePlaceholder")}
-              />
-            </label>
-          )}
-          <button
-            type="button"
-            className="order-retry-payment-btn"
-            disabled={retrying}
-            onClick={handleRetryPayment}
-          >
-            <RefreshCw size={14} className={retrying ? "spin-icon" : undefined} />
-            <span>{retrying ? t("paymentRetryingBtn") : t("paymentRetryBtn")}</span>
-          </button>
-          {retryError && (
-            <small role="alert" className="wallet-error-text">
-              {retryError}
-            </small>
+          {!retryOpen ? (
+            <button
+              type="button"
+              className="order-retry-payment-btn"
+              onClick={() => {
+                setRetryOpen(true);
+                setRetryError(null);
+              }}
+            >
+              <RefreshCw size={14} />
+              <span>{t("paymentRetryBtn")}</span>
+            </button>
+          ) : (
+            <div className="retry-method-sheet" role="dialog" aria-label={isEn ? "Choose payment method" : "اختر طريقة الدفع"}>
+              <div className="retry-sheet-head">
+                <strong>
+                  {isEn
+                    ? "Retry or Switch Payment Method"
+                    : "إعادة الدفع أو تغيير طريقة الدفع"}
+                </strong>
+                <button
+                  type="button"
+                  className="icon-ghost-btn"
+                  aria-label={isEn ? "Close" : "إغلاق"}
+                  onClick={() => {
+                    setRetryOpen(false);
+                    setRetryError(null);
+                  }}
+                >
+                  <X size={15} />
+                </button>
+              </div>
+
+              <div className="retry-options-grid">
+                <label className={`retry-option-card ${retryChoice === "paymob_card" ? "is-selected" : ""}`}>
+                  <input
+                    type="radio"
+                    name={`retry-${row.id}`}
+                    checked={retryChoice === "paymob_card"}
+                    onChange={() => {
+                      setRetryChoice("paymob_card");
+                      setRetryError(null);
+                    }}
+                  />
+                  <CreditCard size={17} aria-hidden="true" />
+                  <span>{isEn ? "Credit / Debit Card" : "بطاقة بنكية (فيزا / ماستركارد)"}</span>
+                </label>
+
+                <label className={`retry-option-card ${retryChoice === "paymob_wallet" ? "is-selected" : ""}`}>
+                  <input
+                    type="radio"
+                    name={`retry-${row.id}`}
+                    checked={retryChoice === "paymob_wallet"}
+                    onChange={() => {
+                      setRetryChoice("paymob_wallet");
+                      setRetryError(null);
+                    }}
+                  />
+                  <Smartphone size={17} aria-hidden="true" />
+                  <span>{isEn ? "Mobile Wallet" : "محفظة إلكترونية"}</span>
+                </label>
+
+                <label className={`retry-option-card ${retryChoice === "cod" ? "is-selected" : ""}`}>
+                  <input
+                    type="radio"
+                    name={`retry-${row.id}`}
+                    checked={retryChoice === "cod"}
+                    onChange={() => {
+                      setRetryChoice("cod");
+                      setRetryError(null);
+                    }}
+                  />
+                  <Banknote size={17} aria-hidden="true" />
+                  <span>{isEn ? "Cash on Delivery (COD)" : "الدفع عند الاستلام"}</span>
+                </label>
+              </div>
+
+              {retryChoice === "paymob_wallet" && (
+                <label className="order-retry-wallet-label">
+                  <span>{t("paymentWalletPhoneLabel")}</span>
+                  <input
+                    type="tel"
+                    dir="ltr"
+                    inputMode="numeric"
+                    maxLength={11}
+                    value={walletPhone}
+                    onChange={(e) => {
+                      setWalletPhone(e.target.value.replace(/\D/g, "").slice(0, 11));
+                      if (retryError) setRetryError(null);
+                    }}
+                    placeholder={t("paymentWalletPhonePlaceholder")}
+                  />
+                </label>
+              )}
+
+              <button
+                type="button"
+                className="order-retry-payment-btn"
+                disabled={retrying}
+                onClick={handleConfirmRetry}
+              >
+                <RefreshCw size={14} className={retrying ? "spin-icon" : undefined} />
+                <span>
+                  {retrying
+                    ? t("paymentRetryingBtn")
+                    : retryChoice === "cod"
+                      ? isEn
+                        ? "Confirm Cash on Delivery"
+                        : "تأكيد الدفع عند الاستلام"
+                      : isEn
+                        ? "Continue to Payment"
+                        : "متابعة إلى بوابة الدفع"}
+                </span>
+              </button>
+
+              {retryError && (
+                <small role="alert" className="wallet-error-text">
+                  {retryError}
+                </small>
+              )}
+            </div>
           )}
         </div>
       )}

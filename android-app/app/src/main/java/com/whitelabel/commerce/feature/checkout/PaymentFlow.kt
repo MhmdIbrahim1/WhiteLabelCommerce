@@ -2,7 +2,9 @@ package com.whitelabel.commerce.feature.checkout
 
 import android.annotation.SuppressLint
 import android.net.Uri
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
@@ -10,6 +12,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -20,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.LocalShipping
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -42,6 +46,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -71,19 +76,37 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
-import java.net.HttpURLConnection
+import java.io.IOException
 import java.net.URL
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
 enum class PaymentFlowOutcome {
     SUCCESS,
+    SWITCHED_TO_COD,
     FAILED,
     PENDING,
     CANCELLED,
 }
 
 private val EGYPT_WALLET_REGEX = Regex("^01[0125][0-9]{8}$")
+private val PRIVATE_172_REGEX = Regex("^172\\.(1[6-9]|2[0-9]|3[0-1])\\.\\d{1,3}\\.\\d{1,3}$")
+private const val PAYMENT_TIMEOUT_MS = 15_000L
+
+internal fun isLocalOrLanHost(host: String?): Boolean {
+    val clean = host?.trim()?.lowercase().orEmpty()
+    if (clean.isEmpty()) return false
+    return clean == "localhost" ||
+        clean == "127.0.0.1" ||
+        clean.startsWith("10.") ||
+        clean.startsWith("192.168.") ||
+        PRIVATE_172_REGEX.matches(clean)
+}
 
 internal fun isPendingPaymobUrl(rawUrl: String): Boolean {
     val query = rawUrl.substringAfter('?', "")
@@ -99,9 +122,6 @@ internal fun isPendingPaymobUrl(rawUrl: String): Boolean {
  * Extracts the signed query string ONLY when the URL is strictly Paymob's final
  * `/acceptance/post_pay` receipt endpoint with `pending != true` AND an explicit
  * terminal `success=true` or `success=false` parameter.
- *
- * Returns `null` for `about:blank`, `/acceptance/iframes/...`, wallet OTP/PIN redirects
- * carrying `pending=true&success=false`, 3DS challenges, or any intermediate redirect.
  */
 internal fun extractStrictPostPayQuery(rawUrl: String): String? {
     val trimmed = rawUrl.trim()
@@ -127,14 +147,25 @@ internal fun extractStrictPostPayQuery(rawUrl: String): String? {
     return query
 }
 
-private fun isAllowedWebStoreBase(base: URL): Boolean =
-    base.protocol == "https" ||
-        (BuildConfig.DEBUG && base.host in setOf("10.0.2.2", "localhost", "127.0.0.1") && base.protocol == "http")
+internal fun isAllowedWebStoreBase(
+    base: URL,
+    allowLocalLanHttp: Boolean = BuildConfig.ENABLE_GITHUB_UPDATER || BuildConfig.DEBUG,
+): Boolean =
+    base.protocol.equals("https", ignoreCase = true) ||
+        (allowLocalLanHttp && base.protocol.equals("http", ignoreCase = true) && isLocalOrLanHost(base.host))
 
 @HiltViewModel
 class PaymentViewModel @Inject constructor(
     private val orders: OrderRepository,
 ) : ViewModel() {
+
+    private val httpClient: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .writeTimeout(15, TimeUnit.SECONDS)
+        .followRedirects(false)
+        .followSslRedirects(false)
+        .build()
 
     suspend fun status(id: String, phone: String): String? {
         val account = orders.getMyOrders().getOrNull()?.find { it.id == id }
@@ -145,61 +176,51 @@ class PaymentViewModel @Inject constructor(
         orders.confirmLocalPaymentSuccess(id)
     }
 
+    suspend fun switchToCod(id: String, phone: String): Result<Unit> =
+        orders.switchOrderToCod(id, phone)
+
     suspend fun initiate(id: String, method: String, wallet: String): String = withContext(Dispatchers.IO) {
         val base = URL(BuildConfig.WEB_STORE_BASE_URL)
-        require(isAllowedWebStoreBase(base))
-        val conn = URL(base, "/api/payments/paymob/initiate").openConnection() as HttpURLConnection
-        try {
-            conn.requestMethod = "POST"
-            conn.instanceFollowRedirects = false
-            conn.connectTimeout = 15_000
-            conn.readTimeout = 30_000
-            conn.doOutput = true
-            conn.setRequestProperty("Content-Type", "application/json")
-            val body = JSONObject()
-                .put("order_id", id)
-                .put("method", if (method == "paymob_wallet") "wallet" else "card")
-            if (method == "paymob_wallet") {
-                body.put("wallet_phone", PhoneNormalizer.normalize(wallet))
+        require(isAllowedWebStoreBase(base)) { "Blocked web-store base URL: ${base.protocol}://${base.host}" }
+        val target = URL(base, "/api/payments/paymob/initiate").toString()
+        val bodyJson = JSONObject()
+            .put("order_id", id)
+            .put("method", if (method == "paymob_wallet") "wallet" else "card")
+        if (method == "paymob_wallet") {
+            bodyJson.put("wallet_phone", PhoneNormalizer.normalize(wallet))
+        }
+
+        val request = Request.Builder()
+            .url(target)
+            .post(bodyJson.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
+            .build()
+
+        httpClient.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw IOException("HTTP ${response.code}")
             }
-            conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
-            check(conn.responseCode in 200..299) { "HTTP ${conn.responseCode}" }
-            val url = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
-                .getString("redirect_url")
-            require(URL(url).protocol == "https")
-            url
-        } finally {
-            conn.disconnect()
+            val raw = response.body?.string().orEmpty()
+            val redirectUrl = JSONObject(raw).getString("redirect_url")
+            require(URL(redirectUrl).protocol.equals("https", ignoreCase = true))
+            redirectUrl
         }
     }
 
-    /**
-     * Bridges Paymob's verified `/acceptance/post_pay` receipt query string directly to
-     * `${BuildConfig.WEB_STORE_BASE_URL}/api/payments/paymob/callback` so the server validates
-     * the 20-field HMAC-SHA512 signature and persists `orders.payment_status` in Supabase.
-     */
     suspend fun bridgePostPayCallback(encodedQuery: String): String? = withContext(Dispatchers.IO) {
         runCatching {
             val base = URL(BuildConfig.WEB_STORE_BASE_URL)
             require(isAllowedWebStoreBase(base))
             val cleanQuery = encodedQuery.trim().removePrefix("?")
             require(cleanQuery.isNotEmpty())
-            val callbackUrl = URL(base, "/api/payments/paymob/callback?$cleanQuery")
-            val conn = callbackUrl.openConnection() as HttpURLConnection
-            try {
-                conn.requestMethod = "GET"
-                conn.instanceFollowRedirects = false
-                conn.connectTimeout = 15_000
-                conn.readTimeout = 30_000
-                val code = conn.responseCode
-                val location = conn.getHeaderField("Location").orEmpty()
-                if (code in 300..399 && location.isNotBlank()) {
+            val callbackUrl = URL(base, "/api/payments/paymob/callback?$cleanQuery").toString()
+            val request = Request.Builder().url(callbackUrl).get().build()
+            httpClient.newCall(request).execute().use { response ->
+                val location = response.header("Location").orEmpty()
+                if (response.code in 300..399 && location.isNotBlank()) {
                     Uri.parse(location).getQueryParameter("payment")
                 } else {
                     null
                 }
-            } finally {
-                conn.disconnect()
             }
         }.getOrNull()
     }
@@ -220,12 +241,16 @@ fun PaymentFlow(
     val brandColors = LocalBrandColors.current
     val scope = rememberCoroutineScope()
 
-    var wallet by rememberSaveable(id) { mutableStateOf(PhoneNormalizer.normalize(initialWallet)) }
-    var started by rememberSaveable(id) {
+    var wallet by rememberSaveable(id, method) { mutableStateOf(PhoneNormalizer.normalize(initialWallet)) }
+    var started by rememberSaveable(id, method) {
         mutableStateOf(method != "paymob_wallet" || EGYPT_WALLET_REGEX.matches(PhoneNormalizer.normalize(initialWallet)))
     }
+    var attemptNonce by remember(id) { mutableIntStateOf(0) }
     var url by remember(id) { mutableStateOf<String?>(null) }
     var failed by remember(id) { mutableStateOf(false) }
+    var failureDetailAr by remember(id) { mutableStateOf<String?>(null) }
+    var failureDetailEn by remember(id) { mutableStateOf<String?>(null) }
+    var switchingToCod by remember(id) { mutableStateOf(false) }
     var bridgedPostPayQuery by remember(id) { mutableStateOf<String?>(null) }
     var callbackOutcome by remember(id) { mutableStateOf<String?>(null) }
     var showCancelDialog by remember { mutableStateOf(false) }
@@ -233,14 +258,18 @@ fun PaymentFlow(
     var pageLoading by remember { mutableStateOf(true) }
     val latestExit by rememberUpdatedState(onExit)
 
-    BackHandler(enabled = !checkingBeforeExit) {
+    BackHandler(enabled = !checkingBeforeExit && !switchingToCod) {
         showCancelDialog = true
     }
 
-    // 1. Initiate Paymob session once wallet is ready (or immediately for card)
-    LaunchedEffect(id, started) {
+    // 1. Initiate Paymob session with 15-second timeout once ready
+    LaunchedEffect(id, started, attemptNonce) {
         if (!started) return@LaunchedEffect
         failed = false
+        failureDetailAr = null
+        failureDetailEn = null
+        url = null
+        pageLoading = true
         if (vm.status(id, phone) == "paid") {
             vm.confirmPaid(id)
             latestExit(PaymentFlowOutcome.SUCCESS)
@@ -252,10 +281,25 @@ fun PaymentFlow(
             throw e
         } catch (_: Exception) {
             failed = true
+            failureDetailAr = "تعذر الاتصال بخادم الدفع خلال 15 ثانية. تأكد من اتصالك بالإنترنت أو اختر الدفع عند الاستلام."
+            failureDetailEn = "Could not reach the payment server within 15 seconds. Check your connection, retry, or switch to Cash on Delivery."
         }
     }
 
-    // 2. Bridge Paymob `/acceptance/post_pay` (only when explicit `success=true|false` is present)
+    // 1b. 15-second WebView initial page-load watchdog so the spinner never hangs indefinitely
+    LaunchedEffect(url, pageLoading, failed) {
+        if (url != null && pageLoading && !failed) {
+            delay(PAYMENT_TIMEOUT_MS)
+            if (pageLoading && bridgedPostPayQuery == null && callbackOutcome == null) {
+                failed = true
+                pageLoading = false
+                failureDetailAr = "استغرق تحميل صفحة بوابة الدفع وقتاً طويلاً (أكثر من 15 ثانية)."
+                failureDetailEn = "The payment gateway page took too long to respond (over 15 seconds)."
+            }
+        }
+    }
+
+    // 2. Bridge Paymob `/acceptance/post_pay` (only when pending != true and explicit success=true|false)
     LaunchedEffect(id, bridgedPostPayQuery) {
         val query = bridgedPostPayQuery ?: return@LaunchedEffect
         val redirectedOutcome = vm.bridgePostPayCallback(query)
@@ -308,7 +352,7 @@ fun PaymentFlow(
             }
         }
 
-        while (url != null && callbackOutcome == null && bridgedPostPayQuery == null) {
+        while (url != null && !failed && callbackOutcome == null && bridgedPostPayQuery == null) {
             delay(2_500)
             val status = vm.status(id, phone)
             if (status == "paid") {
@@ -334,7 +378,7 @@ fun PaymentFlow(
                 },
                 navigationIcon = {
                     IconButton(
-                        enabled = !checkingBeforeExit,
+                        enabled = !checkingBeforeExit && !switchingToCod,
                         onClick = { showCancelDialog = true },
                     ) {
                         Icon(
@@ -440,34 +484,74 @@ fun PaymentFlow(
                                 modifier = Modifier.size(48.dp),
                             )
                             Text(
-                                text = localized("تعذر بدء جلسة الدفع الإلكتروني", "Unable to start online payment"),
+                                text = localized("تعذر الاتصال ببوابة الدفع الإلكتروني", "Unable to reach payment gateway"),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 textAlign = TextAlign.Center,
                             )
                             Text(
                                 text = localized(
-                                    "لا تقلق، سلة التسوق محفوظة كما هي. يمكنك المحاولة مرة أخرى الآن أو من صفحة طلباتي.",
-                                    "Your cart is still safe. You can retry now or anytime from My Orders.",
+                                    failureDetailAr
+                                        ?: "لا تقلق، سلة التسوق محفوظة كما هي. يمكنك إعادة المحاولة الآن أو التحويل إلى الدفع عند الاستلام.",
+                                    failureDetailEn
+                                        ?: "Your cart is still safe. You can retry now or switch this order to Cash on Delivery.",
                                 ),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center,
                             )
                             Button(
-                                onClick = {
-                                    failed = false
-                                    started = false
-                                    started = true
-                                },
+                                onClick = { attemptNonce += 1 },
+                                enabled = !switchingToCod,
                                 shape = MaterialTheme.shapes.small,
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp),
                             ) {
-                                Text(localized("إعادة المحاولة", "Try again"))
+                                Text(localized("إعادة المحاولة", "Retry"))
                             }
-                            OutlinedButton(
+                            if (storeSettings.codEnabled) {
+                                OutlinedButton(
+                                    onClick = {
+                                        scope.launch {
+                                            switchingToCod = true
+                                            vm.switchToCod(id, phone)
+                                                .onSuccess {
+                                                    switchingToCod = false
+                                                    latestExit(PaymentFlowOutcome.SWITCHED_TO_COD)
+                                                }
+                                                .onFailure {
+                                                    switchingToCod = false
+                                                    failureDetailAr = "تعذر التحويل إلى الدفع عند الاستلام حالياً. يمكنك المحاولة من صفحة طلباتي."
+                                                    failureDetailEn = "Could not switch to Cash on Delivery right now. Please try from My Orders."
+                                                }
+                                        }
+                                    },
+                                    enabled = !switchingToCod,
+                                    shape = MaterialTheme.shapes.small,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(48.dp),
+                                ) {
+                                    if (switchingToCod) {
+                                        CircularProgressIndicator(
+                                            strokeWidth = 2.dp,
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Rounded.LocalShipping,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                        Spacer(modifier = Modifier.size(8.dp))
+                                        Text(localized("التحويل للدفع عند الاستلام (COD)", "Switch to Cash on Delivery"))
+                                    }
+                                }
+                            }
+                            TextButton(
                                 onClick = { onExit(PaymentFlowOutcome.FAILED) },
-                                shape = MaterialTheme.shapes.small,
+                                enabled = !switchingToCod,
                                 modifier = Modifier.fillMaxWidth(),
                             ) {
                                 Text(localized("الانتقال إلى طلباتي", "Go to My Orders"))
@@ -549,6 +633,34 @@ fun PaymentFlow(
                                             }
                                         }
 
+                                        override fun onReceivedError(
+                                            view: WebView,
+                                            request: WebResourceRequest,
+                                            error: WebResourceError,
+                                        ) {
+                                            if (request.isForMainFrame && bridgedPostPayQuery == null && callbackOutcome == null) {
+                                                pageLoading = false
+                                                failed = true
+                                                failureDetailAr = "تعذر تحميل صفحة الدفع (${error.description}). يرجى المحاولة مجدداً."
+                                                failureDetailEn = "Failed to load payment page (${error.description}). Please retry."
+                                            }
+                                        }
+
+                                        override fun onReceivedHttpError(
+                                            view: WebView,
+                                            request: WebResourceRequest,
+                                            errorResponse: WebResourceResponse,
+                                        ) {
+                                            if (request.isForMainFrame && errorResponse.statusCode >= 500 &&
+                                                bridgedPostPayQuery == null && callbackOutcome == null
+                                            ) {
+                                                pageLoading = false
+                                                failed = true
+                                                failureDetailAr = "خادم الدفع غير متاح مؤقتاً (HTTP ${errorResponse.statusCode})."
+                                                failureDetailEn = "Payment server is temporarily unavailable (HTTP ${errorResponse.statusCode})."
+                                            }
+                                        }
+
                                         override fun shouldOverrideUrlLoading(
                                             view: WebView,
                                             request: WebResourceRequest,
@@ -559,12 +671,12 @@ fun PaymentFlow(
                                                 return false
                                             }
 
-                                            // 0. Never intercept or treat as failed when `pending=true` (e.g. Paymob Wallet pre-PIN redirects)
+                                            // 0. Never intercept or treat as failed when `pending=true` (Paymob Wallet pre-PIN redirects)
                                             if (isPendingPaymobUrl(rawTarget)) {
                                                 return false
                                             }
 
-                                            // 1. Bridge ONLY Paymob's strict `/acceptance/post_pay` receipt URL with `pending != true` and explicit `success=true|false`
+                                            // 1. Bridge ONLY Paymob's strict `/acceptance/post_pay` receipt URL with pending != true and explicit success=true|false
                                             if (request.isForMainFrame) {
                                                 val strictQuery = extractStrictPostPayQuery(rawTarget)
                                                 if (strictQuery != null) {
@@ -576,11 +688,11 @@ fun PaymentFlow(
                                             }
 
                                             val base = Uri.parse(BuildConfig.WEB_STORE_BASE_URL)
-                                            val isLocalDebugHost = BuildConfig.DEBUG &&
-                                                base.host in setOf("10.0.2.2", "127.0.0.1", "localhost") &&
-                                                target.host in setOf("10.0.2.2", "127.0.0.1", "localhost")
+                                            val isLocalLanHost = (BuildConfig.ENABLE_GITHUB_UPDATER || BuildConfig.DEBUG) &&
+                                                isLocalOrLanHost(base.host) &&
+                                                isLocalOrLanHost(target.host)
                                             val matchesAppOrigin =
-                                                (target.host == base.host || isLocalDebugHost) &&
+                                                (target.host == base.host || isLocalLanHost) &&
                                                     target.scheme == base.scheme &&
                                                     target.port == base.port
 
@@ -596,8 +708,8 @@ fun PaymentFlow(
                                                 return true
                                             }
 
-                                            // 3. Rewrite mismatched loopback host in debug
-                                            if (isLocalDebugHost && target.host != base.host) {
+                                            // 3. Rewrite mismatched loopback host on local LAN/dev testing
+                                            if (isLocalLanHost && target.host != base.host) {
                                                 val port = if (target.port > 0) target.port else base.port
                                                 val authority = if (port > 0) "${base.host}:$port" else base.host.orEmpty()
                                                 val rewritten = target.buildUpon()
@@ -608,7 +720,7 @@ fun PaymentFlow(
                                                 return true
                                             }
 
-                                            // 4. Never block Paymob HTTPS pages or local debug origin
+                                            // 4. Never block Paymob HTTPS pages or allowed local origin
                                             if (matchesAppOrigin) return false
                                             return !target.scheme.equals("https", ignoreCase = true)
                                         }
@@ -643,8 +755,8 @@ fun PaymentFlow(
                 ) {
                     Text(
                         localized(
-                            "ستبقى منتجاتك محفوظة في السلة، ويمكنك إعادة محاولة الدفع لاحقاً من صفحة طلباتي.",
-                            "Your cart will remain intact and you can retry payment anytime from My Orders.",
+                            "ستبقى منتجاتك محفوظة في السلة، ويمكنك إعادة المحاولة أو التحويل إلى الدفع عند الاستلام من صفحة طلباتي.",
+                            "Your cart will remain intact and you can retry payment or switch to Cash on Delivery anytime from My Orders.",
                         ),
                     )
                 }
@@ -653,8 +765,6 @@ fun PaymentFlow(
                 TextButton(
                     onClick = {
                         showCancelDialog = false
-                        // Re-query Supabase once before treating Back/Close as cancelled
-                        // so an already-paid order is never marked cancelled/failed.
                         scope.launch {
                             checkingBeforeExit = true
                             val dbStatus = vm.status(id, phone)

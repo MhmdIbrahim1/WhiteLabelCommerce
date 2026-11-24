@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  GitHub flavor network security configuration:
+  Permits cleartext HTTP for local LAN/dev testing (192.168.0.0/16, 10.0.0.0/8, localhost, 127.0.0.1)
+  while PaymentFlow.kt enforces a strict runtime LAN-only allowlist for any non-HTTPS URL.
+  Google Play builds use src/playstore/res/xml/network_security_config.xml (strict HTTPS-only).
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+</network-security-config>

@@ -582,3 +582,29 @@ Stored as `store_settings.ui_config.homeSections` (ordered array, up to 15 items
 - **GitHub Actions CI/CD Release Workflow (`.github/workflows/android-release.yml`):**
   - Triggers on `push` to `main`/`master` (and `workflow_dispatch`), sets up JDK 17 + Android SDK + Gradle cache, decodes optional `secrets.ANDROID_KEYSTORE_BASE64` to `android-app/release.keystore`, computes `VERSION_CODE = github.run_number + 10` and `VERSION_NAME = 1.0.<run_number>`, runs `./gradlew assembleRelease -PVERSION_CODE=... -PVERSION_NAME=...`, and publishes a GitHub Release (`softprops/action-gh-release@v2`) tagged `v$VERSION_NAME` with the built `.apk` attached and auto-generated release notes.
 - **Verification:** `.\gradlew.bat testDebugUnitTest assembleDebug --no-daemon` passed with **0 errors and 0 Kotlin compiler warnings**; **22 / 22 JUnit unit tests passed** across 9 test suites (including 3 new tests in `ReleaseVersionComparatorTest` and 4 in `PaymobPostPayTest`). `web-store/` runtime code was untouched.
+
+
+### Phase 9 & 10: Unified Customer Auth, Release Payment Config, Cascading Egypt Addresses, Home Search, COD Retry Fallback, Animated Order Tracker & Promo Banner Carousel — 2026-11-24
+
+- **Unified Customer Auth & Account Sync (`shared/phase-9-unified-auth.sql`, `web-store/`, `android-app/`):**
+  - Applied `shared/phase-9-unified-auth.sql` in Supabase SQL Editor (`store_customers.governorate` column + upgraded 5-arg `sync_customer_profile` claiming guest orders matching Egyptian phone variants `01x`/`201x` or case-insensitive email).
+  - Hardened `web-store` `/account` & `/login` with `HybridAuthPanel` (6-digit Email OTP with 60s resend cooldown + Email/Password Sign In & Sign Up) and `/checkout` auto-fill while preserving Guest Checkout.
+  - Added tenant-scoped persistent `DataStoreSessionManager`, `AuthRepositoryImpl`, bilingual `AuthScreen`, `AccountScreen` (`حسابي / My Account`), TopAppBar Account button, Checkout auto-fill, and reactive `OrdersViewModel` sync in `android-app/`.
+- **Release Payment Gateway URL, Flavor LAN Config & 15s Timeout (`android-app/`, `.github/workflows/android-release.yml`):**
+  - Uploaded `WEB_STORE_BASE_URL` to GitHub Actions Secrets and wired `${{ secrets.WEB_STORE_BASE_URL || vars.WEB_STORE_BASE_URL }}` in CI.
+  - Added flavor-specific `res/xml/network_security_config.xml` (`github` allows local LAN HTTP with strict runtime host allowlist in `PaymentFlow.kt`; `playstore` enforces strict HTTPS-only).
+  - Upgraded `PaymentFlow.kt` to 15-second OkHttp connect/read/write timeouts + 15-second WebView load watchdog + main-frame error handling with localized Retry and Switch-to-COD actions.
+- **27-Governorate Cascading Egypt Addresses (`web-store/src/lib/egypt-locations.ts`, `egypt-address-fields.tsx`, `EgyptLocations.kt`, `EgyptAddressPicker.kt`):**
+  - Added complete bilingual (`AR`/`EN`) dataset of all 27 Egyptian governorates and comprehensive cities/districts, wired into Checkout and Account saved profiles on both web and Android with searchable picker & automatic city reset on governorate change.
+- **Home Screen Search Bar (`HomeViewModel.kt`, `HomeScreen.kt`):**
+  - Added prominent bilingual search bar at top of Android `HomeScreen` with 0ms local fuzzy Arabic/English filtering + 180ms debounced `search_products_fast` full-catalog search and inline results grid.
+- **Cash on Delivery (`COD`) Retry Fallback (`shared/phase-10-cod-fallback.sql`, `orders/actions.ts`, `tracking.tsx`, `OrdersScreen.kt`, `PaymentFlow.kt`):**
+  - Applied `shared/phase-10-cod-fallback.sql` widening `orders_payment_status_check` with `'cod_pending'` and adding secure `public.switch_order_to_cod` RPC.
+  - Upgraded Retry Payment sheets on both web and Android to offer all 3 options (**Bank Card**, **Mobile Wallet**, **Cash on Delivery**) updating `payment_method = 'cod'`, `payment_status = 'cod_pending'`, and `status = 'confirmed'`.
+- **Animated Order Status Tracker (`StatusComponents.kt`, `tracking.tsx`, `globals.css`):**
+  - Upgraded `OrderTimelineStepper` (Android) with `animateFloatAsState` progress rail, `rememberInfiniteTransition` active-stage pulsing halo, `AnimatedContent` checkmarks, and carrier/Bosta tracking pill; matched with smooth CSS progress fill and pulsing active halo on web `/orders`.
+- **Multi-Campaign Promotional Banner Carousel (`ui-config.ts`, `promo-banners-editor.tsx`, `hero.tsx`, `StoreSettings.kt`, `HomeScreen.kt`):**
+  - Added `promo_banners` list to `ui_config.pages.home` (backward-compatible with single Hero Banner) with full Admin Customizer CRUD/reorder/toggle editor, web animated carousel (hover/touch pause, swipe/arrow controls, indicator pills), and Android `HorizontalPager` carousel (`graphicsLayer` scale/alpha transition, touch-pausing auto-scroll, expanding dot indicators, category/product deep-link navigation).
+- **Verification:**
+  - `web-store/`: `npx tsc --noEmit`, `npm run lint -- --max-warnings 0`, and `npm run build` passed with **0 errors and 0 warnings**; live browser verification on `http://localhost:3000` passed across `/checkout`, `/`, `/orders`, `/account`, and `/login` with 0 console errors.
+  - `android-app/`: `.\gradlew.bat testGithubDebugUnitTest assembleGithubDebug assemblePlaystoreDebug --no-daemon` passed (`BUILD SUCCESSFUL`, **27 / 27 JUnit unit tests passed** across 11 suites).

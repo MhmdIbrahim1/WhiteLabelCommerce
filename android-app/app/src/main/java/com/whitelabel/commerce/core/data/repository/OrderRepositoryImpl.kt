@@ -231,6 +231,35 @@ class OrderRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun switchOrderToCod(orderNumber: String, phone: String): Result<Unit> = runSuspendCatching {
+        val cleanPhone = PhoneNormalizer.normalize(phone)
+        supabase.postgrest.rpc(
+            function = "switch_order_to_cod",
+            parameters = buildJsonObject {
+                put("p_store", com.whitelabel.commerce.BuildConfig.STORE_ID)
+                put("p_order_id", orderNumber.trim())
+                put("p_phone", cleanPhone)
+            },
+        )
+        var settledReceipt: SavedOrderReceipt? = null
+        dataStore.edit { prefs ->
+            val current = decodeSavedOrders(prefs[KEY_SAVED_ORDERS]).toMutableList()
+            val idx = current.indexOfFirst { it.orderNumber.equals(orderNumber, ignoreCase = true) }
+            if (idx >= 0) {
+                val updated = current[idx].copy(
+                    method = "cod",
+                    paymentStatus = "cod_pending",
+                    status = OrderStatus.CONFIRMED.rawValue,
+                )
+                current[idx] = updated
+                prefs[KEY_SAVED_ORDERS] = json.encodeToString(current)
+                settledReceipt = updated.toDomain()
+            }
+        }
+        settledReceipt?.let { cart.settleReceipt(it) }
+        cart.clearCart()
+    }
+
     private fun decodeSavedOrders(raw: String?): List<SavedOrderReceiptEntity> {
         if (raw.isNullOrBlank()) return emptyList()
         return runCatching {

@@ -110,6 +110,23 @@ export type GlobalUiTokens = {
   motionIntensity: MotionIntensity;
 };
 
+export type PromoBannerCampaign = {
+  id: string;
+  active: boolean;
+  badge_ar: string;
+  badge_en: string;
+  title_ar: string;
+  title_en: string;
+  subtitle_ar: string;
+  subtitle_en: string;
+  cta_text_ar: string;
+  cta_text_en: string;
+  cta_link: string;
+  image_url: string | null;
+  gradient_start: string;
+  gradient_end: string;
+};
+
 export type HomePageUiConfig = {
   heroLayout: HeroLayout;
   heroBg: string;
@@ -132,6 +149,8 @@ export type HomePageUiConfig = {
   hero_cta_link: string;
   hero_image_url: string | null;
   hero_overlay_opacity: number;
+  // Phase 10: Multi-campaign promotional banner carousel list (backward compatible)
+  promo_banners: PromoBannerCampaign[];
 };
 
 export type HeroBannerCmsConfig = Pick<
@@ -150,6 +169,7 @@ export type HeroBannerCmsConfig = Pick<
   | "hero_cta_link"
   | "hero_image_url"
   | "hero_overlay_opacity"
+  | "promo_banners"
 >;
 
 export function defaultHeroBannerCms(): HeroBannerCmsConfig {
@@ -170,6 +190,7 @@ export function defaultHeroBannerCms(): HeroBannerCmsConfig {
     hero_cta_link: "/products",
     hero_image_url: null,
     hero_overlay_opacity: 45,
+    promo_banners: [],
   };
 }
 
@@ -802,6 +823,27 @@ export function resolveUiConfig(
           80,
           45,
         ),
+        promo_banners: Array.isArray(rawHome.promo_banners)
+          ? rawHome.promo_banners
+              .filter(isRecord)
+              .slice(0, 12)
+              .map((item, idx): PromoBannerCampaign => ({
+                id: pickOptionalText(item.id, `promo-${idx + 1}`, 60) || `promo-${idx + 1}`,
+                active: typeof item.active === "boolean" ? item.active : true,
+                badge_ar: pickOptionalText(item.badge_ar, "", 60),
+                badge_en: pickOptionalText(item.badge_en, "", 60),
+                title_ar: pickOptionalText(item.title_ar, "", 120),
+                title_en: pickOptionalText(item.title_en, "", 120),
+                subtitle_ar: pickOptionalText(item.subtitle_ar, "", 240),
+                subtitle_en: pickOptionalText(item.subtitle_en, "", 240),
+                cta_text_ar: pickOptionalText(item.cta_text_ar, "", 60),
+                cta_text_en: pickOptionalText(item.cta_text_en, "", 60),
+                cta_link: pickSafeHref(item.cta_link, "/products"),
+                image_url: pickHeroImageUrl(item.image_url),
+                gradient_start: pickHex(item.gradient_start, primaryButtonBg),
+                gradient_end: pickHex(item.gradient_end, accentBadge),
+              }))
+          : [],
       },
       products: {
         gridColumns: pickGridCols(
