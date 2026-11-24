@@ -1,0 +1,100 @@
+# Native Android App Progress (`android-app/`)
+
+> **Isolation Note:** This log tracks native Android progress independently of `docs/PROGRESS.md` so Android work runs in parallel with `web-store/` without merge conflicts.
+
+| Phase | Status | Scope |
+| --- | --- | --- |
+| Phase 3 (Core Foundation) | Complete | Gradle Kotlin DSL + Version Catalog, White-Label 60-30-10 Design System (Light/Dark/RTL), Supabase & DataStore Data Layer, Core App Shell & Navigation |
+| Phase 4 (Full Storefront UI & Interactive Flows) | Complete (verified build & unit tests) | Home carousel & grid, Catalog search/sort, Product Details with variants, Persistent Cart, COD Checkout & Receipt, Order Tracking Timeline, Customer Support & WhatsApp |
+
+---
+
+## 1. Gradle, SDK & Dependency Setup
+
+- **Application ID / Namespace:** `com.whitelabel.commerce`
+- **SDK Targets:** `minSdk = 24`, `compileSdk = 35`, `targetSdk = 35`
+- **Build Toolchain:** AGP `8.7.3`, Gradle `8.11.1` (wrapper generated in `android-app/gradlew` + `gradlew.bat`), Kotlin `2.0.21`, KSP `2.0.21-1.0.28`, Java 17 target / JBR 21 build runtime
+- **Version Catalog:** `android-app/gradle/libs.versions.toml`
+- **Key Dependencies Configured:**
+  - **UI:** Jetpack Compose BOM `2024.10.01`, Material 3, Material Icons Extended, Google Downloadable Fonts (`ui-text-google-fonts`)
+  - **Navigation:** `androidx.navigation:navigation-compose:2.8.4`
+  - **DI:** Hilt `2.52` (KSP compiler) + `hilt-navigation-compose:1.2.0`
+  - **Async & Serialization:** Kotlin Coroutines `1.9.0`, `kotlinx-serialization-json:1.7.3`
+  - **Backend & Networking:** Supabase Kotlin SDK BOM `3.0.3` (`postgrest-kt`, `auth-kt`, `realtime-kt`) + Ktor OkHttp Engine `3.0.3`
+  - **Local Storage:** Jetpack DataStore Preferences `1.1.1`
+  - **Images:** Coil Compose `2.7.0`
+- **Safe Configuration (`local.properties` -> `BuildConfig`):**
+  - `android-app/local.properties` is gitignored via `android-app/.gitignore` and holds `SUPABASE_URL` and `SUPABASE_ANON_KEY`.
+  - `android-app/local.properties.example` provides the template for fresh clones/CI.
+
+---
+
+## 2. Phase 3 Core Foundation (Complete)
+
+- **Design System (`core/designsystem/`):**
+  - Bundled offline fallback `app/src/main/assets/brand-config.json` + live Supabase `store_settings` override (`StoreRepositoryImpl`).
+  - Light & Dark 60-30-10 color system (`Color.kt`), dynamic `border_radius` Material 3 `Shapes` (`Shape.kt`), `IBM Plex Sans Arabic` typography (`Type.kt`), RTL enforcement (`Theme.kt`), currency formatting (`Formatting.kt`).
+- **Domain & Data Layer (`core/domain/`, `core/data/`):**
+  - Domain models & Supabase DTOs for `StoreSettings`, `Category`, `Product`, `CartItem`, `Order`, `OrderItem`, `SavedOrderReceipt`, `SupportTicket`.
+  - Repositories: `StoreRepositoryImpl`, `CatalogRepositoryImpl` (with Phase 1/2 `created_at` fallback), `CartRepositoryImpl` (DataStore), `OrderRepositoryImpl` (trusted `store_checkout` RPC, `track_guest_order` RPC, local DataStore receipts, RLS-safe guest insert without `.select()`), `SupportRepositoryImpl` (RLS-safe insert without `.select()` or staff-only columns + local submitted tickets).
+
+---
+
+## 3. Phase 4 Storefront Screens & Interactive Flows
+
+### Shared Design System Components (`core/designsystem/components/`)
+- `ShimmerEffect.kt`: Animated shimmer brush + `BannerSkeleton`, `CategoryChipsSkeletonRow`, `ProductCardSkeleton`.
+- `ProductCard.kt`: 4:5 portrait image card (`aspectRatio(0.8f)`) via Coil `SubcomposeAsyncImage`, discount `-XX%` badge, stock pill, strikethrough `old_price`, quick-add CTA.
+- `ColorSwatchUtils.kt`: Maps Arabic, English, and `#RRGGBB` hex color names to visual swatch circles.
+- `StatusComponents.kt`: `OrderStatusBadge`, `TicketStatusBadge`, `OrderTimelineStepper` (`pending -> confirmed -> shipped -> delivered` + `cancelled`), and `BrandEmptyState`.
+
+### Milestone 1: Home Screen (`feature/home/`)
+- **Files:** `HomeViewModel.kt`, `HomeScreen.kt`
+- **Bindings:** `StoreRepository`, `CatalogRepository`, `CartRepository`
+- **Implemented:** Dynamic TopAppBar store name + Light/Dark toggle + Support shortcut; `PullToRefreshBox`; auto-scrolling `HorizontalPager` promotional banner carousel with animated page indicators (and branded 60-30-10 hero fallback when no banners are configured); horizontal category cards with contextual icons routing into filtered Catalog; 2-column `4:5` latest products grid with quick-add Snackbar and shimmer skeleton loading states.
+
+### Milestone 2: Catalog & Product Details (`feature/catalog/`)
+- **Files:** `CatalogViewModel.kt`, `CatalogScreen.kt`, `ProductDetailViewModel.kt`, `ProductDetailScreen.kt`
+- **Bindings:** `CatalogRepository`, `CartRepository`
+- **Implemented:**
+  - **Catalog Screen:** Debounced search bar, horizontal category filter chips (`الكل` + live categories), sort selector (`الأحدث`, `الأقل سعراً`, `الأعلى سعراً`), 2-column product grid with pull-to-refresh and empty state.
+  - **Product Details (`/product/{productId}`):** High-res Coil image preview, discount badge, stock status, description, interactive Size chips (`sizes[]`), interactive Color swatches (`colors[]`), stock-bounded quantity stepper, and sticky `"أضف إلى السلة"` CTA bar with `"عرض السلة"` Snackbar action.
+
+### Milestone 3: Persistent Cart & COD Checkout (`feature/cart/`, `feature/checkout/`)
+- **Files:** `CartViewModel.kt`, `CartScreen.kt`, `CheckoutViewModel.kt`, `CheckoutScreen.kt`
+- **Bindings:** `CartRepository`, `StoreRepository`, `OrderRepository`
+- **Implemented:**
+  - **Cart Screen:** Persistent DataStore items with thumbnails, size/color variant tags, quantity steppers, delete/clear controls, subtotal, dynamic `shipping_fee` from `store_settings`, grand total in `EGP` (`ج.م`), and sticky `"إتمام الطلب"` CTA.
+  - **Checkout Screen:** Customer full name, Egyptian mobile validation (`010/011/012/015` & `+201...` / Arabic-Indic numerals normalized via `PhoneNormalizer`), full delivery address, `COD` payment selection (with disabled `CARD` teaser matching `web-store`), idempotent `request_key` calling `public.store_checkout` RPC, and Arabic error mapping.
+  - **Order Confirmation Receipt:** Displays generated `order_number` with one-tap copy button, itemized receipt summary, `"تتبع الطلب"` deep-handoff into Orders, and automatic local DataStore receipt save + cart clear.
+
+### Milestone 4: Order Tracking & Customer Support (`feature/orders/`, `feature/support/`)
+- **Files:** `OrdersViewModel.kt`, `OrdersScreen.kt`, `SupportViewModel.kt`, `SupportScreen.kt`
+- **Bindings:** `OrderRepository`, `SupportRepository`, `StoreRepository`
+- **Implemented:**
+  - **Order Tracking Screen:** Search by `order_number` + phone calling `public.track_guest_order` RPC, visual step-by-step `OrderTimelineStepper`, itemized receipt display, persistent on-device saved order history via DataStore with one-tap live status refresh & copy, plus authenticated account orders when signed in.
+  - **Support Screen (`/support?orderId={orderId}`):** Quick WhatsApp deep-link (`https://wa.me/...` from `store_settings.whatsapp_number`), support email action, RLS-compliant support ticket submission with optional order reference (and quick-select chips from recent local orders), and ticket history showing status badges & merchant `admin_reply`.
+
+### Navigation & App Shell (`app/navigation/`)
+- **Files:** `AppDestination.kt`, `WhiteLabelAppShell.kt`
+- **Routes:** `home`, `categories`, `cart`, `orders`, `product/{productId}`, `checkout`, `support?orderId={orderId}` with live cart badge on `السلة`, root SnackbarHost, and cross-tab handoffs (Home -> filtered Catalog, Order Confirmation -> live Order Tracking, Orders -> Support linked to Order ID).
+
+---
+
+## 4. Build & Test Verification Status
+
+- **Command:** `.\gradlew.bat testDebugUnitTest assembleDebug --no-daemon` (Gradle `8.11.1`, auto-provisioned JDK 17 toolchain via Foojay resolver, Android SDK `35`)
+- **Compilation:** Passed (`:app:kspDebugKotlin`, `:app:compileDebugKotlin`, `:app:hiltJavaCompileDebug`, `:app:assembleDebug`) with **0 errors and 0 Kotlin compiler warnings**.
+- **Debug APK Output:** `android-app/app/build/outputs/apk/debug/app-debug.apk` (`21.6 MB`).
+- **Unit Tests (`testDebugUnitTest`): 10 / 10 passed (0 failures, 0 errors):**
+  - `PhoneNormalizerTest` — 3 passed (Arabic-Indic digits, Egyptian mobile validation `010/011/012/015` & `+201...`, WhatsApp formatting, length bounds)
+  - `BrandColorParserTest` — 3 passed (hex parsing, fallback safety, Light/Dark 60-30-10 color scheme generation)
+  - `ColorSwatchMapperTest` — 1 passed (Arabic, English, and `#RRGGBB` swatch resolution)
+  - `ProductModelTest` — 2 passed (discount calculation, variant-aware `CartItem.lineKey` & totals)
+  - `CatalogSortingTest` — 1 passed (price low-to-high and high-to-low sorting)
+
+## 5. Next Steps (Android Studio / Emulator Acceptance)
+
+1. Open `WhiteLabelCommerce/android-app` in Android Studio (or install `app-debug.apk` via `adb install -r android-app/app/build/outputs/apk/debug/app-debug.apk`).
+2. Optional font certs: populate official Google Play Services certificates in `app/src/main/res/values/font_certs.xml` via Android Studio Resource Manager (`IBM Plex Sans Arabic`) or drop `.ttf` weights into `app/src/main/res/font/`.
+3. End-to-end live verification against Supabase (after `shared/phase-2-storefront.sql` is applied in Supabase SQL Editor): browse catalog, select size/color variants, add to cart, complete a COD order, copy the UUID, track it in `طلباتي`, and submit a support ticket / open WhatsApp.

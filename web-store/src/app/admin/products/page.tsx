@@ -1,0 +1,174 @@
+import Image from "next/image";
+import { Package, Plus } from "lucide-react";
+import { checked, requireAdmin } from "@/lib/db";
+import { money } from "@/lib/brand";
+import { photo } from "@/lib/shop";
+import { localizedText, t } from "@/lib/i18n";
+import { getServerLang } from "@/lib/i18n-server";
+import { pagination } from "@/lib/workflow";
+import { saveCategory, deleteCategory, deleteProduct } from "../mutations";
+import { Empty, Notice, Pager } from "../ui";
+import {
+  AdminProductForm,
+  type AdminCategoryItem,
+  type AdminProductItem,
+} from "./product-form";
+
+export default async function Products({
+  searchParams,
+}: PageProps<"/admin/products">) {
+  const [params, lang, { db }] = await Promise.all([
+    searchParams,
+    getServerLang(),
+    requireAdmin(),
+  ]);
+  const { from, to, page } = pagination(params.page);
+  const productResult = await db
+    .from("products")
+    .select(
+      "id,name,name_en,slug,description,description_en,price,cost_price,old_price,stock,category_id,sizes,colors,image_path,specifications,is_active",
+      { count: "exact" },
+    )
+    .order("name")
+    .order("id")
+    .range(from, to);
+  const products: AdminProductItem[] = checked(productResult);
+  const categories: AdminCategoryItem[] = [];
+  for (let offset = 0; ; offset += 200) {
+    const batch = checked(
+      await db
+        .from("categories")
+        .select("id,name,name_en,slug")
+        .order("name")
+        .order("id")
+        .range(offset, offset + 199),
+    );
+    categories.push(...batch);
+    if (batch.length < 200) break;
+  }
+
+  return (
+    <>
+      <h1>{t(lang, "adminCatalogHeading")}</h1>
+      <Notice result={params.result} />
+      <details className="card">
+        <summary>
+          {t(lang, "adminManageCategories")} <span>{categories.length}</span>
+        </summary>
+        <form action={saveCategory} className="inline">
+          <label>
+            {t(lang, "adminCategoryNameAr")}
+            <input name="name" required />
+          </label>
+          <label>
+            {t(lang, "adminCategoryNameEn")}
+            <input
+              name="name_en"
+              dir="ltr"
+              placeholder={
+                lang === "en" ? "e.g. Men's Fashion" : "مثال: أزياء رجالي"
+              }
+            />
+          </label>
+          <label>
+            {t(lang, "adminSlug")}
+            <input name="slug" dir="ltr" required />
+          </label>
+          <button>{t(lang, "adminAddBtn")}</button>
+        </form>
+        {categories.map((c) => (
+          <details key={c.id}>
+            <summary>{localizedText(lang, c.name, c.name_en)}</summary>
+            <form className="inline" action={saveCategory}>
+              <input type="hidden" name="id" value={c.id} />
+              <label>
+                {t(lang, "adminCategoryNameAr")}
+                <input name="name" defaultValue={c.name} required />
+              </label>
+              <label>
+                {t(lang, "adminCategoryNameEn")}
+                <input
+                  name="name_en"
+                  dir="ltr"
+                  defaultValue={c.name_en ?? ""}
+                />
+              </label>
+              <label>
+                {t(lang, "adminSlug")}
+                <input name="slug" dir="ltr" defaultValue={c.slug} required />
+              </label>
+              <button>{t(lang, "adminSaveBtn")}</button>
+              <button className="danger" formAction={deleteCategory}>
+                {t(lang, "adminDeleteCategory")}
+              </button>
+            </form>
+          </details>
+        ))}
+      </details>
+      <details className="card">
+        <summary>
+          <span className="with-icon">
+            <Plus size={18} /> {t(lang, "adminAddProduct")}
+          </span>
+        </summary>
+        {categories.length ? (
+          <AdminProductForm categories={categories} />
+        ) : (
+          <p>{lang === "en" ? "Add a category first." : "أضف فئة أولاً."}</p>
+        )}
+      </details>
+      <section className="card">
+        <h2>{t(lang, "adminProductsDirectory")}</h2>
+        {!products.length && (
+          <Empty>
+            {lang === "en" ? "No products yet." : "لا توجد منتجات."}
+          </Empty>
+        )}
+        {products.map((p) => (
+          <details key={p.id}>
+            <summary>
+              <span className="with-icon">
+                {p.image_path ? (
+                  <Image
+                    unoptimized
+                    width={48}
+                    height={48}
+                    className="thumb"
+                    alt=""
+                    src={photo(p.image_path) ?? ""}
+                  />
+                ) : (
+                  <Package size={24} />
+                )}{" "}
+                {localizedText(lang, p.name, p.name_en)}
+              </span>
+              <small>
+                {money(p.price, undefined, lang)}
+                {Number(p.cost_price ?? 0) > 0
+                  ? ` · ${t(lang, "adminCost")} ${money(Number(p.cost_price), undefined, lang)}`
+                  : ""}{" "}
+                · {t(lang, "adminStock")} {p.stock} ·{" "}
+                {p.is_active ? t(lang, "adminPublished") : t(lang, "adminDraft")}
+              </small>
+            </summary>
+            <AdminProductForm p={p} categories={categories} />
+            <details>
+              <summary>{t(lang, "adminDeleteProduct")}</summary>
+              <form action={deleteProduct}>
+                <input type="hidden" name="id" value={p.id} />
+                <button className="danger">
+                  {t(lang, "adminConfirmDelete")}
+                </button>
+              </form>
+            </details>
+          </details>
+        ))}
+        <Pager
+          page={page}
+          base="/admin/products"
+          count={productResult.count ?? 0}
+        />
+      </section>
+    </>
+  );
+}

@@ -1,0 +1,82 @@
+package com.whitelabel.commerce.core.domain.model
+
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+
+data class BrandColors(
+    val primary: String = "#164E63",
+    val secondary: String = "#C2410C",
+    val page: String = "#F8FAFC",
+    val surface: String = "#FFFFFF",
+)
+
+data class BrandPresets(
+    val productCard: String = "outlined",
+    val hero: String = "slider",
+)
+
+/**
+ * Unified white-label store configuration matching both `assets/brand-config.json`
+ * and the singleton `public.store_settings` table (`id = true`) in Supabase.
+ */
+data class StoreSettings(
+    val hero: HeroConfig = HeroConfig(),
+    val heroSectionVisible: Boolean = true,
+    val codEnabled: Boolean = true,
+    val paymobEnabled: Boolean = false,
+    val paymobCardEnabled: Boolean = false,
+    val paymobWalletEnabled: Boolean = false,
+    val storeName: String = "Nova Store",
+    val currency: String = "EGP",
+    val locale: String = "ar-EG",
+    val colors: BrandColors = BrandColors(),
+    val borderRadius: Int = 12,
+    val whatsappNumber: String = "",
+    val supportEmail: String = "support@example.com",
+    val shippingFee: Double = 50.0,
+    val banners: List<String> = emptyList(),
+    val presets: BrandPresets = BrandPresets(),
+    val isSyncedFromRemote: Boolean = false,
+    val themeTemplate: String = "modern-minimal",
+) {
+    /**
+     * Master Hero Banner visibility honoring both `ui_config.pages.home.hero_visible`
+     * and the `hero_banner` entry inside `ui_config.homeSections`.
+     */
+    val isHeroVisible: Boolean
+        get() = hero.visible && heroSectionVisible
+
+    val paymentMethods: List<PaymentMethod>
+        get() = buildList {
+            if (codEnabled) add(PaymentMethod.COD)
+            if (paymobEnabled && paymobCardEnabled) add(PaymentMethod.CARD)
+            if (paymobEnabled && paymobWalletEnabled) add(PaymentMethod.WALLET)
+        }
+
+    val isRtl: Boolean
+        get() = locale.startsWith("ar", ignoreCase = true) ||
+            locale.startsWith("he", ignoreCase = true) ||
+            locale.startsWith("fa", ignoreCase = true) ||
+            locale.startsWith("ur", ignoreCase = true)
+}
+
+@Serializable
+data class HeroConfig(
+    @SerialName("hero_visible") val visible: Boolean = true,
+    @SerialName("hero_badge_visible") val badgeVisible: Boolean = true,
+    @SerialName("hero_badge_ar") val badgeAr: String = "",
+    @SerialName("hero_badge_en") val badgeEn: String = "",
+    @SerialName("hero_title_ar") val titleAr: String = "",
+    @SerialName("hero_title_en") val titleEn: String = "",
+    @SerialName("hero_subtitle_ar") val subtitleAr: String = "قطع منتقاة بعناية تجمع بين الأناقة الهادئة وجودة التفاصيل اليومية.",
+    @SerialName("hero_subtitle_en") val subtitleEn: String = "Curated pieces blending quiet elegance with everyday craftsmanship.",
+    @SerialName("hero_cta_visible") val ctaVisible: Boolean = true,
+    @SerialName("hero_cta_text_ar") val ctaTextAr: String = "",
+    @SerialName("hero_cta_text_en") val ctaTextEn: String = "",
+    @SerialName("hero_cta_link") val ctaLink: String = "/products",
+    @SerialName("hero_image_url") val imageUrl: String? = null,
+    @SerialName("hero_overlay_opacity") val overlayOpacity: Int = 45,
+    @SerialName("heroBg") val heroBg: String? = null,
+    @SerialName("heroText") val heroText: String? = null,
+    @SerialName("bannerSpeedMs") val bannerSpeedMs: Int = 5000,
+)

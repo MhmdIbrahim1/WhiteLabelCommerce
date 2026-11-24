@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        Google Play Services Downloadable Fonts certificates for `IBM Plex Sans Arabic`.
+        Keep these arrays empty until replaced with Android Studio's generated
+        `font_certs.xml` (Resource Manager -> Font -> Add Downloadable Font -> IBM Plex Sans Arabic)
+        or bundle `ibm_plex_sans_arabic_*.ttf` directly in `res/font/`.
+        Empty arrays prevent Base64 decode exceptions and fall back cleanly to system sans-serif.
+    -->
+    <array name="com_google_android_gms_fonts_certs">
+        <item>@array/com_google_android_gms_fonts_certs_dev</item>
+        <item>@array/com_google_android_gms_fonts_certs_prod</item>
+    </array>
+    <string-array name="com_google_android_gms_fonts_certs_dev" />
+    <string-array name="com_google_android_gms_fonts_certs_prod" />
+</resources>

@@ -1,0 +1,54 @@
+# ==============================================================================
+# WhiteLabelCommerce — Root .gitignore (Monorepo Security & Build Hygiene)
+# ==============================================================================
+
+# --- Environment & Secrets (NEVER commit) ---
+.env
+.env.*
+web-store/.env*
+!.env.example
+!web-store/.env.example
+android-app/local.properties
+!android-app/local.properties.example
+keystore.properties
+*.jks
+*.keystore
+*.p12
+*.pem
+*.key
+
+# --- Logs & Crash Dumps ---
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# --- Node / Next.js (web-store) ---
+node_modules/
+.next/
+web-store/.next/
+web-store/out/
+web-store/coverage/
+web-store/.vercel/
+*.tsbuildinfo
+web-store/next-env.d.ts
+
+# --- Android / Gradle (android-app) ---
+.gradle/
+.kotlin/
+.idea/
+*.iml
+**/build/
+android-app/captures/
+android-app/.externalNativeBuild/
+android-app/.cxx/
+*.apk
+*.aab
+
+# --- OS & Editor Artifacts ---
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~

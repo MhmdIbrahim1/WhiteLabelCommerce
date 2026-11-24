@@ -1,0 +1,584 @@
+# Nova Store implementation progress
+
+| Phase | Status | Scope |
+| --- | --- | --- |
+| 0 | Complete | Monorepo scaffold, shared brand tokens, database bootstrap and Next.js starter |
+| Pre-Phase 1 security hardening | Complete | Profile-based roles, guest submission permissions, order ownership and product-image storage policies |
+| 1 | Complete (verified live) | Secured RTL merchant dashboard, catalog, orders, support and settings |
+| 2 | Complete (live checkout verified) | Customer storefront, trusted COD checkout, order tracking and contact |
+| 3 | Complete (verified live) | Shopify-style Visual Theme & Page Customizer (`store_settings.ui_config` JSONB) + dynamic per-page storefront theming |
+| 4 | Complete (verified live) | Zero-contract shipping workflow, one-tap driver delivery confirmation (`/delivery/[token]`), automatic stock restoration on cancel, storefront audit polish & motion |
+| 5 | Complete (verified live) | Dynamic Home Sections Builder (`ui_config.homeSections`), strict role-based Admin header guard, and GIN-indexed instant product search (`search_products_fast`) |
+| 6 | Complete (verified live) | Multi-tenant customer auth (`/login`, `/register`, `/account`), store-scoped CRM (`/admin/customers`), Executive Profit Analytics (`/admin`), `cost_price`, & coupons (`/admin/coupons`) |
+| 7 | Complete (verified live) | Product Technical Specifications JSONB (`products.specifications`), Size Guide modal, Admin 1-click Category Variant/Spec Presets, & Full Bilingual Support (`AR` RTL / `EN` LTR + bilingual GIN search) |
+
+## Phase 0 handoff
+
+1. Run the entire [schema script](../shared/supabase-schema.sql) in the Supabase SQL Editor. It supports a fresh project or the original Phase 0 schema and preserves existing order ownership when renaming `orders.customer_id` to `user_id`.
+2. Create `web-store/.env.local` with the project’s public connection settings.
+
+   ```dotenv
+   NEXT_PUBLIC_SUPABASE_URL=
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=
+   ```
+
+3. From `web-store/`, run `npm run dev` to start the web app.
+
+The [brand configuration](../shared/brand-config.json) and SQL seed start with matching settings. The shipping fee is EGP 50, and the radius is 12 logical pixels. Supply the store’s WhatsApp number and replace the example support address before launch.
+
+## Pre-Phase 1 security hardening
+
+- Signup creates a customer profile. The first backfill carries forward existing administrators identified by server-managed Auth metadata. Subsequent access checks use the current profile role. To promote an account, update its verified user ID’s role in `public.profiles` through the SQL Editor.
+- Store settings, categories and active products are publicly readable. Signed-in customers can read their own orders, line items and tickets and open their own tickets.
+- Guest clients can submit an order with `shipping_address` or a ticket with `subject` and `message`. Use Supabase `.insert(...)` without chaining `.select()`. Guest orders start pending with a null subtotal and total. Trusted checkout code must record the items and calculate prices before confirmation.
+- The public `product-images` bucket allows image reads. Administrators can upload a new object or delete one.
+- Local PostgreSQL tests covered signup, profile permissions, order ownership migration, repeat execution, guest submissions and storage policies using stand-ins for Supabase Auth and Storage. Phase 0 and security hardening are live in Supabase, as confirmed by the project owner.
+
+## Phase 1 merchant dashboard
+
+Run the [Phase 1 migration](../shared/phase-1-admin.sql) in the project's Supabase SQL Editor. For fresh projects, apply the base schema first. The migration adds catalog images, variants, previous prices, ticket replies and order links, store banners, and the revenue calculation. It preserves the existing access policies and limits staff-only ticket fields during customer submissions.
+
+Start the app from `web-store/` with `npm run dev` and open `/login` with an existing email/password account whose profile has the admin role. The app uses the publishable key and the signed-in user's session. Every admin page and mutation checks the role, and the database enforces RLS.
+
+- Overview shows exact order, active-product and open-ticket counts, delivered-order revenue in the configured currency, and recent orders.
+- Products supports catalog and category CRUD, image uploads, size and color lists, current and previous prices, stock, and publication state.
+- Orders supports status filtering, item detail and guarded transitions. The existing `stock` column stores stock quantity, `confirmed` represents processing and `closed` represents a resolved ticket.
+- Tickets supports linked order details, replies and status changes. Settings supports store name, shipping fee, WhatsApp and an ordered list of HTTPS banner image URLs.
+- Local verification passed for production build, TypeScript, lint with zero warnings, the RTL login page, and unauthenticated redirects across all six admin paths. PostgreSQL tests covered migration reapplication, ticket field protection, admin updates and revenue.
+- Phase 1 is verified live by the project owner.
+
+## Phase 2 handoff
+
+### Theme & Layout — implemented
+- Files: `shared/brand-config.json`, `src/app/(shop)/layout.tsx`, `shop.css`, `src/components/shop/navigation.tsx`, `cart-store.ts`, and `src/lib/shop.ts` (web paths relative to `web-store/`).
+- Contract: singleton `store_settings.id=true` supplies colors, radius, currency, fee, banners and WhatsApp. Profile checks reuse Phase 1 auth. Storefront styling is scoped away from admin routes.
+- RTL IBM Plex Sans Arabic, persisted theme, responsive navigation, and cart subscriptions implemented. Build pending integrated routes. Next: catalog/search endpoint, checkout, orders and support.
+### Home & Catalog — implemented
+- Files: `src/app/(shop)/page.tsx`, `products/page.tsx`, `products/[id]/page.tsx`, `src/app/api/catalog-search/route.ts`, `src/components/shop/{hero,cards,buy}.tsx`, `public/store-collection.jpg` and storefront CSS.
+- Contract: public active products and categories, public bucket `image_path`, `price/old_price`, `stock`, `sizes/colors`, and ordered HTTPS banners. Latest sorts on Phase 2 `created_at`; Phase 1 databases show featured products by name.
+- Build pending checkout integration. Next: transactional SQL, persistent cart UI, checkout, tracking and contact.
+### Cart & Server-Side Checkout — implemented
+- Files: `src/components/shop/cart-store.ts`, `src/components/shop/basket.tsx`, `src/app/(shop)/cart/page.tsx`, `checkout/{page.tsx,action.ts}`, `src/lib/phone.ts`, `shared/phase-2-storefront.sql`.
+- Contract: the action passes product IDs, variants, quantity, address, phone, COD and a retry key to `store_checkout`. The SQL function uses `auth.uid()`, locks products in ID order, validates active stock and variants, prices from products/settings, writes snapshot lines and decrements stock atomically. CARD is disabled. Existing orders and tickets retain RLS.
+- Integrated build and SQL verification pending. Next: order tracking, customer sessions, contact, final checks.
+### Orders & Contact Us — implemented
+- Files: `src/app/(shop)/orders/{page.tsx,actions.ts}`, `src/components/shop/tracking.tsx`, `src/app/(shop)/contact/{page.tsx,action.ts}`.
+- Contract: account reads explicitly filter `orders.user_id` under RLS. Guest tracking calls a narrowly scoped RPC with the full UUID and normalized phone and returns only ID, status and date. Contact inserts only `subject/message`; WhatsApp appears when configured.
+- First production compilation succeeded; type checking found stale Next dev route declarations for the replaced starter page. Remaining: regenerate route types, lint, production build, PostgreSQL checks and handoff.
+
+### Phase 2 verification and deployment handoff
+
+- Build: `npm run build` completed with TypeScript checks and all storefront and admin routes. `npm run lint -- --max-warnings 0` passed. The stale dev route declarations were regenerated by starting Next dev.
+- Browser checks against the local app and hosted public catalog passed for RTL, theme persistence, product detail, adding to cart, cart persistence after reload, COD form and disabled CARD option, mobile navigation, and viewport width on home/catalog/orders/contact.
+- Local PostgreSQL checks applied all migrations and re-applied Phase 2. Checks covered database-derived price and shipping, variant validation, rollback after insufficient stock, idempotent retry, conflicting retry rejection, CARD rejection, guest tracking with the correct and incorrect phone, and account order visibility. Live order and ticket data were not modified during verification.
+- Integration files: `src/proxy.ts` refreshes customer sessions; `src/app/admin/orders/[id]/page.tsx` displays the recorded phone and variant snapshots for fulfillment.
+- Deployment: the Phase 2 migration is installed in the hosted Supabase project. New projects should apply [shared/phase-2-storefront.sql](../shared/phase-2-storefront.sql) after Phase 1. Phase 3 remains pending.
+
+### Live checkout repair — 2026-11-23
+
+- Reproduced the reported failure with the storefront publishable key. PostgREST returned HTTP 404 / `PGRST202` for `store_checkout`, and the same project's catalog lacked the Phase 2 timestamp column. Applied the repository's Phase 2 migration in the production SQL Editor and refreshed the PostgREST schema cache.
+- Updated `web-store/src/app/(shop)/checkout/action.ts` to trim and validate the address, normalize the phone before checking the database's 8–15 digit rule, distinguish cart/input errors from service failures, and log the RPC error code without customer details.
+- Verified the live RPC as both `anon` and `authenticated`, using the canvas bag, COD and a transaction-scoped test account. Checked guest tracking, customer ownership, receipt totals and item visibility. Rolled back the test orders, stock changes and test account. A separate publishable-key API check accepted the reported address and normalized phone, reached empty-cart validation, and confirmed stock was still 10.
+- Follow-up browser verification at `http://localhost:3000` used the production build alongside the existing dev server. Navigated from the catalog through cart, submitted COD checkout and tracked the returned receipt. Fixed a missing favicon found on the first run. The repeat run had zero browser console or network errors and both form POSTs returned HTTP 200. Verified the two persisted test orders and their line items, removed both by exact receipt and QA marker, and restored the two inventory units in one transaction. SQL confirmed zero matching orders and line items.
+
+
+## Phase 3: Visual Theme & Page Customizer (`store_settings.ui_config`)
+
+- **Migration:** [shared/phase-3-customizer.sql](../shared/phase-3-customizer.sql) adds `ui_config jsonb not null default '{}'::jsonb` (checked with `jsonb_typeof(ui_config) = 'object'`) on `public.store_settings` while preserving Phase 2 `theme_template` and `border_radius` columns.
+- **Web Store Engine & Admin Studio:**
+  - `web-store/src/lib/ui-config.ts` integrates the 4 existing base templates (`modern-minimal`, `luxury-boutique`, `vibrant-pop`, `tech-grid`) as one-click starter presets (`uiConfigFromTemplate`) and validates/normalizes arbitrary JSONB (`resolveUiConfig`).
+  - `/admin/customizer` (`web-store/src/app/admin/customizer/`) provides an RTL split-screen studio with Quick-Start Base Presets, 6 customization tabs (`عام`, `الرئيسية`, `المنتجات`, `تفاصيل المنتج`, `السلة والدفع`, `تتبع الطلبات`), color pickers, layout/animation controls, a live interactive Desktop/Mobile preview, and Server Action `saveUiConfig` (which also syncs legacy `theme_template`, `primary_color`, `secondary_color`, `surface_color`, `border_radius`).
+  - Dynamic storefront integration reads `store_settings.ui_config` in `web-store/src/lib/shop.ts` and applies global + per-page CSS custom properties, layouts, hover effects, variant selector styles, checkout progress bar, order tracking badge/elevation styles, and entrance animations across `(shop)/layout.tsx`, `shop.css`, `hero.tsx`, `cards.tsx`, `gallery.tsx`, `buy.tsx`, `basket.tsx`, and `tracking.tsx`.
+- **Verification:**
+  - Executed `shared/phase-3-customizer.sql` in the hosted Supabase SQL Editor (`Success. No rows returned`) and verified `ui_config` (`jsonb`, default `'{}'::jsonb`), `theme_template`, and `border_radius` on `public.store_settings`.
+  - Passed `eslint --max-warnings 0`, `tsc --noEmit`, and `npm run build` with zero errors.
+  - Verified `/admin/customizer` and live storefront routes (`/`, `/products`, `/orders`) at `http://localhost:39177` with zero console errors and zero HTTP `>= 400` responses: confirmed instant live preview updates (Quick-Start presets, all 6 tabs, Desktop/Mobile toggle), Supabase persistence across reload, dynamic live storefront reflection, and clean restoration to `tech-grid`.
+
+### Shared `store_settings.ui_config` JSON Schema Contract (Web & Android)
+
+Both `web-store/` and `android-app/` consume the same JSON object stored in `public.store_settings.ui_config` (row `id = true`). When `ui_config` is `{}` or missing optional fields, clients should derive defaults from `theme_template` (`modern-minimal` | `luxury-boutique` | `vibrant-pop` | `tech-grid`) and legacy columns (`primary_color`, `secondary_color`, `surface_color`, `border_radius`).
+
+```json
+{
+  "version": 1,
+  "baseTemplate": "modern-minimal",
+  "global": {
+    "primaryButtonBg": "#164E63",
+    "primaryButtonText": "#FFFFFF",
+    "pageBg": "#F6F8F9",
+    "cardSurface": "#FFFFFF",
+    "accentBadge": "#C2410C",
+    "borderRadius": 12,
+    "motionIntensity": "smooth"
+  },
+  "pages": {
+    "home": {
+      "heroLayout": "split",
+      "heroBg": "#164E63",
+      "heroText": "#FFFFFF",
+      "bannerSpeedMs": 5000,
+      "categoryCardStyle": "pills",
+      "entranceAnimation": "fade-up"
+    },
+    "products": {
+      "gridColumns": 4,
+      "cardHoverEffect": "zoom",
+      "priceBadgeColor": "#164E63",
+      "addToCartStyle": "solid"
+    },
+    "product_details": {
+      "galleryStyle": "thumbnails-bottom",
+      "ctaButtonColor": "#164E63",
+      "variantSelectorStyle": "pills"
+    },
+    "cart_checkout": {
+      "summaryCardBg": "#FFFFFF",
+      "progressBarAccent": "#C2410C",
+      "checkoutButtonColor": "#164E63"
+    },
+    "orders": {
+      "timelineActiveColor": "#164E63",
+      "statusBadgeStyle": "pill",
+      "cardElevation": "subtle"
+    }
+  }
+}
+```
+
+#### Allowed Field Values & Constraints
+
+| Field | Type / Allowed Values |
+| --- | --- |
+| `version` | `1` |
+| `baseTemplate` | `"modern-minimal" \| "luxury-boutique" \| "vibrant-pop" \| "tech-grid"` |
+| All color fields (`*Bg`, `*Text`, `*Color`, `*Accent`, `cardSurface`, `accentBadge`) | 6-digit hex string `^#[0-9A-Fa-f]{6}$` |
+| `global.borderRadius` | Integer `0`–`24` (logical px / dp) |
+| `global.motionIntensity` | `"none" \| "subtle" \| "smooth" \| "bouncy"` |
+| `pages.home.heroLayout` | `"split" \| "full-bleed" \| "bento"` |
+| `pages.home.bannerSpeedMs` | Integer `0` (disabled) or `500`–`15000` (milliseconds) |
+| `pages.home.categoryCardStyle` | `"pills" \| "rounded-cards" \| "minimal"` |
+| `pages.home.entranceAnimation` | `"fade-up" \| "zoom-in" \| "slide-rtl" \| "none"` |
+| `pages.products.gridColumns` | `2 \| 3 \| 4` |
+| `pages.products.cardHoverEffect` | `"zoom" \| "lift" \| "glow" \| "none"` |
+| `pages.products.addToCartStyle` | `"solid" \| "outline" \| "pill" \| "soft"` |
+| `pages.product_details.galleryStyle` | `"thumbnails-bottom" \| "side-stack"` |
+| `pages.product_details.variantSelectorStyle` | `"pills" \| "boxed"` |
+| `pages.orders.statusBadgeStyle` | `"pill" \| "rounded" \| "outline"` |
+| `pages.orders.cardElevation` | `"flat" \| "subtle" \| "elevated"` |
+
+
+## Phase 4: Zero-Contract Shipping, Order Fulfillment & Motion Polish
+
+- **Migration:** [shared/phase-4-orders-shipping.sql](../shared/phase-4-orders-shipping.sql) extends `public.orders` with zero-contract shipping & delivery columns, adds the `nova_restore_order_stock_on_cancel` trigger (atomically restoring `products.stock` when an order transitions to `cancelled`), upgrades `public.track_guest_order(uuid, text)` to return shipping fields, and adds RLS-safe `public.get_delivery_by_token(text)` and `public.confirm_delivery_by_token(text)` RPCs.
+- **Admin Fulfillment (`/admin/orders`, `/admin/orders/[id]`):**
+  - Rich order listing with Order ID, Date, Customer/Phone, Address summary, Items summary, Total, Status badge, carrier/tracking info, quick status transitions, and responsive mobile order cards.
+  - Shipping drawer when transitioning to `shipped`: carrier presets (`بوسطة (Bosta)`, `أرامكس (Aramex)`, `مايلرز (Mylerz)`, `البريد المصري`, `مندوب خاص`, or custom), optional tracking number/AWB, automatic public tracking URL generation (or custom URL override), and optional courier note.
+  - One-tap WhatsApp driver delivery link (`/delivery/[token]`) with copy & WhatsApp share actions.
+- **Customer Tracking (`/orders`) & Storefront Audit Fixes:**
+  - Displays live status stepper, copyable order ID, shipping info card (carrier, copyable tracking number, courier note, external **"تتبع الشحنة ↗"** link).
+  - Fixed dark-mode contrast on `/cart` & `/checkout` summary panels, added `/support` -> `/contact` redirect, eliminated mobile horizontal overflow, restored `/products/[id]` section spacing, and refined admin mobile navigation/email truncation.
+  - Added subtle motion micro-interactions (gentle `350ms` fade-up with `40ms` stagger, hover lift/zoom, tactile button press, cart badge pop, and smooth timeline transitions) honoring `ui_config` motion settings and `prefers-reduced-motion`.
+
+### Shared `public.orders` Shipping & Delivery Columns Contract (Web & Android)
+
+| Column | Type | Nullable | Notes |
+| --- | --- | --- | --- |
+| `shipping_carrier` | `text` | Yes | Display name of carrier or courier (e.g. `بوسطة (Bosta)`, `مندوب خاص`, custom) |
+| `tracking_number` | `text` | Yes | Carrier AWB / tracking code (copyable on `/orders` and Android) |
+| `tracking_url` | `text` | Yes | Safe `http(s)://` public tracking link (auto-built for known carriers or custom) |
+| `courier_note` | `text` | Yes | Optional courier note (e.g. driver phone or delivery window) |
+| `delivery_token` | `text` | Yes (unique) | 48-char hex token powering one-tap `/delivery/[token]` driver confirmation |
+| `shipped_at` | `timestamptz` | Yes | Recorded automatically when transitioning to `shipped` |
+| `delivered_at` | `timestamptz` | Yes | Recorded automatically when marked `delivered` (via admin or `/delivery/[token]`) |
+
+#### Related RPC Contracts
+- `public.track_guest_order(order_number uuid, customer_phone text)` now returns `(id, status, created_at, shipping_carrier, tracking_number, tracking_url, courier_note, shipped_at, delivered_at)`.
+- `public.get_delivery_by_token(p_token text)` returns safe driver card fields for `/delivery/[token]`.
+- `public.confirm_delivery_by_token(p_token text)` marks a `confirmed` or `shipped` order as `delivered` and sets `delivered_at`.
+
+
+## Phase 5: Dynamic Home Sections Builder, Role-Based Admin Guard & GIN-Indexed Search
+
+- **Migration:** [shared/phase-5-search-index.sql](../shared/phase-5-search-index.sql) enables `pg_trgm`, adds a stored generated `search_vector tsvector` column on `public.products` combining `name` (A), `slug` (B), and `description` (C), creates GIN indexes (`idx_products_search_vector`, `idx_products_name_trgm`, `idx_products_description_trgm`), and defines `public.search_products_fast(p_query text, p_category_id uuid default null, p_limit int default 20)` ranked by `ts_rank + similarity`.
+- **Dynamic Home Sections (`ui_config.homeSections`):**
+  - Added `homeSections: HomeSection[]` to `StoreUiConfig` in `web-store/src/lib/ui-config.ts`.
+  - Built the interactive Sections Manager (`الأقسام` tab) inside `/admin/customizer` (`sections-builder.tsx`) with one-click Show/Hide, Move Up/Move Down reordering, `+ إضافة قسم` block picker (5 block types), inline block configuration, and real-time preview sync.
+  - Updated `/` (`web-store/src/app/(shop)/page.tsx`) to render visible `homeSections` dynamically in exact merchant-configured order.
+- **Role-Based Admin Guard:** Enforced `export const dynamic = "force-dynamic"` in `(shop)/layout.tsx` and explicit `profiles.role === 'admin'` verification in `access.ts` so the **"الإدارة"** shortcut is strictly hidden for guests and non-admin customers.
+- **Instant Indexed Search UI:** Upgraded `/api/catalog-search` and `/products?q=...` to call `search_products_fast` and upgraded the header expandable search pill (`200ms` debounce, `2+` chars) with instant thumbnail/title/price dropdown results.
+- **Verification:**
+  - Executed `shared/phase-5-search-index.sql` in Supabase SQL Editor (`Success. No rows returned`), verified `search_products_fast('حقيبة')` (`rank: 1.90816`), and confirmed `EXPLAIN ANALYZE` uses dual `Bitmap Index Scan` on `idx_products_search_vector` (`0.008ms`) and `idx_products_name_trgm` (`0.011ms`, total `0.178ms`).
+  - Passed `eslint --max-warnings 0`, `tsc --noEmit`, and `npm run build` (all 17 routes) with zero errors.
+  - Verified `/admin/customizer` (`الأقسام` tab: add `promo_banner`, reorder up, hide `categories_grid`, publish, live `/` sync, and clean restore) and instant header search dropdown + `/products?q=حقيبة` in Chrome at `http://localhost:39177` with `0` console errors and `0` HTTP `>= 400` failures.
+
+### Shared `ui_config.homeSections` JSON Contract (Web & Android)
+
+Stored as `store_settings.ui_config.homeSections` (ordered array, up to 15 items; defaults to `[hero_banner, categories_grid, featured_products, trust_features]` when omitted):
+
+```json
+{
+  "homeSections": [
+    {
+      "id": "sec-hero",
+      "type": "hero_banner",
+      "visible": true
+    },
+    {
+      "id": "sec-categories",
+      "type": "categories_grid",
+      "visible": true,
+      "title": "تسوّق حسب القسم"
+    },
+    {
+      "id": "sec-featured",
+      "type": "featured_products",
+      "visible": true,
+      "title": "أحدث المنتجات",
+      "categoryId": "",
+      "limit": 8
+    },
+    {
+      "id": "sec-promo-1",
+      "type": "promo_banner",
+      "visible": true,
+      "badge": "عرض لفترة محدودة",
+      "headline": "خصومات تصل إلى 30٪ على التشكيلة الجديدة",
+      "subtext": "شحن سريع لجميع المحافظات مع إمكانية الدفع عند الاستلام.",
+      "ctaLabel": "تسوّق العرض الآن",
+      "ctaHref": "/products",
+      "accentColor": "#164E63"
+    },
+    {
+      "id": "sec-trust",
+      "type": "trust_features",
+      "visible": true,
+      "title": "لماذا تتسوّق معنا؟"
+    }
+  ]
+}
+```
+
+### Shared Search RPC Contract (`public.search_products_fast`)
+
+- **Signature:** `public.search_products_fast(p_query text, p_category_id uuid default null, p_limit int default 20)` (granted to `anon, authenticated`; `security invoker` so RLS `is_active = true` still applies).
+- **Returns:** `(id uuid, name text, category_id uuid, description text, price numeric, old_price numeric, stock integer, sizes text[], colors text[], image_path text, rank real)` ordered by `rank desc, name asc`.
+- **Android / Web Usage:** Call via Supabase `.rpc("search_products_fast", { p_query, p_category_id, p_limit })` for instant debounced search (2+ chars) and catalog search pages.
+
+
+## Phase 6: Multi-Tenant Customer Auth, Store-Scoped CRM, Executive Profit Analytics & Coupons
+
+- **Migration:** [shared/phase-6-crm-analytics.sql](../shared/phase-6-crm-analytics.sql) adds multi-tenant `store_id` scoping (`is_store_admin(store_id)` RLS), `products.cost_price` + `order_items.unit_cost`, `public.store_customers` (with automatic checkout upsert and guest-order linking on signup/login via `sync_customer_profile`), `public.coupons` + `public.validate_coupon(p_code, p_subtotal)`, and upgrades `store_checkout` to snapshot `unit_cost`, upsert `store_customers`, and apply promo coupons atomically.
+- **Customer Auth & Account Portal:**
+  - Unified RTL glassmorphic `/login` and `/register` pages capturing phone numbers to automatically link prior guest orders in the active store.
+  - `/account` customer portal displaying personal purchase summary (orders, delivered, total spent), saved shipping profile (`sync_customer_profile`), and recent order tracking.
+  - Storefront Navbar shows **"تسجيل الدخول"** for guests, a clean User Menu (**"حسابي"**, **"طلباتي"**, **"تسجيل الخروج"**) for signed-in users, and keeps **"الإدارة"** strictly visible only to `profiles.role === 'admin'`.
+- **Admin CRM, Coupons & Executive Analytics:**
+  - `/admin/customers`: store-scoped customer directory with search, smart badges (`عميل VIP`, `عميل متكرر`, `عميل جديد`, `مرتجعات مرتفعة`), LTV/AOV/return metrics, UTF-8 CSV export, slide-over customer detail drawer with order history, editable internal notes, and one-click WhatsApp link.
+  - `/admin/coupons`: create/toggle/delete store-scoped promo coupons (`percent` / `fixed`, minimum order, max uses, expiry) + live coupon validation in `/checkout`.
+  - `/admin`: redesigned **Executive Profit & Sales Analytics Dashboard** with quick date-range filters (`اليوم`, `آخر 7 أيام`, `آخر 30 يوم`, `هذا الشهر`, `الكل`), 4 Hero KPI cards with sparklines (Gross Revenue, Net Profit & Margin, Pending COD, AOV & Delivery Rate), pure SVG Revenue vs. Net Profit Area/Line chart with hover tooltips, Order Status Donut Ring, Top 5 Products, and Low Stock Alerts (`stock <= 5`), plus `cost_price` in `/admin/products`.
+
+### Shared Phase 6 Multi-Tenant & RPC Contracts (Web & Android)
+
+- **Multi-Tenant Scope:** `store_settings.store_id`, `profiles.store_id`, `products.store_id`, `orders.store_id`, `store_customers.store_id`, and `coupons.store_id` default to `'00000000-0000-0000-0000-000000000001'::uuid` for the primary tenant and enforce strict `is_store_admin(store_id)` RLS.
+- **Customer Profile Sync & Guest Order Linking:**
+  - `public.sync_customer_profile(p_full_name text, p_phone text, p_city text, p_address text)` -> upserts `store_customers` for `(store_id, auth.uid())` and attaches any prior guest orders in the same store matching normalized `phone`.
+- **Coupon Validation & Checkout:**
+  - `public.validate_coupon(p_code text, p_subtotal numeric)` -> returns `(valid, reason, code, discount_type, discount_value, discount_amount, min_order_amount)` (`reason`: `'ok' | 'invalid_code' | 'not_found' | 'expired' | 'max_uses_reached' | 'min_order_not_met'`).
+  - `public.store_checkout(request_key uuid, address text, customer_phone text, payment text, lines jsonb, p_coupon_code text default null, p_customer_name text default null)` -> validates & applies optional coupon atomically, snapshots `unit_cost`, upserts `store_customers`, and returns `(order_number, amount, order_currency)`.
+
+---
+
+## Full Storefront Data Seed & Section-by-Section End-to-End QA Audit — 2026-11-24
+
+### 1. Realistic Arabic Catalog & Coupons Seeded (`store_id = 00000000-0000-0000-0000-000000000001`)
+- **Categories (4 added, 5 total):** `أزياء رجالي`, `أحذية رياضية`, `ساعات وإكسسوارات`, `حقائب جلدية` (alongside existing `إكسسوارات`).
+- **Products (12 added, 13 active total):** Realistic Arabic titles, descriptions, verified high-resolution Unsplash photography (visually inspected, zero broken URLs), selling `price`, wholesale `cost_price`, `old_price`, sizes/colors, and varied stock counts including 2 low-stock items (`سنيكرز كاجوال جلد وشمواه` stock `3`, `ساعة كلاسيك بسوار جلد طبيعي` stock `4`) to trigger `/admin` Low Stock Alerts. Also polished existing `canvas-tote` with a verified image and `cost_price = 135`.
+- **Promo Coupons (2 active):** `NOVA10` (`10%` percent discount, min `0`) and `WELCOME50` (`50 EGP` fixed discount, min `300 EGP`).
+- **Storefront Home Sections:** Added a `promo_banner` section advertising `NOVA10` into `store_settings.ui_config.homeSections` between `featured_products` and `trust_features`.
+
+### 2. Bugs Discovered & Fixed During Audit
+1. **Critical `store_checkout` SQL Bug (`shared/phase-6-crm-analytics.sql`):** Fixed PostgreSQL `42702` (`column reference "address" is ambiguous`) in `update public.store_customers` when any existing/signed-in customer checked out, by introducing `v_address` and aliasing `store_customers sc`. Re-applied in Supabase SQL Editor and verified via rolled-back SQL test (`851.00 EGP`).
+2. **Arabic Typo Search Tolerance (`shared/phase-5-search-index.sql`):** Upgraded `public.search_products_fast` to use `pg_trgm` `word_similarity` (`>= 0.35` on `name`, `>= 0.45` on `description`) alongside `ts_rank`, fixing single-word Arabic typos (`سنيكرس` -> `سنيكرز`, `قميس` -> `قميص`) that previously returned `0` results. Re-applied in Supabase SQL Editor and verified live.
+3. **HTTPS Product Image URL Support (`web-store/src/lib/shop.ts`, `web-store/src/app/admin/products/page.tsx`, `web-store/src/app/admin/mutations.ts`):** Updated `photo()` and `/admin/products` to support direct `https://` URLs alongside Supabase Storage `product-images` paths, and guarded `storage.remove` to only delete bucket paths (`products/...`).
+4. **Customer Auth Profile Sync & Error Clarity (`web-store/src/app/login/actions.ts`, `web-store/src/app/login/page.tsx`):** Passed registration `user_metadata` (`full_name`, `phone`) into `sync_customer_profile` on login (essential when email confirmation defers first login) and added dedicated Arabic messaging for unconfirmed email addresses.
+5. **Checkout Profile Prefill (`web-store/src/app/(shop)/checkout/page.tsx`, `web-store/src/components/shop/basket.tsx`):** Prefilled saved `phone`, `address`, and `full_name` for signed-in customers on `/checkout`.
+6. **Mobile `390px` & Accessibility Polish (`web-store/src/app/(shop)/shop.css`, `web-store/src/components/shop/navigation.tsx`, `web-store/src/components/shop/hero.tsx`, `web-store/src/app/admin/customizer/customizer.css`, `web-store/src/app/admin/customers/customers-client.tsx`):**
+   - Tightened `<= 650px` storefront header spacing so `.cart-nav-btn` never clips on `390px` mobile screens (`left: 12 >= 0`, `right: 74 <= 390`).
+   - Added `aria-label="تسجيل الدخول"` on the mobile login icon link and `loading="eager"` on Bento secondary hero image.
+   - Added `<= 600px` responsive stacking/2-column rules in `customizer.css` eliminating inner clipping on preset cards and page tabs at `390px`.
+   - Normalized Egyptian local phone numbers (`01XXXXXXXXX` -> `201XXXXXXXXX`) for `/admin/customers` `https://wa.me/...` links.
+   - Added `allowedDevOrigins: ["127.0.0.1"]` in `web-store/next.config.ts`.
+
+### 3. Section-by-Section Live Browser QA Results (Desktop `1440px` & Mobile `390px`)
+
+| # | Section / Routes | Desktop (`1440px`) | Mobile (`390px`) | Notes & Verification |
+| --- | --- | --- | --- | --- |
+| 1 | **Storefront Home (`/`)** | Pass | Pass | Verified RTL, Hero Bento, all 5 `homeSections` (Hero, Categories, Featured Products, `NOVA10` Promo Banner, Trust Bar), zero broken images, zero overflow, and **"الإدارة"** strictly hidden for guests & regular customers. |
+| 2 | **GIN Search (`/products`, Header Search)** | Pass | Pass | Verified instant header dropdown + `/products?q=...` across exact (`ساعة` -> 2), partial (`كرونو` -> 1), and Arabic typos (`سنيكرس` -> 2, `قميس` -> 2). All 13 product images loaded (`200 OK`). |
+| 3 | **Customer Auth & Portal (`/register`, `/login`, `/account`)** | Pass | Pass | Registered & signed in test customer, confirmed profile metadata auto-synced into `/account`, User Menu visible, **"الإدارة"** hidden (`0` links), zero overflow. |
+| 4 | **Cart & Checkout with Coupon (`/cart`, `/checkout`)** | Pass | Pass | Added `قميص كتان مصري فاخر` (`890 EGP`), applied `NOVA10` (`-89 EGP` + `50` shipping = `851 EGP`), completed COD order, and verified automatic stock decrement (`24 -> 23`). |
+| 5 | **Orders & Zero-Contract Shipping (`/admin/orders`, `/orders`, `/delivery/[token]`)** | Pass | Pass | Moved order `pending -> confirmed -> shipped` with `بوسطة (Bosta)` + `BOSTA-QA-987654`; verified live stepper, carrier badge & tracking link on `/orders`; verified mobile one-tap delivery on `/delivery/[token]` marked order `delivered`. |
+| 6 | **Executive Analytics, CRM & Coupons (`/admin`, `/admin/customers`, `/admin/coupons`)** | Pass | Pass | Verified accurate Gross Revenue (`851 EGP`), Net Profit (`291 EGP`, `34.2%` margin), SVG charts, date-range filter pills, Top Products, Low Stock Alerts (both `stock <= 4` items), CRM LTV/badge/drawer + normalized `wa.me/20...` link, and `NOVA10` usage count (`1`). |
+| 7 | **Visual Customizer (`/admin/customizer`)** | Pass | Pass | Reordered `promo_banner` above `featured_products`, published, verified live `/` sync immediately, then cleanly restored original order. Zero inner or page overflow at `390px`. |
+
+### 4. Cleanup & Build Verification
+- **QA Cleanup:** Removed the exact QA test order (`9f23386e-60b0-4e93-88ed-e23a4838aefb`), QA customer CRM record, and QA auth user; restored `قميص كتان مصري فاخر` stock back to `24` and reset `NOVA10` `used_count` back to `0`. Verified via SQL (`0` remaining QA records, `13` active products, `2` low-stock products, `2` active coupons).
+- **Quality Gates:** `eslint --max-warnings 0`, `tsc --noEmit`, and `npm run build` (all 23 routes) passed with zero errors and zero warnings.
+
+---
+
+## Phase 7: Product Technical Specifications, Admin Category Presets & Full Bilingual Support (`AR` RTL / `EN` LTR)
+
+- **Migration:** [shared/phase-7-specs-bilingual.sql](../shared/phase-7-specs-bilingual.sql) adds `name_en text`, `description_en text`, and `specifications jsonb` (array constraint) on `public.products`, adds `name_en text` on `public.categories`, rebuilds the stored generated `search_vector` + GIN trigram indexes (`idx_products_name_en_trgm`, `idx_products_description_en_trgm`) to index both Arabic and English fields, and upgrades `public.search_products_fast` to search and return bilingual columns and `specifications`.
+- **Admin Category Variant & Spec Presets (`/admin/products`):**
+  - Built `AdminProductForm` (`web-store/src/app/admin/products/product-form.tsx`) with 1-click presets (`تيشيرت / قميص` Shirts `S–XXL`, `بناطيل` Pants `30–38`, `أحذية` Shoes `40–45`, and `ساعات وإكسسوارات` Watches with strap options & technical specs), interactive color swatches, optional `name_en` / `description_en` inputs, and a dynamic bilingual Specifications Table Editor (`key_ar`, `key_en`, `value_ar`, `value_en`).
+  - Added optional `name_en` to Category create/edit forms and updated `saveCategory` / `saveProduct` mutations.
+- **Product Details (`/products/[id]`) & Variant Clarity:**
+  - Added Apple/Zara-styled `ProductSpecsTable` (`المواصفات والتفاصيل` / `Specifications`) and interactive `SizeGuideModal` (`دليل المقاسات` / `Size Guide` with Apparel, Pants, and Shoes tabs auto-selected by product sizes) alongside existing Size/Color chips.
+  - Upgraded `/cart`, `/checkout`, `/orders`, `/account`, `/admin/orders`, and `/admin/orders/[id]` to render selected Size & Color variant badges clearly.
+- **Full Bilingual Engine (`AR` RTL / `EN` LTR):**
+  - Implemented `web-store/src/lib/i18n.ts`, `i18n-server.ts`, and `LanguageProvider` + `LanguageToggle` (`EN` / `عربي`) persisted via `localStorage` + `nova_lang` cookie + `ui_config.defaultLanguage`, dynamically updating `<html lang="ar-EG|en" dir="rtl|ltr">`.
+  - Placed `EN` / `عربي` toggle in Storefront Navbar, Auth pages (`/login`, `/register`, `/account`), Admin topbar (`/admin/**`), and Courier page (`/delivery/[token]`), plus added a `defaultLanguage` setting in `/admin/customizer`.
+- **Nova Store Catalog Enrichment:** Enriched all 5 categories and all 13 active products in `Nova Store` with `name_en`, `description_en`, and 3–5 structured `specifications` rows each (watches, sneakers, bags, shirts, jackets, polos, sunglasses, wallet, tote).
+- **Verification:**
+  - Applied `shared/phase-7-specs-bilingual.sql` and bilingual/specs enrichment in Supabase SQL Editor (`5/5` categories, `13/13` active products enriched, `search_products_fast('Chronograph')` → `Luxury Stainless Steel Chronograph Watch`, rank `3.27665`).
+  - Verified live in Chrome across Desktop (`1440px`) and Mobile (`390px`) with zero horizontal overflow, zero mobile header clipping, bilingual persistence across reloads, English instant header search (`Chronograph`), bilingual Specifications table on Watch & Shirt pages, Size Guide modal tabs, Cart variant badges, Admin English Analytics & 1-click Category Presets (`Shirts & Tops`, `Watches & Accessories`), and `Default Storefront Language` control in `/admin/customizer`.
+  - **100% Pure Single-Language Sweep:** Audited all `web-store/src/` components and eliminated every remaining mixed-language UI label across `/admin/customizer` (`customizer-studio.tsx`, `sections-builder.tsx`, `preview-frame.tsx`, `theme-templates.ts`), `/admin` (Top Products & Low Stock Alerts now use `name_en`), `/admin/settings`, `/admin/orders` & `order-status-form.tsx`, `/admin/tickets`, `/admin/products`, `/admin/customers`, `/products/[id]` (added `translateColor` for bilingual color variant labels while preserving DB values), `gallery.tsx`, and checkout/order server actions. Re-verified `/admin/customizer`, `/admin`, `/admin/settings`, `/`, and `/products/[id]` in Chrome in both `EN` (LTR) and `AR` (RTL) with zero leaked strings, zero console errors, and zero HTTP `>= 400` responses.
+  - Passed `eslint --max-warnings 0`, `tsc --noEmit`, and `npm run build` with zero errors.
+
+### Shared Phase 7 Bilingual & Specifications Contract (Web & Android)
+
+- **Categories:** `categories.name` (Arabic), `categories.name_en` (English fallback to `name` when empty).
+- **Products:** `products.name`, `products.name_en`, `products.description`, `products.description_en`, and `products.specifications`:
+  ```json
+  [
+    {
+      "key_ar": "مقاومة الماء",
+      "key_en": "Water Resistance",
+      "value_ar": "حتى 50 متر (5 ATM)",
+      "value_en": "Up to 50m (5 ATM)"
+    }
+  ]
+  ```
+- **Default Store Language:** `store_settings.ui_config.defaultLanguage`: `"ar" | "en"` (defaults to `"ar"` when omitted).
+- **Upgraded Search RPC (`public.search_products_fast`):** Now returns `(id, name, name_en, category_id, description, description_en, price, old_price, stock, sizes, colors, image_path, specifications, rank)` and matches across Arabic and English names/descriptions with full-text + trigram `word_similarity`.
+
+---
+
+## Phase 7b: Hybrid Smart Bilingual Fuzzy Search (AR/EN) & Bilingual Product Specs Audit
+
+- **Migration:** [shared/phase-7b-smart-search.sql](../shared/phase-7b-smart-search.sql) applied in Supabase SQL Editor:
+  - Enables `pg_trgm` and `fuzzystrmatch` (`levenshtein`, `dmetaphone`, `dmetaphone_alt`).
+  - Adds SQL helpers `public.normalize_arabic_text(text)` (unifies `أ/إ/آ -> ا`, `ة -> ه`, `ى -> ي`, strips tashkeel & tatweel), `public.arabic_consonant_skeleton(text)` (strips long vowels `ا/و/ي` so `تشرت` == `تيشيرت` and `كتشي` == `كوتشي`), `public.normalize_english_text(text)` (lowercases and strips hyphens/punctuation so `T-Shirt`/`t-shrt`/`tshirt` unify), and `public.product_specs_text(jsonb)`.
+  - Adds GIN trigram indexes on normalized `name` (`idx_products_name_norm_trgm`) and `name_en` (`idx_products_name_en_norm_trgm`), plus composite `(store_id, is_active)` index (`idx_products_store_active_idx`).
+  - Upgrades `public.search_products_fast(p_store_id uuid, p_query text, p_limit int default 20, p_category_id uuid default null)` with strict `p_store_id` multi-tenant isolation, searching across `name`, `name_en`, `description`, `description_en`, JSONB `specifications`, and `sizes`/`colors` options using 4 weighted relevance layers:
+    1. Exact / prefix / substring normalized match (`exact` / `spec`)
+    2. Arabic consonant skeleton match (`skeleton`)
+    3. English phonetic match via `dmetaphone` (`phonetic`)
+    4. Fuzzy typo tolerance via `pg_trgm` `word_similarity >= 0.15` + token `levenshtein <= 2` (`fuzzy`)
+- **Hybrid Instant Storefront Search UI (`Fuse.js` + `search_products_fast`):**
+  - Added `fuse.js` and `web-store/src/lib/smart-search.ts` implementing `<10ms` client-side Arabic/English normalization, consonant skeleton matching, and Fuse.js weighted fuzzy search over `name`, `name_en`, `description`, `description_en`, `specifications`, and options.
+  - Upgraded `web-store/src/lib/shop.ts` (`settings()` now exposes `storeId`), `web-store/src/app/api/catalog-search/route.ts` (supports `?mode=index` scoped by `store_id` for instant Fuse.js hydration and `?q=...` backed by `search_products_fast(p_store_id, ...)` returning `match_type` & `rank`), `web-store/src/components/shop/navigation.tsx` (instant dropdown merged with RPC results + 100% localized closest-match/spec-match banners & badges), and `web-store/src/app/(shop)/products/page.tsx` (full catalog search with `p_store_id`, closest-match/spec-match banner, and localized empty-state hint).
+- **Bilingual Product Specs & Options Polish:**
+  - Localized the remaining category `name_en` placeholder (`admin/products/page.tsx`), `adminCategoryNameEn` / `adminSpecsHeading` Arabic labels (`i18n.ts`), preset color `label_en` (`specs.ts` & `product-form.tsx`), and added storefront `revalidatePath("/", "layout")` on product/category mutations (`admin/mutations.ts`) so newly saved specs/options are immediately reflected and searchable.
+- **Verification (SQL & Live Chrome):**
+  - **SQL Verification (10/10):** Verified `تشرت` → `تيشيرت بولو قطن بيكيه كحلي` (`skeleton`), `كتشي` → `كوتشي سنيكرز رياضي أبيض كلاسيكي` (`skeleton`), `tshrt` & `t-shrt` → `Egyptian Cotton Pique Polo T-Shirt` (`phonetic`), `sneekers` → `Classic White Air Runner Sneakers` (`phonetic`), `jaket` → `Casual Suede Bomber Jacket` (`phonetic`), `قطن` / `cotton` (`exact`), `waterproof` → `Luxury Stainless Steel Chronograph Watch` (`spec`), and wrong `store_id` → `0` rows (strict multi-tenant isolation).
+  - **Live Chrome Verification (16/16 checks, AR RTL & EN LTR):** Verified instant header search dropdown, `/products?q=...`, `/products/[id]` specs table, `/admin/products`, `/login`, and `/register` with `0` console errors, `0` failed network responses (`HTTP >= 400`), `0` broken images, and `0` mixed-language UI strings.
+
+### Shared Phase 7b Smart Search Contract (Web & Android Sync)
+
+- **RPC Signature:**
+  ```sql
+  public.search_products_fast(
+    p_store_id uuid,
+    p_query text,
+    p_limit int default 20,
+    p_category_id uuid default null
+  )
+  ```
+- **Return Columns:** `(id, name, name_en, category_id, description, description_en, price, old_price, stock, sizes, colors, image_path, specifications, rank, match_type)` where `match_type ∈ {'exact', 'spec', 'skeleton', 'phonetic', 'fuzzy'}`.
+- **Android Integration Note (`android-app/`):** Pass the tenant's active `storeId` as `p_store_id` when invoking `search_products_fast` via PostgREST RPC; display a localized "Showing closest matches" / "عرض أقرب النتائج الذكية" banner when results are non-empty and none has `match_type == "exact"`.
+
+---
+
+## Phase 7c: High-Precision Search Tuning & 15-Category Bilingual Synonym Dictionary
+
+- **Migration:** [shared/phase-7c-complete-search.sql](../shared/phase-7c-complete-search.sql) applied in a fresh Supabase SQL Editor tab:
+  - Created `public.search_synonyms` (`id uuid`, `store_id uuid null references public.store_settings(store_id) on delete cascade`, `terms text[]`, `category_tag text`) with GIN index on `terms`, RLS policies (public `SELECT` for global `store_id IS NULL` or store-scoped rows; admin `ALL` via `is_store_admin(store_id)`), and explicit `GRANT SELECT` to `anon, authenticated` + `GRANT INSERT, UPDATE, DELETE` to `authenticated`.
+  - Seeded **15 global bilingual & Egyptian dialect synonym groups** (`store_id = NULL`): Footwear, Tops & Shirts, Outerwear & Winter, Pants & Sets, Bags & Wallets, Watches & Accessories, Mobile & Tablets, Audio, Computers & Gaming, Home & Kitchen, Home Decor & Bedding, Perfumes & Care, Sports & Fitness, Kids & Baby, and Automotive.
+  - Added `public.strip_arabic_al(text)` and GIN trigram indexes on normalized `categories.name` and `categories.name_en`.
+  - Upgraded `public.search_products_fast(p_store_id uuid, p_query text, p_limit int default 20, p_category_id uuid default null)` to join `categories`, expand matching synonym groups using whole-word/phrase matching on `name`, `name_en`, `categories.name`, and `categories.name_en`, and eliminate false positives via:
+    - Raising `pg_trgm` `word_similarity` threshold from `0.15` to **`0.35`** (applied ONLY on product name and category, never descriptions/specs).
+    - Restricting `levenshtein <= 1` and Arabic consonant skeleton matching strictly to product `name`, `name_en`, and `category` tokens of `length >= 4` (with initial-char & length-diff `<= 2` guard on Arabic skeletons so `"قميص"` never collides with `"قماشية"`), while descriptions & JSONB specs require exact/normalized substring matching only.
+    - Enforcing a strict minimum relevance cutoff (`score >= 25`) plus high-confidence noise suppression (suppressing scores `< 40` whenever any hit scores `>= 60`).
+- **Client & API Precision Alignment:**
+  - Tuned [smart-search.ts](../web-store/src/lib/smart-search.ts) (`Fuse.js` `threshold: 0.25`, `minMatchCharLength: 3`, heavier `name`/`name_en`/`category` weights, 15-category synonym expansion, identical `>= 25` / `< 40` cutoffs).
+  - Updated [catalog-search/route.ts](../web-store/src/app/api/catalog-search/route.ts) (`?mode=index` now returns `{ items, synonyms }` with category names + active `search_synonyms` rows), [navigation.tsx](../web-store/src/components/shop/navigation.tsx) (uses authoritative server `search_products_fast` hits once returned to prevent client noise), and [products/page.tsx](../web-store/src/app/(shop)/products/page.tsx) (handles `match_type = 'synonym'` cleanly).
+- **Verification (SQL & Live Chrome):**
+  - **SQL & `anon`-Role Verification:** Confirmed `15` seeded global synonym groups, strict `store_id` isolation (`0` hits for another tenant), `anon` role permissions (`anon_syn_count = 15`), and exact zero-noise results for all 12 test queries.
+  - **Live Chrome Verification (`http://localhost:3000`, AR RTL & EN LTR):** Verified `/api/catalog-search?mode=index` (`13` items, `15` synonym groups), navbar dropdown, and `/products?q=...` across `كوتشي` (only 3 sneakers/running shoes), `قميص` (only 2 shirts/polos; zero `حقيبة قماشية`), `تشرت` (`تيشيرت بولو قطن بيكيه كحلي` #1), `جزمة` (only 3 sneakers/running shoes), `شنطة` (only 4 bags/wallets), `sneekers`, `jaket`, `tshrt`, and `waterproof` with **0 console errors**, **0 HTTP ≥ 400 responses**, and **0 broken images**.
+  - **Shared Contract Update (`android-app/`):** `search_products_fast` `match_type` now includes `'synonym'` (`'exact' | 'synonym' | 'spec' | 'skeleton' | 'phonetic' | 'fuzzy'`); treat both `'exact'` and `'synonym'` as direct matches and display the closest-match banner only when all hits are `'skeleton'`, `'phonetic'`, or `'fuzzy'`.
+
+---
+
+## Phase 7d: Enterprise Two-Stage Scalable Search Architecture (100k+ Products/Store)
+
+- **Migration:** [shared/phase-7d-scalable-search.sql](../shared/phase-7d-scalable-search.sql) applied in a fresh Supabase SQL Editor tab:
+  - Added precomputed columns `search_text_norm text` and `search_skeleton_norm text` on `public.products`, backed by pure SQL builders `compute_product_search_text(...)` and `compute_product_search_skeleton(...)`.
+  - Added automatic `BEFORE INSERT OR UPDATE` trigger on `public.products` (`products_sync_search_norms_trg`) and `AFTER UPDATE` trigger on `public.categories` (`categories_sync_products_search_norms_trg`) to keep both columns synchronized automatically, and backfilled `13/13` existing rows.
+  - Added GIN trigram indexes `idx_products_store_search_trgm` on `search_text_norm`, `idx_products_store_skeleton_trgm` on `search_skeleton_norm`, and composite B-tree index `idx_products_store_active_cat_idx (store_id, is_active, category_id)`.
+  - Refactored `public.search_products_fast` into a **Two-Stage Retrieval Pipeline** with pagination (`p_limit int default 24`, `p_offset int default 0`, preserving backward compatibility with 4-arg callers):
+    - **Stage 1 ($O(\log N)$ Indexed Candidate Pruning, `LIMIT 150`):** Strictly scoped by `p.store_id = p_store_id` and `p.is_active = true`, pruning candidates via GIN-indexable `%` / `<%` / `LIKE ANY` predicates against `search_text_norm` and `search_skeleton_norm` capped at `<= 150` materialized rows.
+    - **Stage 2 ($O(150)$ Constant-Time Precision Reranking):** Applies exact/prefix bonuses, multi-token match bonus (`+14` per matching token when 2+ query tokens), `levenshtein <= 1` on title/category tokens `>= 4`, 15-category synonyms, and Phase 7c strict cutoffs (`>= 25`, suppressing `< 40` when `>= 60` exists), followed by `LIMIT p_limit OFFSET p_offset`.
+- **Zero-Bloat Server-First Autocomplete & Client LRU Cache (`web-store/`):**
+  - Removed the `?mode=index` full-catalog download from [catalog-search/route.ts](../web-store/src/app/api/catalog-search/route.ts) and [navigation.tsx](../web-store/src/components/shop/navigation.tsx) so initial browser payload stays tiny regardless of store catalog size.
+  - Refactored [smart-search.ts](../web-store/src/lib/smart-search.ts) with a bounded **50-entry / 60s TTL client-side LRU cache** keyed by normalized query (`normalizeSearchCacheKey`) so repeated/backspaced queries resolve in **0ms** with zero network traffic.
+  - Created [searchSynonyms.ts](../web-store/src/lib/searchSynonyms.ts) providing **0ms** local bilingual synonym/category hint chips (`أقسام مقترحة` / `Suggested categories`) while the 180ms-debounced `AbortController`-managed RPC resolves (`p_limit: 8`).
+  - Updated [products/page.tsx](../web-store/src/app/(shop)/products/page.tsx) to use database-level `p_limit` / `p_offset` pagination directly.
+- **Verification (SQL `EXPLAIN ANALYZE` & Live Chrome):**
+  - **SQL & `EXPLAIN ANALYZE`:** Confirmed `13/13` backfilled rows, Stage-1 `Bitmap Index Scan` (`0.617 ms` execution time on `idx_products_store_active_cat_idx`, with GIN trigram indexes `idx_products_store_search_trgm` and `idx_products_store_skeleton_trgm` indexed), exact `p_limit`/`p_offset` pagination (`pagination_exact: true`), 4-arg backward compatibility under `anon` role, and 12/12 precision checks with strict `store_id` isolation (`0` rows for another tenant).
+  - **Live Chrome (`http://localhost:3000`, AR RTL & EN LTR):** Confirmed `0` calls to `?mode=index`, `1` network call for repeated `كوتشي` (proving 0ms LRU cache hit on re-entry), 0ms localized hint chips, and exact zero-noise results for `كوتشي`, `قميص`, `تشرت`, `jaket`, and `waterproof` with **0 console errors**, **0 HTTP ≥ 400 responses**, and **0 broken images**.
+
+### Shared Phase 7d Scalable Search Contract (Web & Android Sync)
+
+- **RPC Signature (Backward-Compatible):**
+  ```sql
+  public.search_products_fast(
+    p_store_id uuid,
+    p_query text,
+    p_limit int default 24,
+    p_category_id uuid default null,
+    p_offset int default 0
+  )
+  ```
+- **Android Integration Note (`android-app/`):**
+  - Do NOT download the full catalog to memory for search autocomplete; call `search_products_fast` with `p_limit = 8` (autocomplete) or `p_limit = 24, p_offset = page * 24` (catalog pagination), using a 180ms coroutine `debounce` + job cancellation (`collectLatest`) and an in-memory `LruCache(maxSize = 50)` with 60s TTL keyed by normalized query.
+
+---
+
+## Phase 8: Enterprise Multi-Tenant Paymob Payment Gateway Integration
+
+- **Migration:** [shared/phase-8-paymob.sql](../shared/phase-8-paymob.sql) applied in a fresh Supabase SQL Editor tab:
+  - **Public Payment Flags (`public.store_settings`):** Added `cod_enabled boolean not null default true`, `paymob_enabled boolean not null default false`, `paymob_card_enabled boolean not null default false`, `paymob_wallet_enabled boolean not null default false`.
+  - **Isolated Payment Secrets (`public.store_payment_secrets`):** Created with `store_id uuid primary key references public.store_settings(store_id) on delete cascade`, `paymob_api_key`, `paymob_card_integration_id`, `paymob_wallet_integration_id`, `paymob_iframe_id`, `paymob_hmac_secret`, `updated_at`. Enabled RLS, executed `REVOKE ALL ON public.store_payment_secrets FROM public, anon, authenticated;`, granted access strictly to `authenticated` admins matching `is_store_admin(store_id)` and `service_role` (verified `anon_can_select_secrets: false`).
+  - **Order Payment Tracking (`public.orders`):** Added/normalized `payment_method` (`'cod' | 'paymob_card' | 'paymob_wallet'`), `payment_status` (`'unpaid' | 'pending' | 'paid' | 'failed' | 'refunded'`), `paymob_order_id`, `payment_transaction_id`, indexes (`idx_orders_paymob_order_id`, `idx_orders_payment_transaction_id`), and upgraded `store_checkout` & `track_guest_order` RPCs to validate store flags and expose payment status.
+- **Hardened Server Paymob Endpoints (`web-store/`):**
+  - [src/lib/supabase/admin.ts](../web-store/src/lib/supabase/admin.ts): Server-only Service Role client using `SUPABASE_SERVICE_ROLE_KEY`.
+  - [src/lib/paymob.ts](../web-store/src/lib/paymob.ts): 3-step Paymob REST flow (`auth/tokens` → `ecommerce/orders` with retry-safe `${order.id}__${Date.now()}` → `acceptance/payment_keys` with safe fallback billing data + optional `payments/pay` for Egyptian wallets) and constant-time (`crypto.timingSafeEqual`) 20-field alphabetical `HMAC-SHA512` verifier.
+  - `POST /api/payments/paymob/initiate`: Validates `order_id` UUID, `method` (`card` | `wallet`), and Egyptian wallet phone (`/^01[0125][0-9]{8}$/`), locks `amount_cents = Math.round(Number(order.total) * 100)` strictly from DB, prevents double-charging (`409` if already `paid`), and returns `{ redirect_url }` (plus `pending_wallet_prompt: true` for wallets).
+  - `POST /api/payments/paymob/webhook`: Authoritative confirmation endpoint — resolves tenant HMAC secret via `store_id`, verifies 20-field `HMAC-SHA512` (`401` if invalid), enforces idempotency (`200` if already `paid`), validates `currency === 'EGP'` and exact `amount_cents` (`400` if tampered), and atomically records `payment_status` and `payment_transaction_id`.
+  - `GET /api/payments/paymob/callback`: Verifies query HMAC when present without trusting unverified query strings to mark orders `paid`, and redirects strictly to relative internal `/orders?payment=success|pending|failed&order=<uuid>`.
+- **Bilingual Admin Settings, Checkout & Orders UI:**
+  - Added 100% bilingual **Payment Gateways / بوابات الدفع** card in `/admin/settings` with secret masking (`محفوظ ومشفّر ••••••` / `Configured ••••••`) — raw `paymob_api_key` and `paymob_hmac_secret` are never rendered in client HTML and only overwritten when a new non-empty value is submitted.
+  - Upgraded `/checkout` (`basket.tsx`) to render only enabled store payment options (COD, Visa/Mastercard, Egyptian Mobile Wallets) with pure AR/EN inline validation for 11-digit Egyptian wallet numbers.
+  - Upgraded `/orders` (`orders/page.tsx`, `tracking.tsx`) with localized payment status badges (`مدفوع / Paid`, `قيد الدفع / Pending`, `فشل الدفع / Failed`, `عند الاستلام / COD`) and callback return banner.
+- **Live E2E Verification & Cleanup:**
+  - Configured Nova Store test credentials through `/admin/settings`, confirmed reload masking and zero raw secrets in HTML/DOM.
+  - Verified live Paymob Card checkout (`POST /api/payments/paymob/initiate` → HTTP `200`, redirect to `https://accept.paymob.com/api/acceptance/iframes/1102311?payment_token=...`).
+  - Verified `POST /api/payments/paymob/webhook`: invalid HMAC → `401`, tampered amount → `400`, valid 20-field `HMAC-SHA512` → `200` (`payment_status: "paid"`), replay → `200` (`idempotent: true`).
+  - Verified `/api/payments/paymob/callback` redirect banner and `مدفوع` / `Paid` badge on `/orders` in both AR and EN (`0` console errors, `0` HTTP `>= 400`), then removed the test order and restored product stock.
+
+### Shared Phase 8 Paymob Contract (Web & Android Sync)
+
+- **Public Store Payment Flags (`store_settings`):** `cod_enabled`, `paymob_enabled`, `paymob_card_enabled`, `paymob_wallet_enabled`.
+- **Order Columns (`orders`):** `payment_method` (`'cod' | 'paymob_card' | 'paymob_wallet'`), `payment_status` (`'unpaid' | 'pending' | 'paid' | 'failed' | 'refunded'`), `paymob_order_id`, `payment_transaction_id`.
+- **Android Online Checkout Flow:**
+  1. Call `store_checkout` RPC with `payment = 'paymob_card'` or `'paymob_wallet'` to create the order with `payment_status = 'pending'`.
+  2. Call `POST /api/payments/paymob/initiate` with JSON body:
+     ```json
+     {
+       "order_id": "<uuid>",
+       "method": "card",
+       "wallet_phone": "010xxxxxxxx"
+     }
+     ```
+     (`wallet_phone` required only when `method === "wallet"` and must match `/^01[0125][0-9]{8}$/`).
+  3. Open returned `{ "redirect_url": "https://accept.paymob.com/..." }` in Chrome Custom Tabs / WebView and observe order `payment_status` updates (confirmed authoritatively by `POST /api/payments/paymob/webhook`).
+
+---
+
+## Phase 8b: Online Checkout Cart Preservation, Retry UX & Bilingual Hero Banner CMS
+
+- **Online Checkout Cart Preservation & Retry UX (`web-store/`):**
+  - Updated [cart-store.ts](../web-store/src/components/shop/cart-store.ts) with `clearCart()` and pending online order tracking (`nova.pending_online_order`).
+  - Updated [basket.tsx](../web-store/src/components/shop/basket.tsx):
+    - `cod` orders immediately clear the cart and redirect to `/orders?placed=cod&order=<id>`.
+    - Online orders (`paymob_card` / `paymob_wallet`) **do not** clear the cart during order creation or `/api/payments/paymob/initiate`; instead they render a full-screen bilingual redirecting screen (`جاري تحويلك إلى بوابة الدفع الآمنة...` / `Redirecting to secure payment gateway...`) preventing any empty-cart flash.
+  - Added [orders-payment-sync.tsx](../web-store/src/components/shop/orders-payment-sync.tsx) in `/orders`: clears the cart ONLY on `?payment=success` or when the pending online order reaches `payment_status === 'paid'`, rendering a prominent bilingual confirmation banner (`تم الشراء والدفع بنجاح!` / `Purchase & Payment Confirmed!`). On `?payment=failed`, keeps the cart intact.
+  - Upgraded [tracking.tsx](../web-store/src/components/shop/tracking.tsx): renders a bilingual **"إعادة محاولة الدفع / Retry Payment"** button on `pending` or `failed` online orders (calling `POST /api/payments/paymob/initiate`, with inline 11-digit Egyptian wallet validation for wallet orders).
+- **Full Bilingual Hero Banner CMS & Visibility Controls (`store_settings.ui_config.pages.home`):**
+  - Extended [ui-config.ts](../web-store/src/lib/ui-config.ts) with backward-compatible Hero CMS fields (`hero_visible`, `hero_badge_visible`, `hero_badge_ar`, `hero_badge_en`, `hero_title_ar`, `hero_title_en`, `hero_subtitle_ar`, `hero_subtitle_en`, `hero_cta_visible`, `hero_cta_text_ar`, `hero_cta_text_en`, `hero_cta_link`, `hero_image_url`, `hero_overlay_opacity`), with graceful fallbacks to localized defaults when unset.
+  - Added `uploadHeroBannerImage` server action in [mutations.ts](../web-store/src/app/admin/mutations.ts) uploading PNG/JPG/WEBP banners (`<= 5 MB`) to Supabase Storage `product-images` under `banners/<store_id>/<uuid>.<ext>`.
+  - Added the 100% bilingual **"محتوى البانر الرئيسي / Hero Banner Content"** card inside `/admin/customizer` (`الرئيسية / Home` tab) in [customizer-studio.tsx](../web-store/src/app/admin/customizer/customizer-studio.tsx) with master show/hide toggle, badge/headline/subtitle/CTA controls + route preset buttons, image upload/URL/remove, and overlay darkness slider (`0–80%`), reflected live in [preview-frame.tsx](../web-store/src/app/admin/customizer/preview-frame.tsx) across Desktop/Mobile and AR/EN.
+  - Updated [hero.tsx](../web-store/src/components/shop/hero.tsx) and [page.tsx](../web-store/src/app/(shop)/page.tsx) to render nothing (zero spacer gap) when `hero_visible === false`, hide empty subtitles, conditionally render badge/CTA, and display `hero_image_url` + dark overlay scrim.
+- **Verification & Cleanup:**
+  - Verified live in Chrome (`Nova Store`, AR & EN, `0` console errors, `0` HTTP `>= 400`): online checkout redirecting screen with zero empty-cart flash, failed return keeping cart at `1` + working `إعادة محاولة الدفع / Retry Payment` (`HTTP 200` Paymob initiation), success return clearing cart to `0` + confirmation banner, Hero Banner bilingual editing + individual element hiding + master hide/show toggle (`0` hero elements when hidden) + restored defaults (`hero_visible: true`).
+  - Removed test order `cddb8534-badd-4970-9626-5777f796c152` and restored product stock.
+
+### Shared Phase 8b Hero Banner CMS Schema (`store_settings.ui_config.pages.home` — Android Sync)
+
+```json
+{
+  "hero_visible": true,
+  "hero_badge_visible": true,
+  "hero_badge_ar": "",
+  "hero_badge_en": "",
+  "hero_title_ar": "",
+  "hero_title_en": "",
+  "hero_subtitle_ar": "قطع منتقاة بعناية تجمع بين الأناقة الهادئة وجودة التفاصيل اليومية.",
+  "hero_subtitle_en": "Curated pieces blending quiet elegance with everyday craftsmanship.",
+  "hero_cta_visible": true,
+  "hero_cta_text_ar": "",
+  "hero_cta_text_en": "",
+  "hero_cta_link": "/products",
+  "hero_image_url": null,
+  "hero_overlay_opacity": 45
+}
+```
+
+- **Android Rendering Rules (`android-app/`):**
+  - If `hero_visible == false` (or `homeSections` hero item `visible == false`), omit the Hero Banner composable completely with zero vertical spacer.
+  - If `hero_badge_visible == false`, omit the badge chip; if `hero_subtitle_ar`/`hero_subtitle_en` for the active language is empty (`""`), omit the subtitle text; if `hero_cta_visible == false`, omit the CTA button.
+  - When `hero_image_url` is non-null, render it as the Hero background with a dark scrim alpha of `hero_overlay_opacity / 100f` (clamped `0f..0.8f`).
+  - On Paymob online checkout in Android, keep the local cart intact until order `payment_status == "paid"` is confirmed, and expose a Retry Payment action on `pending`/`failed` online orders calling `POST /api/payments/paymob/initiate`.
+
+## Android synchronization through Phase 8b — 2026-11-24
+
+- **Configuration.** The app module reads `SUPABASE_URL`, `SUPABASE_ANON_KEY` (publishable client credential), `STORE_ID` and `WEB_STORE_BASE_URL` from Android local.properties or the environment. Local values take precedence. The default tenant UUID is `00000000-0000-0000-0000-000000000001`. The emulator uses `http://10.0.2.2:3000` to reach the host web app. Set an HTTPS web origin for physical devices and release builds. Keep Paymob and Supabase service credentials on the web server.
+- **Database.** Applied `shared/android-phase-8-sync.sql` in the project's Supabase SQL Editor. Mobile checkout locks the configured settings and product rows before calling the existing transactional checkout. The coupon and support entry points check the active store, guest tracking matches tenant, order UUID and phone, and account orders filter by tenant and user. Categories use a tenant-filtered inner join to products. The original checkout still relies on one active settings row per database. Local cart and receipt storage are tenant-specific.
+- **Storefront.** Android refreshes settings on resume. The theme reads published colors and radius and the hero consumes `ui_config.pages.home`. Hidden sections occupy no grid item. The top-bar language switch overrides `ui_config.defaultLanguage` per tenant and applies RTL/LTR. Catalog models expose English merchant translations where supplied.
+- **Payments.** Checkout uses merchant flags, wallet validation and server-calculated coupon discounts. COD settles purchased lines on confirmation. Card and wallet preserve the cart, initiate payment through the web API, and show the hosted page in a WebView. An Orders redirect triggers verification. Only a paid database status settles online purchases. Settlement is idempotent per local receipt. Orders display payment, fulfillment and carrier/tracking information, with retry on eligible online orders.
+- **Database verification.** The live SQL Editor reported success for the migration and for a rolled-back transaction creating COD, card and wallet orders. The transaction asserted initial payment statuses and that a foreign store could not track each guest order. Test changes to stock, payment flags, customers and orders were rolled back. Public-client reads returned HTTP 200 for scoped settings and categories.
+- **Build verification.** Gradle ran with JBR 21. Both `assembleDebug` and `testDebugUnitTest` passed. JUnit reported 11 tests, zero failures and zero errors. Hosted Paymob payment completion and webhook delivery remain unverified on Android.
+- **Emulator verification.** Opened the live catalog in Arabic, switched to English, opened a translated product, selected a size, added it to the cart and reached checkout. Confirmed that all three enabled methods appeared and selecting Mobile wallet displayed the Egyptian phone requirement. No order was submitted from this emulator run.
+
+### Android Audit & Full Phase 8b Storefront Parity Completion — 2026-11-24
+
+- **Audit & Surgical Fixes:** Audited Codex's partial Android edits and `shared/android-phase-8-sync.sql` against `web-store/` (Phases 1–8b). Confirmed `web-store/src/app/api/payments/paymob/{initiate,callback,webhook}` required zero changes. Scoped all Android DataStore preference keys (`cart`, `saved_local_orders`, `local_support_tickets`, `theme_mode`, and idempotent settlement markers) by `BuildConfig.STORE_ID` for strict multi-tenant local isolation.
+- **Dynamic Theme & Bilingual Hero Banner CMS (`HomeScreen.kt`, `StoreSettingsDto.kt`):** Enforced zero empty spacer gap whenever `hero_visible == false` or `ui_config.homeSections` hides `hero_banner`; resolved `hero_image_url` (HTTPS or Storage path) via Coil with `hero_overlay_opacity` scrim (`0–80%`, default `45%`) and `heroBg`/theme gradient fallback; hid empty subtitles and toggled badge/CTA visibility cleanly with route deep-linking (`/products`, `/products?category=...`, `/orders`, `/contact`).
+- **Smart Bilingual Search (`CatalogRepositoryImpl.kt`, `CatalogViewModel.kt`, `CatalogScreen.kt`, `SearchSynonyms.kt`):** Replaced single-column `ilike` with `public.search_products_fast(p_store_id, p_query, p_limit, p_category_id, p_offset)` backed by a bounded 50-entry / 60s TTL in-memory LRU cache, 180ms coroutine debounce, 0ms 15-category bilingual synonym hint chips, and a localized closest-match banner.
+- **Size & Measurements Guide, Stock Clarity & Specs (`ProductDetailScreen.kt`, `SizeGuideSheet.kt`, `ProductDto.kt`):** Added `products.specifications` JSONB parsing and Apple/Zara-style bilingual Specifications table, interactive Material 3 `SizeGuideSheet` (`دليل المقاسات والقياسات` / `Size & Measurements Guide` with auto-detected Apparel, Pants, and Shoes tabs), and clear low-stock / out-of-stock indicators on variant chips.
+- **Paymob WebView & Cart Protection (`PaymentFlow.kt`, `CheckoutScreen.kt`, `CheckoutViewModel.kt`, `OrdersScreen.kt`, `CarrierLocalizer.kt`):**
+  - Fixed a critical `WebViewClient.shouldOverrideUrlLoading` bug that previously blocked debug `http://10.0.2.2:3000/api/payments/paymob/callback` redirects and added debug `localhost`/`127.0.0.1` -> `10.0.2.2` rewriting.
+  - Added bilingual loading overlay, normalized Egyptian wallet phone validation (`^01[0125][0-9]{8}$`), styled Payment Methods & Promo Code cards, and cart preservation for online orders until `/orders?payment=success` or DB `payment_status == "paid"` is confirmed.
+  - Added prominent top emerald **"تم الشراء والدفع بنجاح / Purchase & Payment Confirmed"** banner (and failure/cancellation retry banners), embedded payment/carrier badges + Bosta/Aramex/Mylerz/Egypt Post localization & external tracking links + **"إعادة محاولة الدفع / Retry Payment"** actions directly inside order cards, and removed remaining mixed-language leaks (`(Order Number)`, `(UUID)`, raw carrier names).
+- **Verification:** `.\gradlew.bat testDebugUnitTest assembleDebug --no-daemon` passed with **0 errors and 0 Kotlin compiler warnings** (`app-debug.apk`, `21.8 MB`); **15 / 15 JUnit unit tests passed** across 7 suites (`PhoneNormalizerTest`, `BrandColorParserTest`, `ColorSwatchMapperTest`, `ProductModelTest`, `PublishedSettingsTest`, `CatalogSortingTest`, `SearchSynonymsTest`). `web-store/` was not modified.
+
+
+### GitHub Releases In-App Self-Updater, CI/CD Release Pipeline & Security Audit — 2026-11-24
+
+- **Security Audit & `.gitignore` Hardening:**
+  - Audited `web-store/`, `android-app/`, `shared/`, and `docs/` for leaked credentials (zero real `sb_secret_`, JWT, or Paymob API secrets found outside local ignored files).
+  - Created root `.gitignore` and hardened `web-store/.gitignore` & `android-app/.gitignore` to strictly ignore `.env`, `.env.*`, `web-store/.env*`, `android-app/local.properties`, `keystore.properties`, `*.jks`, `*.keystore`, `*.log`, `node_modules/`, `.next/`, `.gradle/`, `.kotlin/`, and `**/build/`, while explicitly keeping `!.env.example` and `!local.properties.example`.
+  - Added `web-store/.env.example` (documenting `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, and per-tenant Paymob storage in `store_payment_secrets`) and updated `android-app/local.properties.example` with `STORE_ID`, `WEB_STORE_BASE_URL`, and `GITHUB_REPO`.
+- **Android Release Signing & Dynamic Versioning (`android-app/app/build.gradle.kts`, `proguard-rules.pro`):**
+  - Added conditional `release` `signingConfig` reading `KEYSTORE_FILE`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, and `KEY_PASSWORD` from environment variables or `android-app/keystore.properties`, gracefully falling back to `debug` signing when release keystore credentials are absent.
+  - Added `-PVERSION_CODE` and `-PVERSION_NAME` Gradle property overrides plus `BuildConfig.ENABLE_GITHUB_UPDATER` (default `true`) and `BuildConfig.GITHUB_REPO` (resolved from Gradle property -> `local.properties` -> `GITHUB_REPO` env -> `"OWNER/WhiteLabelCommerce"`).
+  - Declared explicit `com.squareup.okhttp3:okhttp:4.12.0` in `libs.versions.toml` and added Kotlinx Serialization keep rules for `com.whitelabel.commerce.core.updater.**` in `proguard-rules.pro`.
+- **GitHub Releases In-App Self-Updater (`android-app/app/src/main/java/com/whitelabel/commerce/core/updater/`):**
+  - Added `REQUEST_INSTALL_PACKAGES` permission, `androidx.core.content.FileProvider` (`${applicationId}.fileprovider` backed by `res/xml/file_paths.xml`), and `PackageReplacedReceiver` (`ACTION_MY_PACKAGE_REPLACED` auto-relaunching `MainActivity`) in `AndroidManifest.xml`.
+  - Implemented `GitHubReleaseUpdater` (queries `https://api.github.com/repos/${BuildConfig.GITHUB_REPO}/releases/latest` with `Accept: application/vnd.github+json`, compares semantic/run versions via `ReleaseVersionComparator`, streams `.apk` download via OkHttp into `cacheDir/updates/` with `0f..1f` progress + size integrity checks, handles Android 8+ `ACTION_MANAGE_UNKNOWN_APP_SOURCES`, and fires `Intent.ACTION_VIEW` with `FileProvider` URI + `FLAG_GRANT_READ_URI_PERMISSION`).
+  - Implemented `AppUpdateViewModel` and Material 3 bilingual (`AR` RTL / `EN` LTR) `AppUpdateDialog` wired into `MainActivity`, automatically resuming installation when returning from Android's unknown-sources permission screen.
+- **GitHub Actions CI/CD Release Workflow (`.github/workflows/android-release.yml`):**
+  - Triggers on `push` to `main`/`master` (and `workflow_dispatch`), sets up JDK 17 + Android SDK + Gradle cache, decodes optional `secrets.ANDROID_KEYSTORE_BASE64` to `android-app/release.keystore`, computes `VERSION_CODE = github.run_number + 10` and `VERSION_NAME = 1.0.<run_number>`, runs `./gradlew assembleRelease -PVERSION_CODE=... -PVERSION_NAME=...`, and publishes a GitHub Release (`softprops/action-gh-release@v2`) tagged `v$VERSION_NAME` with the built `.apk` attached and auto-generated release notes.
+- **Verification:** `.\gradlew.bat testDebugUnitTest assembleDebug --no-daemon` passed with **0 errors and 0 Kotlin compiler warnings**; **22 / 22 JUnit unit tests passed** across 9 test suites (including 3 new tests in `ReleaseVersionComparatorTest` and 4 in `PaymobPostPayTest`). `web-store/` runtime code was untouched.

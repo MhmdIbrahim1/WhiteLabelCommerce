@@ -1,0 +1,43 @@
+package com.whitelabel.commerce.core.data.di
+
+import com.whitelabel.commerce.BuildConfig
+import dagger.Module
+import dagger.Provides
+import dagger.hilt.InstallIn
+import dagger.hilt.components.SingletonComponent
+import io.github.jan.supabase.SupabaseClient
+import io.github.jan.supabase.auth.Auth
+import io.github.jan.supabase.createSupabaseClient
+import io.github.jan.supabase.postgrest.Postgrest
+import io.github.jan.supabase.realtime.Realtime
+import io.github.jan.supabase.serializer.KotlinXSerializer
+import io.ktor.client.engine.okhttp.OkHttp
+import kotlinx.serialization.json.Json
+import javax.inject.Singleton
+
+@Module
+@InstallIn(SingletonComponent::class)
+object SupabaseModule {
+
+    @Provides
+    @Singleton
+    fun provideJson(): Json = Json {
+        ignoreUnknownKeys = true
+        coerceInputValues = true
+        encodeDefaults = false
+        isLenient = true
+    }
+
+    @Provides
+    @Singleton
+    fun provideSupabaseClient(json: Json): SupabaseClient = createSupabaseClient(
+        supabaseUrl = BuildConfig.SUPABASE_URL,
+        supabaseKey = BuildConfig.SUPABASE_ANON_KEY,
+    ) {
+        defaultSerializer = KotlinXSerializer(json)
+        httpEngine = OkHttp.create()
+        install(Postgrest)
+        install(Auth)
+        install(Realtime)
+    }
+}

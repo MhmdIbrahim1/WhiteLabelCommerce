@@ -1,0 +1,15 @@
+{
+  "storeName": "Nova Store",
+  "currency": "EGP",
+  "locale": "ar-EG",
+  "colors": {
+    "primary": "#164E63",
+    "secondary": "#C2410C",
+    "surface": "#FFFFFF"
+  },
+  "borderRadius": 12,
+  "whatsappNumber": "",
+  "supportEmail": "support@example.com",
+  "shippingFee": 50,
+  "presets": { "productCard": "outlined", "hero": "slider" }
+}

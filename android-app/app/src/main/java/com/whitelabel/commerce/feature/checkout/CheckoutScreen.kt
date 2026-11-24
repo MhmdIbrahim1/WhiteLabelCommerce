@@ -1,0 +1,821 @@
+package com.whitelabel.commerce.feature.checkout
+
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
+import androidx.compose.material.icons.rounded.AccountBalanceWallet
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.ConfirmationNumber
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.CreditCard
+import androidx.compose.material.icons.rounded.LocalShipping
+import androidx.compose.material.icons.rounded.Payments
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.whitelabel.commerce.core.designsystem.LocalBrandColors
+import com.whitelabel.commerce.core.designsystem.components.ColorSwatchMapper
+import com.whitelabel.commerce.core.designsystem.formatPrice
+import com.whitelabel.commerce.core.designsystem.localized
+import com.whitelabel.commerce.core.domain.model.PaymentMethod
+import com.whitelabel.commerce.core.domain.model.SavedOrderReceipt
+
+private val WALLET_INPUT_REGEX = Regex("^01[0125][0-9]{8}$")
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CheckoutScreen(
+    onBack: () -> Unit,
+    onTrackOrder: (orderNumber: String, phone: String, paymentOutcome: PaymentFlowOutcome?) -> Unit,
+    onContinueShopping: () -> Unit,
+    onShowMessage: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    viewModel: CheckoutViewModel = hiltViewModel(),
+) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val brandColors = LocalBrandColors.current
+    val confirmedReceipt = state.form.confirmedReceipt
+
+    // Online payment flow (Paymob Card / Wallet): opens in-app WebView while preserving local cart
+    if (confirmedReceipt != null && confirmedReceipt.method != "cod") {
+        PaymentFlow(
+            id = confirmedReceipt.orderNumber,
+            phone = confirmedReceipt.phone,
+            method = confirmedReceipt.method,
+            initialWallet = state.form.wallet,
+            onExit = { outcome ->
+                onTrackOrder(confirmedReceipt.orderNumber, confirmedReceipt.phone, outcome)
+            },
+        )
+        return
+    }
+
+    // COD order confirmation receipt (local cart already cleared)
+    if (confirmedReceipt != null) {
+        OrderConfirmationScreen(
+            receipt = confirmedReceipt,
+            locale = state.storeSettings.locale,
+            onTrackOrder = { onTrackOrder(confirmedReceipt.orderNumber, confirmedReceipt.phone, null) },
+            onContinueShopping = onContinueShopping,
+            onCopied = { onShowMessage(localized("تم نسخ رقم الطلب بنجاح", "Order number copied")) },
+            modifier = modifier,
+        )
+        return
+    }
+
+    val walletValid = state.form.paymentMethod != PaymentMethod.WALLET ||
+        WALLET_INPUT_REGEX.matches(state.form.wallet)
+
+    Scaffold(
+        modifier = modifier.fillMaxSize(),
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        text = localized("إتمام الطلب", "Checkout"),
+                        style = MaterialTheme.typography.titleLarge,
+                    )
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = localized("رجوع", "Back"),
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface,
+                ),
+            )
+        },
+        bottomBar = {
+            Surface(
+                color = MaterialTheme.colorScheme.surface,
+                shadowElevation = 6.dp,
+            ) {
+                Column {
+                    HorizontalDivider(color = brandColors.hairline)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column {
+                            Text(
+                                text = localized("إجمالي الطلب", "Order total"),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Text(
+                                text = formatPrice(
+                                    amount = state.grandTotal,
+                                    currencyCode = state.storeSettings.currency,
+                                    localeTag = state.storeSettings.locale,
+                                ),
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+
+                        Button(
+                            onClick = viewModel::submitOrder,
+                            enabled = !state.form.isSubmitting &&
+                                state.cartItems.isNotEmpty() &&
+                                state.storeSettings.isSyncedFromRemote &&
+                                state.form.paymentMethod in state.storeSettings.paymentMethods &&
+                                walletValid,
+                            shape = MaterialTheme.shapes.small,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp),
+                        ) {
+                            if (state.form.isSubmitting) {
+                                CircularProgressIndicator(
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            } else {
+                                Text(
+                                    text = if (state.form.paymentMethod == PaymentMethod.COD) {
+                                        localized("تأكيد الطلب", "Confirm order")
+                                    } else {
+                                        localized("المتابعة للدفع الآمن", "Proceed to secure payment")
+                                    },
+                                    style = MaterialTheme.typography.labelLarge,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            // 1. Delivery Details Card
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, brandColors.hairline),
+                shape = MaterialTheme.shapes.medium,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.LocalShipping,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                        Text(
+                            text = localized("بيانات التوصيل", "Delivery details"),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+
+                    OutlinedTextField(
+                        value = state.form.customerName,
+                        onValueChange = viewModel::onNameChange,
+                        label = { Text(localized("الاسم بالكامل", "Full name")) },
+                        placeholder = { Text(localized("مثال: محمد أحمد", "E.g. Alex Morgan")) },
+                        isError = state.form.nameError != null,
+                        supportingText = state.form.nameError?.let { { Text(it) } },
+                        singleLine = true,
+                        shape = MaterialTheme.shapes.small,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+
+                    OutlinedTextField(
+                        value = state.form.phone,
+                        onValueChange = viewModel::onPhoneChange,
+                        label = { Text(localized("رقم الموبايل (مصر)", "Egyptian mobile number")) },
+                        placeholder = { Text(localized("010xxxxxxxx أو +2010xxxxxxxx", "010xxxxxxxx or +2010xxxxxxxx")) },
+                        isError = state.form.phoneError != null,
+                        supportingText = state.form.phoneError?.let { { Text(it) } },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                        shape = MaterialTheme.shapes.small,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+
+                    OutlinedTextField(
+                        value = state.form.address,
+                        onValueChange = viewModel::onAddressChange,
+                        label = { Text(localized("عنوان التوصيل بالتفصيل", "Delivery address")) },
+                        placeholder = {
+                            Text(
+                                localized(
+                                    "المحافظة، المنطقة، اسم الشارع، رقم العمارة والشقة",
+                                    "Governorate, district, street, building and apartment",
+                                ),
+                            )
+                        },
+                        isError = state.form.addressError != null,
+                        supportingText = state.form.addressError?.let { { Text(it) } },
+                        minLines = 3,
+                        maxLines = 5,
+                        shape = MaterialTheme.shapes.small,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+
+            // 2. Payment Methods Card (strictly renders only store-enabled methods)
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, brandColors.hairline),
+                shape = MaterialTheme.shapes.medium,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text(
+                        text = localized("طريقة الدفع", "Payment method"),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+
+                    state.storeSettings.paymentMethods.forEach { option ->
+                        val isSelected = state.form.paymentMethod == option
+                        val icon = when (option) {
+                            PaymentMethod.COD -> Icons.Rounded.Payments
+                            PaymentMethod.CARD -> Icons.Rounded.CreditCard
+                            PaymentMethod.WALLET -> Icons.Rounded.AccountBalanceWallet
+                        }
+                        val title = when (option) {
+                            PaymentMethod.COD -> localized("الدفع عند الاستلام", "Cash on delivery")
+                            PaymentMethod.CARD -> localized("بطاقة بنكية (فيزا / ماستركارد)", "Credit / Debit card")
+                            PaymentMethod.WALLET -> localized("محفظة إلكترونية (فودافون / اتصالات / أورنج)", "Mobile wallet")
+                        }
+                        val subtitle = when (option) {
+                            PaymentMethod.COD -> localized("ادفع نقداً للمندوب عند استلام طلبك.", "Pay in cash upon delivery.")
+                            PaymentMethod.CARD -> localized("دفع إلكتروني آمن ومشفّر عبر Paymob.", "Encrypted online card checkout via Paymob.")
+                            PaymentMethod.WALLET -> localized("استلم طلب التأكيد على محفظتك المصرية.", "Confirm payment directly on your Egyptian wallet.")
+                        }
+
+                        Surface(
+                            color = if (isSelected) {
+                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                            } else {
+                                MaterialTheme.colorScheme.surface
+                            },
+                            shape = MaterialTheme.shapes.small,
+                            border = BorderStroke(
+                                width = if (isSelected) 1.5.dp else 1.dp,
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else brandColors.hairline,
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .selectable(
+                                    selected = isSelected,
+                                    role = Role.RadioButton,
+                                    onClick = { viewModel.method(option) },
+                                ),
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                RadioButton(selected = isSelected, onClick = null)
+                                Icon(
+                                    imageVector = icon,
+                                    contentDescription = null,
+                                    tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = title,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                    Text(
+                                        text = subtitle,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if (state.form.paymentMethod == PaymentMethod.WALLET) {
+                        val walletInvalid = !WALLET_INPUT_REGEX.matches(state.form.wallet)
+                        OutlinedTextField(
+                            value = state.form.wallet,
+                            onValueChange = viewModel::wallet,
+                            singleLine = true,
+                            label = { Text(localized("رقم المحفظة الإلكترونية", "Wallet mobile number")) },
+                            placeholder = { Text("010xxxxxxxx") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                            isError = walletInvalid && state.form.wallet.isNotEmpty(),
+                            supportingText = {
+                                if (walletInvalid) {
+                                    Text(
+                                        localized(
+                                            "أدخل رقم موبايل مصري من 11 رقماً (010 / 011 / 012 / 015)",
+                                            "Enter an 11-digit Egyptian mobile number (010 / 011 / 012 / 015)",
+                                        ),
+                                    )
+                                }
+                            },
+                            shape = MaterialTheme.shapes.small,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+            }
+
+            // 3. Promo Code Card
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, brandColors.hairline),
+                shape = MaterialTheme.shapes.medium,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.ConfirmationNumber,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.secondary,
+                        )
+                        Text(
+                            text = localized("كود الخصم", "Promo code"),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        OutlinedTextField(
+                            value = state.form.coupon,
+                            onValueChange = viewModel::coupon,
+                            singleLine = true,
+                            placeholder = { Text(localized("أدخل كود الخصم (مثال: NOVA10)", "Enter promo code (e.g. NOVA10)")) },
+                            shape = MaterialTheme.shapes.small,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Button(
+                            onClick = viewModel::applyCoupon,
+                            enabled = state.form.coupon.isNotBlank() && !state.form.isApplyingCoupon,
+                            shape = MaterialTheme.shapes.small,
+                            modifier = Modifier.height(54.dp),
+                        ) {
+                            if (state.form.isApplyingCoupon) {
+                                CircularProgressIndicator(
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            } else {
+                                Text(localized("تطبيق", "Apply"))
+                            }
+                        }
+                    }
+
+                    state.form.couponError?.let { err ->
+                        Text(
+                            text = err,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+
+                    if (state.appliedDiscount > 0.0) {
+                        Surface(
+                            color = brandColors.success.copy(alpha = 0.14f),
+                            contentColor = brandColors.success,
+                            shape = MaterialTheme.shapes.extraSmall,
+                        ) {
+                            Text(
+                                text = localized(
+                                    "تم تطبيق الخصم: -${formatPrice(state.appliedDiscount, state.storeSettings.currency, state.storeSettings.locale)}",
+                                    "Coupon applied: -${formatPrice(state.appliedDiscount, state.storeSettings.currency, state.storeSettings.locale)}",
+                                ),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 4. Order Summary Card
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, brandColors.hairline),
+                shape = MaterialTheme.shapes.medium,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        text = localized(
+                            "ملخص المنتجات (${state.cartItems.sumOf { it.quantity }})",
+                            "Order items (${state.cartItems.sumOf { it.quantity }})",
+                        ),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    state.cartItems.forEach { line ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            val variant = listOfNotNull(
+                                line.selectedSize,
+                                line.selectedColor?.let(ColorSwatchMapper::displayLabel),
+                            ).joinToString(" • ")
+                            Text(
+                                text = "${line.quantity} × ${line.displayName}" +
+                                    if (variant.isNotEmpty()) " ($variant)" else "",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Text(
+                                text = formatPrice(
+                                    line.lineTotal,
+                                    state.storeSettings.currency,
+                                    state.storeSettings.locale,
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                    }
+                    HorizontalDivider(color = brandColors.hairline)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(localized("المجموع الفرعي", "Subtotal"), style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            formatPrice(
+                                state.subtotal,
+                                state.storeSettings.currency,
+                                state.storeSettings.locale,
+                            ),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    if (state.appliedDiscount > 0.0) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text(
+                                localized("الخصم", "Discount"),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = brandColors.success,
+                            )
+                            Text(
+                                "-${formatPrice(state.appliedDiscount, state.storeSettings.currency, state.storeSettings.locale)}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = brandColors.success,
+                            )
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(localized("الشحن", "Shipping"), style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            formatPrice(
+                                state.shippingFee,
+                                state.storeSettings.currency,
+                                state.storeSettings.locale,
+                            ),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(
+                            localized("الإجمالي النهائي", "Grand total"),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            formatPrice(
+                                state.grandTotal,
+                                state.storeSettings.currency,
+                                state.storeSettings.locale,
+                            ),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
+            }
+
+            // 5. Error Banner
+            state.form.submitError?.let { errorText ->
+                Surface(
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                    shape = MaterialTheme.shapes.small,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        text = errorText,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(14.dp),
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+    }
+}
+
+@Composable
+private fun OrderConfirmationScreen(
+    receipt: SavedOrderReceipt,
+    locale: String,
+    onTrackOrder: () -> Unit,
+    onContinueShopping: () -> Unit,
+    onCopied: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val brandColors = LocalBrandColors.current
+    val clipboard = LocalClipboardManager.current
+    var copied by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(20.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Surface(
+            color = brandColors.success.copy(alpha = 0.14f),
+            shape = CircleShape,
+            modifier = Modifier.size(76.dp),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = Icons.Rounded.CheckCircle,
+                    contentDescription = null,
+                    tint = brandColors.success,
+                    modifier = Modifier.size(44.dp),
+                )
+            }
+        }
+
+        Text(
+            text = localized("تم تأكيد طلبك بنجاح!", "Order confirmed!"),
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+        )
+
+        Text(
+            text = localized(
+                "احتفظ برقم الطلب التالي لمتابعة حالة الشحن في أي وقت. تم حفظ الفاتورة تلقائياً في سجل طلباتك على هذا الجهاز.",
+                "Keep this number to track delivery. Your receipt is saved on this device.",
+            ),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+
+        // Order Number Card with One-Tap Copy
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary),
+            shape = MaterialTheme.shapes.medium,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(
+                    text = localized("رقم الطلب", "Order number"),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = receipt.orderNumber,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                OutlinedButton(
+                    onClick = {
+                        clipboard.setText(AnnotatedString(receipt.orderNumber))
+                        copied = true
+                        onCopied()
+                    },
+                    shape = MaterialTheme.shapes.small,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(
+                        imageVector = if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Text(
+                        text = if (copied) {
+                            localized("تم نسخ رقم الطلب", "Order number copied")
+                        } else {
+                            localized("نسخ رقم الطلب", "Copy order number")
+                        },
+                        modifier = Modifier.padding(start = 8.dp),
+                    )
+                }
+            }
+        }
+
+        // Itemized Receipt Summary
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, brandColors.hairline),
+            shape = MaterialTheme.shapes.medium,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.ReceiptLong,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    Text(
+                        text = localized("إيصال الطلب", "Order receipt"),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+
+                receipt.items.forEach { item ->
+                    val variant = listOfNotNull(
+                        item.size,
+                        item.color?.let(ColorSwatchMapper::displayLabel),
+                    ).joinToString(" • ")
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(
+                            text = "${item.quantity} × ${item.displayName}" +
+                                if (variant.isNotEmpty()) " ($variant)" else "",
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            text = formatPrice(item.lineTotal, receipt.currency, locale),
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
+
+                HorizontalDivider(color = brandColors.hairline)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = localized("الإجمالي عند الاستلام", "Total on delivery"),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        text = formatPrice(receipt.total, receipt.currency, locale),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+        }
+
+        Button(
+            onClick = onTrackOrder,
+            shape = MaterialTheme.shapes.small,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp),
+        ) {
+            Text(
+                text = localized("تتبع الطلب", "Track order"),
+                style = MaterialTheme.typography.labelLarge,
+            )
+        }
+
+        OutlinedButton(
+            onClick = onContinueShopping,
+            shape = MaterialTheme.shapes.small,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp),
+        ) {
+            Text(
+                text = localized("متابعة التسوق", "Continue shopping"),
+                style = MaterialTheme.typography.labelLarge,
+            )
+        }
+    }
+}
