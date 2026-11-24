@@ -4,12 +4,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.whitelabel.commerce.core.data.remote.PhoneNormalizer
 import com.whitelabel.commerce.core.designsystem.localized
+import com.whitelabel.commerce.core.domain.model.AuthSessionState
 import com.whitelabel.commerce.core.domain.model.CartItem
 import com.whitelabel.commerce.core.domain.model.OrderStatus
 import com.whitelabel.commerce.core.domain.model.PaymentMethod
 import com.whitelabel.commerce.core.domain.model.SavedOrderLine
 import com.whitelabel.commerce.core.domain.model.SavedOrderReceipt
 import com.whitelabel.commerce.core.domain.model.StoreSettings
+import com.whitelabel.commerce.core.domain.repository.AuthRepository
 import com.whitelabel.commerce.core.domain.repository.CartRepository
 import com.whitelabel.commerce.core.domain.repository.OrderRepository
 import com.whitelabel.commerce.core.domain.repository.StoreRepository
@@ -53,6 +55,7 @@ data class CheckoutUiState(
     val cartItems: List<CartItem> = emptyList(),
     val subtotal: Double = 0.0,
     val storeSettings: StoreSettings = StoreSettings(),
+    val signedInEmail: String? = null,
 ) {
     val shippingFee: Double
         get() = if (cartItems.isEmpty()) 0.0 else storeSettings.shippingFee
@@ -68,6 +71,7 @@ data class CheckoutUiState(
 class CheckoutViewModel @Inject constructor(
     private val cartRepository: CartRepository,
     private val orderRepository: OrderRepository,
+    private val authRepository: AuthRepository,
     storeRepository: StoreRepository,
 ) : ViewModel() {
 
@@ -76,12 +80,37 @@ class CheckoutViewModel @Inject constructor(
     // Held stable across retries for identical cart + form so `mobile_checkout` stays idempotent.
     private var idempotencyKey: String = UUID.randomUUID().toString()
 
+    init {
+        // Automatically pre-fill Checkout fields from the signed-in customer's saved profile
+        // without overwriting anything the user has already typed.
+        viewModelScope.launch {
+            authRepository.sessionState.collect { session ->
+                if (session is AuthSessionState.SignedIn) {
+                    val profile = session.profile
+                    val combinedAddr = profile.combinedShippingAddress()
+                    val normalizedPhone = PhoneNormalizer.normalize(profile.phone)
+                    formState.update { current ->
+                        current.copy(
+                            customerName = current.customerName.ifBlank { profile.fullName },
+                            phone = current.phone.ifBlank { normalizedPhone },
+                            wallet = current.wallet.ifBlank {
+                                if (WALLET_REGEX.matches(normalizedPhone)) normalizedPhone else ""
+                            },
+                            address = current.address.ifBlank { combinedAddr },
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     val uiState: StateFlow<CheckoutUiState> = combine(
         formState,
         cartRepository.cartItems,
         cartRepository.subtotal,
         storeRepository.storeSettings,
-    ) { form, items, subtotal, settings ->
+        authRepository.sessionState,
+    ) { form, items, subtotal, settings, session ->
         val resolvedMethod = form.paymentMethod.takeIf { it in settings.paymentMethods }
             ?: settings.paymentMethods.firstOrNull()
             ?: PaymentMethod.COD
@@ -90,6 +119,7 @@ class CheckoutViewModel @Inject constructor(
             cartItems = items,
             subtotal = subtotal,
             storeSettings = settings,
+            signedInEmail = (session as? AuthSessionState.SignedIn)?.email?.takeIf { it.isNotBlank() },
         )
     }.stateIn(
         scope = viewModelScope,

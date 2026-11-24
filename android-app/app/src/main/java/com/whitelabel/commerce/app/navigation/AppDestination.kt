@@ -65,6 +65,7 @@ object AppRoutes {
 
     const val PRODUCT_DETAIL = "product/{productId}"
     const val CHECKOUT = "checkout"
+    const val ACCOUNT = "account"
     const val SUPPORT = "support?orderId={orderId}"
 
     val topLevelRoutes: Set<String> = setOf(HOME, CATEGORIES, CART, ORDERS)

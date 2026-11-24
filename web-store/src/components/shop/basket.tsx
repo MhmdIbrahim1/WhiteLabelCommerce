@@ -48,6 +48,7 @@ export function Basket({
   defaultName = "",
   defaultPhone = "",
   defaultAddress = "",
+  signedInEmail = null,
   paymentOptions = {
     codEnabled: true,
     paymobEnabled: false,
@@ -61,6 +62,7 @@ export function Basket({
   defaultName?: string;
   defaultPhone?: string;
   defaultAddress?: string;
+  signedInEmail?: string | null;
   paymentOptions?: StorePaymentOptions;
 }) {
   const router = useRouter();
@@ -81,7 +83,11 @@ export function Basket({
 
   const [selectedPayment, setSelectedPayment] =
     useState<SelectedPayment>(defaultMethod);
-  const [walletPhone, setWalletPhone] = useState("");
+  const [walletPhone, setWalletPhone] = useState(
+    EGYPT_WALLET_RE.test(defaultPhone.replace(/\s+/g, ""))
+      ? defaultPhone.replace(/\s+/g, "")
+      : "",
+  );
   const [walletError, setWalletError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [redirectingPayment, setRedirectingPayment] = useState(false);
@@ -467,6 +473,26 @@ export function Basket({
                 }
               }}
             >
+              <div className="checkout-auth-banner">
+                {signedInEmail ? (
+                  <span>
+                    {isEn
+                      ? `Signed in as ${signedInEmail} — your order will sync automatically.`
+                      : `مسجّل الدخول: ${signedInEmail} — سيتم مزامنة طلبك مع حسابك تلقائياً.`}
+                  </span>
+                ) : (
+                  <>
+                    <span>
+                      {isEn
+                        ? "Have an account? Sign in to auto-fill shipping details or continue as guest."
+                        : "لديك حساب؟ سجّل الدخول لملء بيانات الشحن تلقائياً أو أكمل كزائر."}
+                    </span>
+                    <Link href="/login?next=/checkout">
+                      {isEn ? "Sign in" : "تسجيل الدخول"}
+                    </Link>
+                  </>
+                )}
+              </div>
               <label>
                 {t("shippingAddressLabel")}
                 <textarea

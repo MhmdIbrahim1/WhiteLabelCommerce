@@ -13,9 +13,15 @@ export default async function Checkout() {
   if (user) {
     const { data: profile } = await db
       .from("store_customers")
-      .select("full_name,phone,address")
+      .select("full_name,phone,governorate,city,address")
       .eq("user_id", user.id)
-      .maybeSingle<{ full_name: string; phone: string; address: string }>();
+      .maybeSingle<{
+        full_name: string;
+        phone: string;
+        governorate: string;
+        city: string;
+        address: string;
+      }>();
     defaultName =
       profile?.full_name ||
       (typeof user.user_metadata?.full_name === "string"
@@ -26,7 +32,14 @@ export default async function Checkout() {
       (typeof user.user_metadata?.phone === "string"
         ? user.user_metadata.phone
         : "");
-    defaultAddress = profile?.address || "";
+    const parts: string[] = [];
+    const street = profile?.address?.trim() ?? "";
+    const city = profile?.city?.trim() ?? "";
+    const gov = profile?.governorate?.trim() ?? "";
+    if (gov && !street.includes(gov)) parts.push(gov);
+    if (city && !street.includes(city)) parts.push(city);
+    if (street) parts.push(street);
+    defaultAddress = parts.join(" - ");
   }
   return (
     <Basket
@@ -36,6 +49,7 @@ export default async function Checkout() {
       defaultName={defaultName}
       defaultPhone={defaultPhone}
       defaultAddress={defaultAddress}
+      signedInEmail={user?.email ?? null}
       paymentOptions={s.payment}
     />
   );

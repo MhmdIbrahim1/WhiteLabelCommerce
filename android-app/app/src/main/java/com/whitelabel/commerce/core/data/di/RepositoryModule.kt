@@ -1,10 +1,12 @@
 package com.whitelabel.commerce.core.data.di
 
+import com.whitelabel.commerce.core.data.repository.AuthRepositoryImpl
 import com.whitelabel.commerce.core.data.repository.CartRepositoryImpl
 import com.whitelabel.commerce.core.data.repository.CatalogRepositoryImpl
 import com.whitelabel.commerce.core.data.repository.OrderRepositoryImpl
 import com.whitelabel.commerce.core.data.repository.StoreRepositoryImpl
 import com.whitelabel.commerce.core.data.repository.SupportRepositoryImpl
+import com.whitelabel.commerce.core.domain.repository.AuthRepository
 import com.whitelabel.commerce.core.domain.repository.CartRepository
 import com.whitelabel.commerce.core.domain.repository.CatalogRepository
 import com.whitelabel.commerce.core.domain.repository.OrderRepository
@@ -39,4 +41,8 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindSupportRepository(impl: SupportRepositoryImpl): SupportRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindAuthRepository(impl: AuthRepositoryImpl): AuthRepository
 }

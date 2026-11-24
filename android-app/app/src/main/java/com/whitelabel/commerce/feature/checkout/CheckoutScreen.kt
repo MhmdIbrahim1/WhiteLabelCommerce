@@ -19,6 +19,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
+import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -73,6 +74,7 @@ private val WALLET_INPUT_REGEX = Regex("^01[0125][0-9]{8}$")
 @Composable
 fun CheckoutScreen(
     onBack: () -> Unit,
+    onOpenAccount: () -> Unit,
     onTrackOrder: (orderNumber: String, phone: String, paymentOutcome: PaymentFlowOutcome?) -> Unit,
     onContinueShopping: () -> Unit,
     onShowMessage: (String) -> Unit,
@@ -212,6 +214,79 @@ fun CheckoutScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            // 0. Optional Account Sign-In / Signed-In Sync Banner (Guest Checkout remains fully open)
+            Surface(
+                color = if (state.signedInEmail != null) {
+                    brandColors.success.copy(alpha = 0.12f)
+                } else {
+                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                },
+                shape = MaterialTheme.shapes.medium,
+                border = BorderStroke(
+                    1.dp,
+                    if (state.signedInEmail != null) {
+                        brandColors.success.copy(alpha = 0.35f)
+                    } else {
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+                    },
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.AccountCircle,
+                        contentDescription = null,
+                        tint = if (state.signedInEmail != null) brandColors.success else MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp),
+                    )
+                    if (state.signedInEmail != null) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = localized("مسجّل الدخول: ${state.signedInEmail}", "Signed in: ${state.signedInEmail}"),
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                                text = localized(
+                                    "سيتم حفظ الطلب تلقائياً في حسابك ومزامنته مع الموقع.",
+                                    "This order will automatically sync to your account across web & app.",
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    } else {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = localized("هل لديك حساب؟ (اختياري)", "Have an account? (Optional)"),
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                                text = localized(
+                                    "سجّل الدخول لملء بياناتك تلقائياً أو أكمل كزائر أدناه.",
+                                    "Sign in to auto-fill shipping details, or continue as guest below.",
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        OutlinedButton(
+                            onClick = onOpenAccount,
+                            shape = MaterialTheme.shapes.small,
+                        ) {
+                            Text(localized("تسجيل الدخول", "Sign In"))
+                        }
+                    }
+                }
+            }
+
             // 1. Delivery Details Card
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),

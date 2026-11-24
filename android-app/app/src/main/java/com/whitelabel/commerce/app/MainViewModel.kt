@@ -2,7 +2,9 @@ package com.whitelabel.commerce.app
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.whitelabel.commerce.core.domain.model.AuthSessionState
 import com.whitelabel.commerce.core.domain.model.StoreSettings
+import com.whitelabel.commerce.core.domain.repository.AuthRepository
 import com.whitelabel.commerce.core.domain.repository.CartRepository
 import com.whitelabel.commerce.core.domain.repository.StoreRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -19,12 +21,14 @@ data class MainUiState(
     val darkThemeOverride: Boolean? = null,
     val cartItemCount: Int = 0,
     val isSyncingBrand: Boolean = false,
+    val isSignedIn: Boolean = false,
 )
 
 @HiltViewModel
 class MainViewModel @Inject constructor(
     private val storeRepository: StoreRepository,
     cartRepository: CartRepository,
+    authRepository: AuthRepository,
 ) : ViewModel() {
 
     private val isSyncingBrand = MutableStateFlow(false)
@@ -34,17 +38,22 @@ class MainViewModel @Inject constructor(
         storeRepository.darkThemePreference,
         cartRepository.totalItemCount,
         isSyncingBrand,
-    ) { settings, darkPref, cartCount, syncing ->
+        authRepository.sessionState,
+    ) { settings, darkPref, cartCount, syncing, authSession ->
         MainUiState(
             storeSettings = settings,
             darkThemeOverride = darkPref,
             cartItemCount = cartCount,
             isSyncingBrand = syncing,
+            isSignedIn = authSession is AuthSessionState.SignedIn,
         )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
-        initialValue = MainUiState(storeSettings = storeRepository.storeSettings.value),
+        initialValue = MainUiState(
+            storeSettings = storeRepository.storeSettings.value,
+            isSignedIn = authRepository.sessionState.value is AuthSessionState.SignedIn,
+        ),
     )
 
     init {

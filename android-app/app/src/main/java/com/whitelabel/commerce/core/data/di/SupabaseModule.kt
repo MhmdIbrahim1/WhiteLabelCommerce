@@ -1,5 +1,7 @@
 package com.whitelabel.commerce.core.data.di
 
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
 import com.whitelabel.commerce.BuildConfig
 import dagger.Module
 import dagger.Provides
@@ -30,14 +32,21 @@ object SupabaseModule {
 
     @Provides
     @Singleton
-    fun provideSupabaseClient(json: Json): SupabaseClient = createSupabaseClient(
+    fun provideSupabaseClient(
+        json: Json,
+        dataStore: DataStore<Preferences>,
+    ): SupabaseClient = createSupabaseClient(
         supabaseUrl = BuildConfig.SUPABASE_URL,
         supabaseKey = BuildConfig.SUPABASE_ANON_KEY,
     ) {
         defaultSerializer = KotlinXSerializer(json)
         httpEngine = OkHttp.create()
         install(Postgrest)
-        install(Auth)
+        install(Auth) {
+            sessionManager = DataStoreSessionManager(dataStore, json)
+            autoLoadFromStorage = true
+            alwaysAutoRefresh = true
+        }
         install(Realtime)
     }
 }

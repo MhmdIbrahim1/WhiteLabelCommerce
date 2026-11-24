@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import {
   UserRound,
   ShoppingBag,
@@ -9,6 +8,8 @@ import {
   ArrowRight,
   LogOut,
   MapPin,
+  Sparkles,
+  LockKeyhole,
 } from "lucide-react";
 import { serverDb, checked } from "@/lib/db";
 import { money } from "@/lib/brand";
@@ -16,6 +17,7 @@ import { settings } from "@/lib/shop";
 import { t } from "@/lib/i18n";
 import { getServerLang } from "@/lib/i18n-server";
 import { Timeline } from "@/components/shop/tracking";
+import { HybridAuthPanel } from "@/components/shop/hybrid-auth-panel";
 import type { Summary } from "../orders/actions";
 import { logout, saveCustomerAccount } from "../../login/actions";
 
@@ -23,6 +25,7 @@ type CustomerProfileRow = {
   full_name: string;
   phone: string;
   email: string;
+  governorate: string;
   city: string;
   address: string;
 };
@@ -37,19 +40,58 @@ export default async function AccountPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const db = await serverDb();
-  const {
-    data: { user },
-  } = await db.auth.getUser();
-  if (!user) redirect("/login?next=/account");
-
-  const [params, store, lang, profileRes, ordersRes] = await Promise.all([
+  const [params, store, lang, db] = await Promise.all([
     searchParams,
     settings(),
     getServerLang(),
+    serverDb(),
+  ]);
+  const {
+    data: { user },
+  } = await db.auth.getUser();
+
+  if (!user) {
+    const error = typeof params.error === "string" ? params.error : "";
+    const registered =
+      typeof params.registered === "string" ? params.registered : "";
+    return (
+      <section className="account-auth-wrap">
+        <div className="panel account-auth-card">
+          <div className="auth-heading">
+            <span className="auth-pill">
+              <Sparkles size={13} /> {t(lang, "authSecurePill")}
+            </span>
+            <h1>
+              {lang === "en"
+                ? "My Account & Order Sync"
+                : "حسابي ومزامنة الطلبات"}
+            </h1>
+            <p>
+              {lang === "en"
+                ? "Sign in with a 6-digit email OTP code or password to auto-fill checkout, link past guest orders, and sync across web & mobile."
+                : "سجّل الدخول برمز تحقق من 6 أرقام أو كلمة المرور لملء بيانات الشحن تلقائياً، ربط طلباتك السابقة، والمزامنة بين الموقع والتطبيق."}
+            </p>
+          </div>
+
+          <HybridAuthPanel
+            nextPath="/account"
+            storeName={store.name}
+            initialError={error}
+            initialRegistered={registered}
+          />
+
+          <footer className="auth-footer">
+            <LockKeyhole size={14} /> {t(lang, "authFooterNote")}
+          </footer>
+        </div>
+      </section>
+    );
+  }
+
+  const [profileRes, ordersRes] = await Promise.all([
     db
       .from("store_customers")
-      .select("full_name,phone,email,city,address")
+      .select("full_name,phone,email,governorate,city,address")
       .eq("user_id", user.id)
       .maybeSingle<CustomerProfileRow>(),
     db
@@ -132,7 +174,13 @@ export default async function AccountPage({
       <div className="details-grid" style={{ marginTop: "1.75rem" }}>
         <section className="panel">
           <div className="split" style={{ marginBottom: "0.75rem" }}>
-            <h2 style={{ display: "inline-flex", alignItems: "center", gap: "0.45rem" }}>
+            <h2
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "0.45rem",
+              }}
+            >
               <UserRound size={18} /> {t(lang, "accountProfileTitle")}
             </h2>
           </div>
@@ -141,18 +189,24 @@ export default async function AccountPage({
             <p className="account-notice account-notice--ok" role="status">
               {lang === "en"
                 ? "Profile saved and any matching guest orders were linked."
-                : "تم حفظ بياناتك وربط أي طلبات سابقة مطابقة لرقم هاتفك."}
+                : "تم حفظ بياناتك وربط أي طلبات سابقة مطابقة لرقم هاتفك أو بريدك."}
             </p>
           )}
-          {(result === "error" || result === "phone_error") && (
+          {(result === "error" ||
+            result === "phone_error" ||
+            result === "phone_in_use") && (
             <p className="account-notice account-notice--error" role="alert">
               {result === "phone_error"
                 ? lang === "en"
                   ? "Enter a valid 8–15 digit phone number."
                   : "تحقق من رقم الهاتف (8 إلى 15 رقماً)."
-                : lang === "en"
-                  ? "Could not save profile. Please try again."
-                  : "تعذر حفظ البيانات. أعد المحاولة."}
+                : result === "phone_in_use"
+                  ? lang === "en"
+                    ? "This phone number is already linked to another account."
+                    : "رقم الهاتف مسجل بالفعل بحساب آخر."
+                  : lang === "en"
+                    ? "Could not save profile. Please try again."
+                    : "تعذر حفظ البيانات. أعد المحاولة."}
             </p>
           )}
 
@@ -178,16 +232,31 @@ export default async function AccountPage({
               />
             </label>
             <label>
-              {t(lang, "accountCityLabel")}
+              {lang === "en" ? "Governorate" : "المحافظة"}
               <input
-                name="city"
-                defaultValue={profile?.city ?? ""}
-                placeholder={lang === "en" ? "e.g. Cairo" : "مثال: القاهرة"}
+                name="governorate"
+                defaultValue={profile?.governorate ?? ""}
+                placeholder={lang === "en" ? "e.g. Cairo / Giza" : "مثال: القاهرة / الجيزة"}
                 maxLength={80}
               />
             </label>
             <label>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem" }}>
+              {t(lang, "accountCityLabel")}
+              <input
+                name="city"
+                defaultValue={profile?.city ?? ""}
+                placeholder={lang === "en" ? "e.g. Nasr City" : "مثال: مدينة نصر"}
+                maxLength={80}
+              />
+            </label>
+            <label>
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "0.3rem",
+                }}
+              >
                 <MapPin size={14} /> {t(lang, "accountSavedAddrLabel")}
               </span>
               <textarea
@@ -220,7 +289,13 @@ export default async function AccountPage({
               ))}
             </div>
           ) : (
-            <div style={{ display: "grid", gap: "0.85rem", marginTop: "0.75rem" }}>
+            <div
+              style={{
+                display: "grid",
+                gap: "0.85rem",
+                marginTop: "0.75rem",
+              }}
+            >
               <p>{t(lang, "accountNoOrders")}</p>
               <Link href="/products" className="cta">
                 {t(lang, "heroShopProducts")}

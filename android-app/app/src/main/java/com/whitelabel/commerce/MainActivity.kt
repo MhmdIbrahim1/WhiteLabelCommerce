@@ -92,6 +92,7 @@ class MainActivity : ComponentActivity() {
                     storeSettings = settings,
                     cartItemCount = uiState.cartItemCount,
                     isDarkTheme = useDarkTheme,
+                    isSignedIn = uiState.isSignedIn,
                     onToggleTheme = { mainViewModel.toggleDarkTheme(currentlyDark = useDarkTheme) },
                     onLanguage = {
                         val next = if (settings.isRtl) "en" else "ar"

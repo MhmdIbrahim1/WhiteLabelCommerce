@@ -1560,3 +1560,126 @@ details details,
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+
+/* Phase 9: Hybrid Email OTP + Password Auth & Checkout Sync Banner */
+.account-auth-wrap {
+  max-width: 520px;
+  margin: 1.5rem auto 2.5rem;
+}
+
+.account-auth-card {
+  display: grid;
+  gap: 1.15rem;
+  padding: clamp(1.35rem, 3vw, 2.1rem);
+}
+
+.hybrid-auth-root {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.hybrid-auth-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.45rem;
+  padding: 0.3rem;
+  border-radius: calc(var(--radius) * 0.85);
+  background: var(--wash);
+  border: 1px solid var(--line);
+}
+
+.hybrid-auth-tab {
+  width: 100%;
+  background: transparent;
+  color: var(--muted);
+  border: 0;
+  padding: 0.58rem 0.65rem;
+  font-size: 0.86rem;
+  font-weight: 650;
+  border-radius: calc(var(--radius) * 0.68);
+  transition: background-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+
+.hybrid-auth-tab.is-active {
+  background: var(--primary);
+  color: #fff;
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--primary) 26%, transparent);
+}
+
+.auth-sub-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.45rem;
+  margin-bottom: 0.25rem;
+}
+
+.auth-sub-toggle button {
+  width: 100%;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  padding: 0.48rem 0.7rem;
+  font-size: 0.84rem;
+}
+
+.auth-sub-toggle button.is-active {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 12%, var(--surface));
+  color: var(--primary);
+}
+
+.otp-code-input {
+  text-align: center;
+  letter-spacing: 0.45rem;
+  font-size: 1.35rem;
+  font-weight: 750;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.hybrid-otp-email-row,
+.hybrid-resend-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  font-size: 0.86rem;
+}
+
+.hybrid-link-btn {
+  background: transparent;
+  color: var(--primary);
+  border: 0;
+  padding: 0.25rem 0.4rem;
+  font-size: 0.84rem;
+  font-weight: 650;
+}
+
+.hybrid-link-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.hybrid-auth-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin: 0.15rem 0 0;
+}
+
+.checkout-auth-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.7rem 0.85rem;
+  border-radius: calc(var(--radius) * 0.75);
+  background: color-mix(in srgb, var(--primary) 7%, var(--wash));
+  border: 1px solid color-mix(in srgb, var(--primary) 22%, var(--line));
+  font-size: 0.84rem;
+  color: var(--ink);
+}

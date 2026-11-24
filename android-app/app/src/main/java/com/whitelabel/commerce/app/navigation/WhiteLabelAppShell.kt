@@ -4,6 +4,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AccountCircle
+import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.SupportAgent
@@ -47,6 +49,7 @@ import androidx.navigation.navArgument
 import com.whitelabel.commerce.core.designsystem.LocalBrandColors
 import com.whitelabel.commerce.core.designsystem.localized
 import com.whitelabel.commerce.core.domain.model.StoreSettings
+import com.whitelabel.commerce.feature.account.AccountScreen
 import com.whitelabel.commerce.feature.cart.CartScreen
 import com.whitelabel.commerce.feature.catalog.CatalogScreen
 import com.whitelabel.commerce.feature.catalog.ProductDetailScreen
@@ -64,6 +67,7 @@ fun WhiteLabelAppShell(
     storeSettings: StoreSettings,
     cartItemCount: Int,
     isDarkTheme: Boolean,
+    isSignedIn: Boolean,
     onToggleTheme: () -> Unit,
     onLanguage: () -> Unit,
     onRefreshStore: () -> Unit,
@@ -97,6 +101,8 @@ fun WhiteLabelAppShell(
         val clean = link.trim()
         when {
             clean.startsWith("/orders") -> navigateToTab(AppRoutes.ORDERS)
+            clean.startsWith("/account") || clean.startsWith("/login") ->
+                navController.navigate(AppRoutes.ACCOUNT)
             clean.startsWith("/contact") || clean.startsWith("/support") ->
                 navController.navigate(AppRoutes.support())
             else -> {
@@ -141,6 +147,16 @@ fun WhiteLabelAppShell(
                             Text(
                                 text = if (storeSettings.isRtl) "EN" else "عربي",
                                 fontWeight = FontWeight.Bold,
+                            )
+                        }
+                        IconButton(onClick = { navController.navigate(AppRoutes.ACCOUNT) }) {
+                            Icon(
+                                imageVector = if (isSignedIn) {
+                                    Icons.Rounded.AccountCircle
+                                } else {
+                                    Icons.Outlined.AccountCircle
+                                },
+                                contentDescription = localized("حسابي", "Account"),
                             )
                         }
                         IconButton(onClick = { navController.navigate(AppRoutes.support()) }) {
@@ -305,6 +321,7 @@ fun WhiteLabelAppShell(
             composable(AppRoutes.CHECKOUT) {
                 CheckoutScreen(
                     onBack = { navController.popBackStack() },
+                    onOpenAccount = { navController.navigate(AppRoutes.ACCOUNT) },
                     onTrackOrder = { orderNumber, phone, paymentOutcome ->
                         pendingTrackOrder = Triple(orderNumber, phone, paymentOutcome)
                         navController.popBackStack()
@@ -313,6 +330,17 @@ fun WhiteLabelAppShell(
                     onContinueShopping = {
                         navController.popBackStack()
                         navigateToTab(AppRoutes.HOME)
+                    },
+                    onShowMessage = { msg -> showSnackbar(msg) },
+                )
+            }
+
+            composable(AppRoutes.ACCOUNT) {
+                AccountScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenOrders = {
+                        navController.popBackStack()
+                        navigateToTab(AppRoutes.ORDERS)
                     },
                     onShowMessage = { msg -> showSnackbar(msg) },
                 )

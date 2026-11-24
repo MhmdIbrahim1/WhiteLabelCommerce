@@ -1,10 +1,10 @@
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, Store, LockKeyhole, Sparkles } from "lucide-react";
+import { Store, LockKeyhole, Sparkles } from "lucide-react";
 import { settings } from "@/lib/shop";
 import { t } from "@/lib/i18n";
 import { getServerLang } from "@/lib/i18n-server";
 import { LanguageToggle } from "@/components/language-provider";
-import { login } from "./actions";
+import { HybridAuthPanel } from "@/components/shop/hybrid-auth-panel";
 
 export default async function Login({ searchParams }: PageProps<"/login">) {
   const [params, store, lang] = await Promise.all([
@@ -12,7 +12,6 @@ export default async function Login({ searchParams }: PageProps<"/login">) {
     settings(),
     getServerLang(),
   ]);
-  const ArrowIcon = lang === "en" ? ArrowRight : ArrowLeft;
   const error = typeof params.error === "string" ? params.error : "";
   const registered =
     typeof params.registered === "string" ? params.registered : "";
@@ -44,70 +43,12 @@ export default async function Login({ searchParams }: PageProps<"/login">) {
           <p>{t(lang, "authLoginSubtitle")}</p>
         </div>
 
-        {registered === "confirm" && (
-          <p className="auth-alert auth-alert--ok" role="status">
-            {lang === "en"
-              ? "Account created! Please confirm your email address, then sign in."
-              : "تم إنشاء حسابك بنجاح! يرجى تأكيد بريدك الإلكتروني ثم تسجيل الدخول."}
-          </p>
-        )}
-
-        {error && (
-          <p className="auth-alert auth-alert--error" role="alert">
-            {error === "unconfirmed"
-              ? lang === "en"
-                ? "Please confirm your email via the link sent to your inbox before signing in."
-                : "يرجى تأكيد بريدك الإلكتروني عبر الرابط المرسل إليك قبل تسجيل الدخول."
-              : lang === "en"
-                ? "Could not sign in. Please check your email and password."
-                : "تعذر تسجيل الدخول. تحقق من البريد الإلكتروني وكلمة المرور وأعد المحاولة."}
-          </p>
-        )}
-
-        <form action={login} className="auth-form">
-          <input type="hidden" name="next" value={next} />
-          <label>
-            {t(lang, "emailLabel")}
-            <input
-              type="email"
-              dir="ltr"
-              name="email"
-              placeholder="name@example.com"
-              autoComplete="username"
-              required
-            />
-          </label>
-          <label>
-            {t(lang, "passwordLabel")}
-            <input
-              type="password"
-              dir="ltr"
-              name="password"
-              placeholder="••••••••"
-              autoComplete="current-password"
-              required
-            />
-          </label>
-          <button className="auth-submit-btn">
-            <span>{t(lang, "navLogin")}</span>
-            <ArrowIcon size={17} />
-          </button>
-        </form>
-
-        <div className="auth-switch">
-          <span>
-            {t(lang, "newCustomerPrompt")} {store.name}
-            {lang === "en" ? "?" : "؟"}
-          </span>
-          <Link
-            href={
-              "/register" +
-              (next ? "?next=" + encodeURIComponent(next) : "")
-            }
-          >
-            {t(lang, "createNewAccount")}
-          </Link>
-        </div>
+        <HybridAuthPanel
+          nextPath={next || "/account"}
+          storeName={store.name}
+          initialError={error}
+          initialRegistered={registered}
+        />
 
         <footer className="auth-footer">
           <LockKeyhole size={14} /> {t(lang, "authFooterNote")}

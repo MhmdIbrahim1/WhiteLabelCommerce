@@ -4,10 +4,12 @@ import com.whitelabel.commerce.core.designsystem.localized
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.whitelabel.commerce.core.domain.model.AuthSessionState
 import com.whitelabel.commerce.core.domain.model.GuestOrderTracking
 import com.whitelabel.commerce.core.domain.model.Order
 import com.whitelabel.commerce.core.domain.model.SavedOrderReceipt
 import com.whitelabel.commerce.core.domain.model.StoreSettings
+import com.whitelabel.commerce.core.domain.repository.AuthRepository
 import com.whitelabel.commerce.core.domain.repository.OrderRepository
 import com.whitelabel.commerce.core.domain.repository.StoreRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -46,6 +48,7 @@ data class OrdersUiState(
 @HiltViewModel
 class OrdersViewModel @Inject constructor(
     private val orderRepository: OrderRepository,
+    private val authRepository: AuthRepository,
     storeRepository: StoreRepository,
 ) : ViewModel() {
 
@@ -69,6 +72,15 @@ class OrdersViewModel @Inject constructor(
 
     init {
         loadAccountOrders()
+        viewModelScope.launch {
+            authRepository.sessionState.collect { session ->
+                when (session) {
+                    is AuthSessionState.SignedIn -> loadAccountOrders()
+                    AuthSessionState.SignedOut -> trackingState.update { it.copy(accountOrders = emptyList()) }
+                    AuthSessionState.Loading -> Unit
+                }
+            }
+        }
     }
 
     fun prefillAndTrack(orderNumber: String, phone: String) {
