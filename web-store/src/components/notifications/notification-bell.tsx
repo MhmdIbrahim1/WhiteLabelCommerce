@@ -20,6 +20,7 @@ import {
   Sparkles,
   AlertTriangle,
   RefreshCw,
+  Trash2,
 } from "lucide-react";
 import { useLanguage } from "@/components/language-provider";
 import { browserDb } from "@/lib/supabase/browser";
@@ -42,10 +43,31 @@ export type InboxItem = {
   body_en: string;
   deep_link: string;
   is_read: boolean;
+  read_at?: string | null;
   created_at: string;
 };
 
 const emptySubscribe = () => () => {};
+
+function readLocalSet(storageKey: string): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const raw = localStorage.getItem(storageKey);
+    const arr = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(arr) ? arr.filter((x) => typeof x === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function addLocalIds(storageKey: string, ids: string[]) {
+  if (typeof window === "undefined" || ids.length === 0) return;
+  try {
+    const set = readLocalSet(storageKey);
+    for (const id of ids) set.add(id);
+    localStorage.setItem(storageKey, JSON.stringify(Array.from(set).slice(-200)));
+  } catch {}
+}
 
 function formatRelativeTime(
   iso: string,
@@ -106,6 +128,23 @@ export function NotificationBell({
   const [pushNotice, setPushNotice] = useState("");
   const drawerRef = useRef<HTMLDivElement>(null);
 
+  const localReadKey = `nova.notif.read.${storeId}.${scope}`;
+  const localDismissedKey = `nova.notif.dismissed.${storeId}.${scope}`;
+
+  const hydrateInbox = useCallback(
+    (rawItems: InboxItem[]) => {
+      const localRead = readLocalSet(localReadKey);
+      const localDismissed = readLocalSet(localDismissedKey);
+      return rawItems
+        .filter((n) => !localDismissed.has(n.id))
+        .map((n) => ({
+          ...n,
+          is_read: Boolean(n.is_read || n.read_at || localRead.has(n.id)),
+        }));
+    },
+    [localReadKey, localDismissedKey],
+  );
+
   const refreshInbox = useCallback(async () => {
     try {
       const res = await fetch(`/api/notifications/inbox?scope=${scope}`, {
@@ -114,14 +153,14 @@ export function NotificationBell({
       if (!res.ok) return;
       const body = (await res.json()) as { items?: InboxItem[] };
       if (Array.isArray(body.items)) {
-        setItems(body.items);
+        setItems(hydrateInbox(body.items));
       }
     } catch {
       // Silent network resilience
     } finally {
       setLoading(false);
     }
-  }, [scope]);
+  }, [scope, hydrateInbox]);
 
   useEffect(() => {
     let active = true;
@@ -129,7 +168,7 @@ export function NotificationBell({
       .then((res) => (res.ok ? res.json() : null))
       .then((body: { items?: InboxItem[] } | null) => {
         if (active && body && Array.isArray(body.items)) {
-          setItems(body.items);
+          setItems(hydrateInbox(body.items));
         }
       })
       .catch(() => {})
@@ -139,7 +178,34 @@ export function NotificationBell({
     return () => {
       active = false;
     };
-  }, [scope]);
+  }, [scope, hydrateInbox]);
+
+  // Auto-mark notification as read if opened from an external Web Push link (?notif_id=<uuid>)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const notifId = params.get("notif_id")?.trim();
+    if (!notifId || !/^[0-9a-f-]{36}$/i.test(notifId)) return;
+
+    addLocalIds(localReadKey, [notifId]);
+    void fetch("/api/notifications/inbox", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      keepalive: true,
+      body: JSON.stringify({ id: notifId, scope }),
+    })
+      .then(() => {
+        setItems((prev) =>
+          prev.map((n) => (n.id === notifId ? { ...n, is_read: true } : n)),
+        );
+      })
+      .catch(() => {});
+
+    params.delete("notif_id");
+    const nextSearch = params.toString();
+    const cleanUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}${window.location.hash}`;
+    window.history.replaceState(null, "", cleanUrl);
+  }, [localReadKey, scope]);
 
   // Auto-register / refresh Web Push subscription on mount & language/user changes when permission is granted
   useEffect(() => {
@@ -165,7 +231,7 @@ export function NotificationBell({
     }
   }
 
-  // Supabase Realtime subscription on public.notifications
+  // Supabase Realtime subscription on public.notifications (INSERT, UPDATE, DELETE)
   useEffect(() => {
     if (!storeId) return;
     const supabase = browserDb();
@@ -193,8 +259,48 @@ export function NotificationBell({
           if (!matchesScope) return;
           setItems((prev) => {
             if (prev.some((n) => n.id === row.id)) return prev;
-            return [row, ...prev].slice(0, 40);
+            return [
+              { ...row, is_read: Boolean(row.is_read || row.read_at) },
+              ...prev,
+            ].slice(0, 40);
           });
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "notifications",
+          filter: `store_id=eq.${storeId}`,
+        },
+        (payload: { new?: unknown }) => {
+          const row = payload.new as Partial<InboxItem> | undefined;
+          if (!row?.id) return;
+          setItems((prev) =>
+            prev.map((n) =>
+              n.id === row.id
+                ? {
+                    ...n,
+                    ...row,
+                    is_read: Boolean(row.is_read || row.read_at || n.is_read),
+                  }
+                : n,
+            ),
+          );
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "DELETE",
+          schema: "public",
+          table: "notifications",
+        },
+        (payload: { old?: unknown }) => {
+          const deleted = payload.old as { id?: string } | undefined;
+          if (!deleted?.id) return;
+          setItems((prev) => prev.filter((n) => n.id !== deleted.id));
         },
       )
       .subscribe();
@@ -228,13 +334,14 @@ export function NotificationBell({
     setItems((prev) =>
       prev.map((n) => (n.id === item.id ? { ...n, is_read: true } : n)),
     );
-    if (item.user_id || scope === "admin") {
-      void fetch("/api/notifications/inbox", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: item.id, scope }),
-      }).catch(() => {});
-    }
+    addLocalIds(localReadKey, [item.id]);
+    // Persist read_at for both personal AND broadcast (user_id === null) rows via SECURITY DEFINER RPC
+    void fetch("/api/notifications/inbox", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      keepalive: true,
+      body: JSON.stringify({ id: item.id, scope }),
+    }).catch(() => {});
     setOpen(false);
     if (item.deep_link && item.deep_link.startsWith("/")) {
       router.push(item.deep_link);
@@ -242,11 +349,35 @@ export function NotificationBell({
   }
 
   async function markAllRead() {
+    const ids = items.map((n) => n.id);
+    addLocalIds(localReadKey, ids);
     setItems((prev) => prev.map((n) => ({ ...n, is_read: true })));
     void fetch("/api/notifications/inbox", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mark_all: true, scope }),
+      body: JSON.stringify({ markAll: true, mark_all: true, scope }),
+    }).catch(() => {});
+  }
+
+  async function deleteOne(item: InboxItem, e: React.MouseEvent) {
+    e.stopPropagation();
+    addLocalIds(localDismissedKey, [item.id]);
+    setItems((prev) => prev.filter((n) => n.id !== item.id));
+    if (item.user_id || scope === "admin") {
+      void fetch(
+        `/api/notifications/inbox?id=${encodeURIComponent(item.id)}&scope=${scope}`,
+        { method: "DELETE" },
+      ).catch(() => {});
+    }
+  }
+
+  async function clearAllItems() {
+    const ids = items.map((n) => n.id);
+    if (ids.length === 0) return;
+    addLocalIds(localDismissedKey, ids);
+    setItems([]);
+    void fetch(`/api/notifications/inbox?clearAll=true&scope=${scope}`, {
+      method: "DELETE",
     }).catch(() => {});
   }
 
@@ -298,15 +429,28 @@ export function NotificationBell({
                   )}
                 </div>
                 <div className="notif-drawer-actions">
-                  <button
-                    type="button"
-                    className="notif-icon-btn"
-                    title={t("notifMarkAllRead")}
-                    aria-label={t("notifMarkAllRead")}
-                    onClick={() => void markAllRead()}
-                  >
-                    <CheckCheck size={16} />
-                  </button>
+                  {items.length > 0 && (
+                    <>
+                      <button
+                        type="button"
+                        className="notif-icon-btn"
+                        title={t("notifMarkAllRead")}
+                        aria-label={t("notifMarkAllRead")}
+                        onClick={() => void markAllRead()}
+                      >
+                        <CheckCheck size={16} />
+                      </button>
+                      <button
+                        type="button"
+                        className="notif-icon-btn is-danger"
+                        title={t("notifClearAll")}
+                        aria-label={t("notifClearAll")}
+                        onClick={() => void clearAllItems()}
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </>
+                  )}
                   <button
                     type="button"
                     className="notif-icon-btn"
@@ -357,30 +501,43 @@ export function NotificationBell({
                     const title = lang === "en" ? item.title_en : item.title_ar;
                     const body = lang === "en" ? item.body_en : item.body_ar;
                     return (
-                      <button
+                      <div
                         key={item.id}
-                        type="button"
-                        className={`notif-card ${item.is_read ? "is-read" : "is-unread"}`}
-                        onClick={() => void markOneRead(item)}
+                        className={`notif-item-row ${item.is_read ? "is-read" : "is-unread"}`}
                       >
-                        <span className={`notif-cat-icon cat-${item.category}`}>
-                          <CategoryIcon category={item.category} />
-                        </span>
-                        <span className="notif-card-content">
-                          <span className="notif-card-top">
-                            <strong>{title}</strong>
-                            <small>
-                              {formatRelativeTime(
-                                item.created_at,
-                                lang,
-                                t("notifJustNow"),
-                              )}
-                            </small>
+                        <button
+                          type="button"
+                          className={`notif-card ${item.is_read ? "is-read" : "is-unread"}`}
+                          onClick={() => void markOneRead(item)}
+                        >
+                          <span className={`notif-cat-icon cat-${item.category}`}>
+                            <CategoryIcon category={item.category} />
                           </span>
-                          <span className="notif-card-body">{body}</span>
-                        </span>
-                        {!item.is_read && <span className="notif-unread-dot" />}
-                      </button>
+                          <span className="notif-card-content">
+                            <span className="notif-card-top">
+                              <strong>{title}</strong>
+                              <small>
+                                {formatRelativeTime(
+                                  item.created_at,
+                                  lang,
+                                  t("notifJustNow"),
+                                )}
+                              </small>
+                            </span>
+                            <span className="notif-card-body">{body}</span>
+                          </span>
+                          {!item.is_read && <span className="notif-unread-dot" />}
+                        </button>
+                        <button
+                          type="button"
+                          className="notif-item-del-btn"
+                          title={t("notifDeleteItem")}
+                          aria-label={`${t("notifDeleteItem")}: ${title}`}
+                          onClick={(e) => void deleteOne(item, e)}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     );
                   })
                 )}

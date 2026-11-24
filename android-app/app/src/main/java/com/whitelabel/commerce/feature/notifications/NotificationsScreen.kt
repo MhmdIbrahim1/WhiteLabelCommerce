@@ -18,12 +18,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material.icons.rounded.Campaign
+import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.DoneAll
 import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.ShoppingCart
 import androidx.compose.material.icons.rounded.WarningAmber
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -34,10 +37,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -60,6 +67,7 @@ fun NotificationsScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val brandColors = LocalBrandColors.current
+    var showClearAllDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -93,6 +101,15 @@ fun NotificationsScreen(
                             Icon(
                                 imageVector = Icons.Rounded.DoneAll,
                                 contentDescription = localized("تحديد الكل كمقروء", "Mark all read"),
+                            )
+                        }
+                    }
+                    if (state.items.isNotEmpty()) {
+                        IconButton(onClick = { showClearAllDialog = true }) {
+                            Icon(
+                                imageVector = Icons.Rounded.DeleteSweep,
+                                contentDescription = localized("مسح الكل", "Clear All"),
+                                tint = MaterialTheme.colorScheme.error,
                             )
                         }
                     }
@@ -143,11 +160,49 @@ fun NotificationsScreen(
                                 viewModel.markAsRead(item.id)
                                 onOpenDeepLink(item.deepLink)
                             },
+                            onDelete = {
+                                viewModel.deleteNotification(item.id)
+                            },
                         )
                     }
                 }
             }
         }
+    }
+
+    if (showClearAllDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearAllDialog = false },
+            title = {
+                Text(localized("مسح جميع الإشعارات", "Clear All Notifications"))
+            },
+            text = {
+                Text(
+                    localized(
+                        "هل تريد مسح جميع الإشعارات من صندوقك؟",
+                        "Do you want to remove all notifications from your inbox?",
+                    ),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showClearAllDialog = false
+                        viewModel.clearAll()
+                    },
+                ) {
+                    Text(
+                        text = localized("مسح الكل", "Clear All"),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearAllDialog = false }) {
+                    Text(localized("إلغاء", "Cancel"))
+                }
+            },
+        )
     }
 }
 
@@ -156,6 +211,7 @@ private fun NotificationItemCard(
     item: AppNotification,
     hairlineColor: androidx.compose.ui.graphics.Color,
     onClick: () -> Unit,
+    onDelete: () -> Unit,
 ) {
     val icon = when (item.category) {
         "order_update" -> Icons.Rounded.Inventory2
@@ -184,8 +240,8 @@ private fun NotificationItemCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                .padding(start = 14.dp, top = 12.dp, bottom = 12.dp, end = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.Top,
         ) {
             Surface(
@@ -231,6 +287,18 @@ private fun NotificationItemCard(
                     text = item.displayBody,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            IconButton(
+                onClick = onDelete,
+                modifier = Modifier.size(34.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.DeleteOutline,
+                    contentDescription = localized("حذف", "Delete"),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
                 )
             }
         }

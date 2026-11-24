@@ -14,10 +14,12 @@ import {
   AlertCircle,
   Sparkles,
   Link2,
+  Trash2,
 } from "lucide-react";
 import { useLanguage } from "@/components/language-provider";
 import { localizedText } from "@/lib/i18n";
 import {
+  deleteAdminNotifications,
   sendPromoCampaign,
   triggerRecoveryScan,
   type CampaignSendResult,
@@ -33,6 +35,7 @@ type HistoryRow = {
   body_en: string;
   deep_link: string;
   is_read: boolean;
+  read_at?: string | null;
   sent_push: boolean;
   created_at: string;
 };
@@ -107,15 +110,33 @@ const COPY = {
     errEmptyAudience: "لا يوجد عملاء مطابقون للشريحة المختارة حالياً.",
     errGeneric: "تعذر إرسال الحملة. حاول مرة أخرى.",
     historyTitle: "سجل الحملات والتنبيهات التلقائية",
+    colSelectAll: "تحديد كل الإشعارات",
+    colSelectRow: "تحديد الإشعار",
     colCategory: "التصنيف",
     colContent: "العنوان والمحتوى",
     colLink: "الوجهة",
-    colStatus: "الحالة",
+    colChannel: "قناة التوصيل",
+    colReadState: "حالة القراءة",
     colTime: "التوقيت",
+    colActions: "إجراء",
+    deleteBtn: "حذف",
+    deleteSelectedBtn: (n: number) => `حذف المحدد (${n})`,
+    clearReadBtn: "مسح المقروء",
+    clearAllBtn: "مسح الكل",
+    confirmClearRead: "حذف جميع الإشعارات المقروءة؟",
+    confirmClearAll: "حذف جميع الإشعارات نهائياً؟",
+    confirmBtn: "تأكيد الحذف",
+    cancelBtn: "إلغاء",
+    deletingBtn: "جارٍ الحذف…",
+    deletedMsg: (n: number) =>
+      n === 0
+        ? "لا توجد إشعارات مطابقة للحذف."
+        : `تم حذف ${n} إشعار بنجاح وتحديث الصناديق لحظياً.`,
+    deleteErr: "تعذر حذف الإشعارات. حاول مرة أخرى.",
     emptyHistory: "لم تُسجّل أي إشعارات بعد.",
     readBadge: "مقروء",
     unreadBadge: "غير مقروء",
-    pushSentBadge: "دفع فوري",
+    pushSentBadge: "Push مرسل",
     inAppOnlyBadge: "داخل التطبيق",
     catLabels: {
       order_update: "تحديث طلب",
@@ -180,12 +201,30 @@ const COPY = {
     errMissing: "Please fill in both Arabic and English titles and message bodies.",
     errEmptyAudience: "No customers match the selected audience segment yet.",
     errGeneric: "Failed to dispatch campaign. Please try again.",
-    historyTitle: "Sent Campaigns & Automated Trigger Logs",
+    historyTitle: "Campaigns & Automated Alerts Log",
+    colSelectAll: "Select all notifications",
+    colSelectRow: "Select notification",
     colCategory: "Category",
     colContent: "Title & Message",
     colLink: "Deep Link",
-    colStatus: "Delivery",
+    colChannel: "Channel",
+    colReadState: "Read State",
     colTime: "Timestamp",
+    colActions: "Action",
+    deleteBtn: "Delete",
+    deleteSelectedBtn: (n: number) => `Delete Selected (${n})`,
+    clearReadBtn: "Clear Read",
+    clearAllBtn: "Clear All",
+    confirmClearRead: "Delete all read notifications?",
+    confirmClearAll: "Permanently delete all notifications?",
+    confirmBtn: "Confirm Delete",
+    cancelBtn: "Cancel",
+    deletingBtn: "Deleting…",
+    deletedMsg: (n: number) =>
+      n === 0
+        ? "No matching notifications to delete."
+        : `Deleted ${n} notification(s) and synced live inboxes.`,
+    deleteErr: "Could not delete notifications. Please try again.",
     emptyHistory: "No notifications recorded yet.",
     readBadge: "Read",
     unreadBadge: "Unread",
@@ -225,13 +264,27 @@ export function CampaignStudio({
   const [bypassQuiet, setBypassQuiet] = useState(false);
   const [previewLang, setPreviewLang] = useState<"ar" | "en">(lang);
 
+  const [removedIds, setRemovedIds] = useState<Set<string>>(() => new Set());
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [confirmMode, setConfirmMode] = useState<"read" | "all" | null>(null);
+  const [logFeedback, setLogFeedback] = useState<{
+    kind: "ok" | "err";
+    text: string;
+  } | null>(null);
+
   const [isPending, startTransition] = useTransition();
   const [isScanning, startScanTransition] = useTransition();
+  const [isDeleting, startDeleteTransition] = useTransition();
   const [feedback, setFeedback] = useState<{
     kind: "ok" | "err";
     text: string;
   } | null>(null);
   const [scanMsg, setScanMsg] = useState("");
+
+  const rows = history.filter((row) => !removedIds.has(row.id));
+  const activeSelectedIds = selectedIds.filter((id) =>
+    rows.some((row) => row.id === id),
+  );
 
   const resolvedDeepLink = (() => {
     switch (linkMode) {
@@ -313,6 +366,52 @@ export function CampaignStudio({
     });
   }
 
+  function toggleRow(id: string) {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
+    );
+  }
+
+  const allSelected = rows.length > 0 && activeSelectedIds.length === rows.length;
+
+  function toggleAll() {
+    if (allSelected) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(rows.map((r) => r.id));
+    }
+  }
+
+  function runDelete(mode: "single" | "selected" | "read" | "all", ids?: string[]) {
+    setLogFeedback(null);
+    setConfirmMode(null);
+    startDeleteTransition(async () => {
+      const res = await deleteAdminNotifications({ mode, ids });
+      if (!res.ok) {
+        setLogFeedback({ kind: "err", text: c.deleteErr });
+        return;
+      }
+      const nextRemoved = new Set(removedIds);
+      if (mode === "single" || mode === "selected") {
+        for (const id of ids ?? []) nextRemoved.add(id);
+      } else if (mode === "read") {
+        for (const r of rows) {
+          if (r.is_read) nextRemoved.add(r.id);
+        }
+      } else if (mode === "all") {
+        for (const r of rows) nextRemoved.add(r.id);
+      }
+      setRemovedIds(nextRemoved);
+      setSelectedIds((prev) => prev.filter((id) => !nextRemoved.has(id)));
+      setLogFeedback({ kind: "ok", text: c.deletedMsg(res.deletedCount) });
+      router.refresh();
+    });
+  }
+
+  const readCount = rows.filter((r) => r.is_read).length;
+  const liveReadRate =
+    rows.length > 0 ? Math.round((readCount / rows.length) * 100) : 0;
+
   const previewHeadline =
     previewLang === "en"
       ? titleEn.trim() || c.titleEnPh
@@ -323,7 +422,7 @@ export function CampaignStudio({
       : bodyAr.trim() || c.bodyArPh;
 
   return (
-    <div className="notif-studio">
+    <div className="notif-studio min-w-0 max-w-full">
       <div className="notif-studio-head">
         <div>
           <h1>{c.heading}</h1>
@@ -352,7 +451,7 @@ export function CampaignStudio({
             <Eye size={20} />
           </span>
           <p>{c.kpiReadRate}</p>
-          <strong>{stats.readRate}%</strong>
+          <strong>{liveReadRate}%</strong>
         </article>
         <article className="card metric">
           <span className="metric-icon">
@@ -601,72 +700,197 @@ export function CampaignStudio({
         </div>
       </div>
 
-      {/* Sent History & Automated Trigger Logs */}
-      <section className="card">
-        <div className="row">
-          <h2 className="with-icon">
-            <BellRing size={18} /> {c.historyTitle}
-          </h2>
-          <span className="badge">{stats.totalSent}</span>
+      {/* Sent History & Automated Trigger Logs with Single/Bulk/Clear Delete Controls */}
+      <section className="card min-w-0 max-w-full overflow-hidden">
+        <div className="notif-log-toolbar">
+          <div className="notif-log-heading">
+            <h2 className="with-icon">
+              <BellRing size={18} /> {c.historyTitle}
+            </h2>
+            <span className="badge">{rows.length}</span>
+          </div>
+
+          {rows.length > 0 && (
+            <div className="notif-log-actions">
+              {activeSelectedIds.length > 0 && (
+                <button
+                  type="button"
+                  className="notif-danger-btn"
+                  disabled={isDeleting}
+                  onClick={() => runDelete("selected", activeSelectedIds)}
+                >
+                  <Trash2 size={15} />
+                  <span>
+                    {isDeleting
+                      ? c.deletingBtn
+                      : c.deleteSelectedBtn(activeSelectedIds.length)}
+                  </span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                className="notif-ghost-btn"
+                disabled={isDeleting || readCount === 0}
+                onClick={() => setConfirmMode("read")}
+              >
+                <Trash2 size={15} />
+                <span>{c.clearReadBtn}</span>
+              </button>
+
+              <button
+                type="button"
+                className="notif-danger-outline-btn"
+                disabled={isDeleting}
+                onClick={() => setConfirmMode("all")}
+              >
+                <Trash2 size={15} />
+                <span>{c.clearAllBtn}</span>
+              </button>
+            </div>
+          )}
         </div>
 
-        {history.length === 0 ? (
+        {confirmMode && (
+          <div className="notif-confirm-bar" role="alert">
+            <span>
+              {confirmMode === "all" ? c.confirmClearAll : c.confirmClearRead}
+            </span>
+            <div className="notif-confirm-actions">
+              <button
+                type="button"
+                className="notif-danger-btn"
+                disabled={isDeleting}
+                onClick={() => runDelete(confirmMode)}
+              >
+                <Trash2 size={14} />
+                <span>{isDeleting ? c.deletingBtn : c.confirmBtn}</span>
+              </button>
+              <button
+                type="button"
+                className="notif-ghost-btn"
+                disabled={isDeleting}
+                onClick={() => setConfirmMode(null)}
+              >
+                {c.cancelBtn}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {logFeedback && (
+          <div
+            className={`notif-feedback ${logFeedback.kind === "ok" ? "is-ok" : "is-err"}`}
+            style={{ marginTop: "0.75rem" }}
+            role="status"
+          >
+            {logFeedback.kind === "ok" ? (
+              <CheckCircle2 size={17} />
+            ) : (
+              <AlertCircle size={17} />
+            )}
+            <span>{logFeedback.text}</span>
+          </div>
+        )}
+
+        {rows.length === 0 ? (
           <p style={{ marginTop: "1rem" }}>{c.emptyHistory}</p>
         ) : (
-          <div className="scroll">
-            <table>
+          <div className="scroll w-full max-w-full overflow-x-auto">
+            <table className="notif-log-table">
               <thead>
                 <tr>
-                  <th>{c.colCategory}</th>
+                  <th style={{ width: "40px" }}>
+                    <input
+                      type="checkbox"
+                      className="notif-table-check"
+                      aria-label={c.colSelectAll}
+                      checked={allSelected}
+                      onChange={toggleAll}
+                    />
+                  </th>
+                  <th className="whitespace-nowrap">{c.colCategory}</th>
                   <th>{c.colContent}</th>
-                  <th>{c.colLink}</th>
-                  <th>{c.colStatus}</th>
-                  <th>{c.colTime}</th>
+                  <th className="whitespace-nowrap">{c.colLink}</th>
+                  <th className="whitespace-nowrap">{c.colChannel}</th>
+                  <th className="whitespace-nowrap">{c.colReadState}</th>
+                  <th className="whitespace-nowrap">{c.colTime}</th>
+                  <th className="whitespace-nowrap">{c.colActions}</th>
                 </tr>
               </thead>
               <tbody>
-                {history.map((row) => (
-                  <tr key={row.id}>
-                    <td>
-                      <span className="badge">
-                        {c.catLabels[row.category] ?? row.category}
-                      </span>
-                    </td>
-                    <td style={{ whiteSpace: "normal", minWidth: "240px" }}>
-                      <strong>
-                        {lang === "en" ? row.title_en : row.title_ar}
-                      </strong>
-                      <br />
-                      <small>
-                        {lang === "en" ? row.body_en : row.body_ar}
-                      </small>
-                    </td>
-                    <td>
-                      <span className="code">{row.deep_link}</span>
-                    </td>
-                    <td>
-                      <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
-                        <span
-                          className={`badge ${row.is_read ? "delivered" : ""}`}
-                        >
-                          {row.is_read ? c.readBadge : c.unreadBadge}
+                {rows.map((row) => {
+                  const checked = activeSelectedIds.includes(row.id);
+                  return (
+                    <tr key={row.id} className={checked ? "notif-row-selected" : ""}>
+                      <td>
+                        <input
+                          type="checkbox"
+                          className="notif-table-check"
+                          aria-label={`${c.colSelectRow}: ${lang === "en" ? row.title_en : row.title_ar}`}
+                          checked={checked}
+                          onChange={() => toggleRow(row.id)}
+                        />
+                      </td>
+                      <td className="whitespace-nowrap">
+                        <span className="badge">
+                          {c.catLabels[row.category] ?? row.category}
                         </span>
+                      </td>
+                      <td className="min-w-[240px] max-w-[340px] whitespace-normal break-words">
+                        <strong className="block leading-snug">
+                          {lang === "en" ? row.title_en : row.title_ar}
+                        </strong>
+                        <small className="block mt-0.5 leading-relaxed">
+                          {lang === "en" ? row.body_en : row.body_ar}
+                        </small>
+                      </td>
+                      <td className="max-w-[170px]">
                         <span
-                          className={`badge ${row.sent_push ? "delivered" : ""}`}
+                          className="code block max-w-[170px] truncate"
+                          dir="ltr"
+                          title={row.deep_link}
+                        >
+                          {row.deep_link}
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap">
+                        <span
+                          className={`badge ${row.sent_push ? "notif-badge-push" : "notif-badge-inapp"}`}
                         >
                           {row.sent_push ? c.pushSentBadge : c.inAppOnlyBadge}
                         </span>
-                      </div>
-                    </td>
-                    <td dir="ltr">
-                      <small>
-                        {new Date(row.created_at).toLocaleString(
-                          lang === "en" ? "en-GB" : "ar-EG",
-                        )}
-                      </small>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="whitespace-nowrap">
+                        <span
+                          className={`badge ${row.is_read ? "delivered" : "notif-badge-unread"}`}
+                        >
+                          {row.is_read ? c.readBadge : c.unreadBadge}
+                        </span>
+                      </td>
+                      <td dir="ltr" className="whitespace-nowrap">
+                        <small>
+                          {new Date(row.created_at).toLocaleString(
+                            lang === "en" ? "en-GB" : "ar-EG",
+                          )}
+                        </small>
+                      </td>
+                      <td className="whitespace-nowrap">
+                        <button
+                          type="button"
+                          className="notif-row-del-btn"
+                          title={c.deleteBtn}
+                          aria-label={`${c.deleteBtn}: ${lang === "en" ? row.title_en : row.title_ar}`}
+                          disabled={isDeleting}
+                          onClick={() => runDelete("single", [row.id])}
+                        >
+                          <Trash2 size={15} />
+                          <span>{c.deleteBtn}</span>
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

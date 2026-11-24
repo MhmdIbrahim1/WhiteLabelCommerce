@@ -14,8 +14,12 @@ export type InboxNotificationRow = {
   body_en: string;
   deep_link: string;
   is_read: boolean;
+  read_at?: string | null;
   created_at: string;
 };
+
+const SELECT_FIELDS =
+  "id,user_id,target_role,category,title_ar,title_en,body_ar,body_en,deep_link,is_read,read_at,created_at";
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -33,9 +37,7 @@ export async function GET(req: Request) {
     }
     const { data, error } = await db
       .from("notifications")
-      .select(
-        "id,user_id,target_role,category,title_ar,title_en,body_ar,body_en,deep_link,is_read,created_at",
-      )
+      .select(SELECT_FIELDS)
       .eq("store_id", store.storeId)
       .eq("target_role", "admin")
       .order("created_at", { ascending: false })
@@ -44,53 +46,128 @@ export async function GET(req: Request) {
     if (error) {
       return Response.json({ items: [], unreadCount: 0 }, { status: 200 });
     }
-    const items = (data ?? []) as InboxNotificationRow[];
+    const items = ((data ?? []) as unknown as InboxNotificationRow[]).map((n) => ({
+      ...n,
+      is_read: Boolean(n.is_read || n.read_at),
+    }));
     return Response.json(
       { items, unreadCount: items.filter((n) => !n.is_read).length },
       { status: 200, headers: { "Cache-Control": "no-store" } },
     );
   }
 
-  let query = db
+  let q = db
     .from("notifications")
-    .select(
-      "id,user_id,target_role,category,title_ar,title_en,body_ar,body_en,deep_link,is_read,created_at",
-    )
+    .select(SELECT_FIELDS)
     .eq("store_id", store.storeId)
     .eq("target_role", "customer")
     .order("created_at", { ascending: false })
     .limit(30);
 
   if (user) {
-    query = query.or(`user_id.eq.${user.id},user_id.is.null`);
+    q = q.or(`user_id.eq.${user.id},user_id.is.null`);
   } else {
-    query = query.is("user_id", null).eq("category", "promo_campaign");
+    q = q.is("user_id", null).eq("category", "promo_campaign");
   }
 
-  const { data, error } = await query;
+  const { data, error } = await q;
   if (error) {
     return Response.json({ items: [], unreadCount: 0 }, { status: 200 });
   }
-  const items = (data ?? []) as InboxNotificationRow[];
+  const items = ((data ?? []) as unknown as InboxNotificationRow[]).map((n) => ({
+    ...n,
+    is_read: Boolean(n.is_read || n.read_at),
+  }));
   return Response.json(
     {
       items,
-      unreadCount: user ? items.filter((n) => !n.is_read).length : 0,
+      unreadCount: items.filter((n) => !n.is_read).length,
     },
     { status: 200, headers: { "Cache-Control": "no-store" } },
   );
 }
 
 export async function PATCH(req: Request) {
-  let body: { id?: unknown; mark_all?: unknown; scope?: unknown };
+  let body: {
+    id?: unknown;
+    ids?: unknown;
+    mark_all?: unknown;
+    markAll?: unknown;
+    scope?: unknown;
+  };
   try {
-    body = (await req.json()) as {
-      id?: unknown;
-      mark_all?: unknown;
-      scope?: unknown;
-    };
+    body = (await req.json()) as typeof body;
   } catch {
     return Response.json({ error: "Invalid JSON." }, { status: 400 });
+  }
+
+  const [db, store] = await Promise.all([serverDb(), settings()]);
+  const markAllRequested = body.mark_all === true || body.markAll === true;
+
+  if (markAllRequested) {
+    const { data, error } = await db.rpc("mark_notifications_read", {
+      p_store_id: store.storeId,
+      p_notification_ids: null,
+      p_mark_all: true,
+    });
+    if (error) {
+      return Response.json(
+        { error: "Failed to mark notifications read." },
+        { status: 500 },
+      );
+    }
+    return Response.json(
+      { ok: true, updatedCount: Number(data ?? 0) },
+      { status: 200 },
+    );
+  }
+
+  const rawIds: string[] = [];
+  if (typeof body.id === "string" && UUID_RE.test(body.id.trim())) {
+    rawIds.push(body.id.trim());
+  }
+  if (Array.isArray(body.ids)) {
+    for (const item of body.ids) {
+      if (typeof item === "string" && UUID_RE.test(item.trim())) {
+        rawIds.push(item.trim());
+      }
+    }
+  }
+  const uniqueIds = Array.from(new Set(rawIds));
+  if (uniqueIds.length === 0) {
+    return Response.json({ error: "Invalid notification id." }, { status: 400 });
+  }
+
+  const { data, error } = await db.rpc("mark_notifications_read", {
+    p_store_id: store.storeId,
+    p_notification_ids: uniqueIds,
+    p_mark_all: false,
+  });
+
+  if (error) {
+    return Response.json(
+      { error: "Failed to mark notification read." },
+      { status: 500 },
+    );
+  }
+
+  return Response.json(
+    { ok: true, updatedCount: Number(data ?? 0) },
+    { status: 200 },
+  );
+}
+
+export async function DELETE(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const scope = searchParams.get("scope") === "admin" ? "admin" : "customer";
+  const clearAll = searchParams.get("clearAll") === "true";
+  const id = searchParams.get("id")?.trim() ?? "";
+
+  if (!clearAll && !UUID_RE.test(id)) {
+    return Response.json(
+      { error: "Provide a valid id or clearAll=true." },
+      { status: 400 },
+    );
   }
 
   const [db, store] = await Promise.all([serverDb(), settings()]);
@@ -99,41 +176,58 @@ export async function PATCH(req: Request) {
     adminUser(db),
   ]);
   const user = authData.user;
+
   if (!user) {
-    return Response.json({ ok: true }, { status: 200 });
+    return Response.json({ ok: true, deletedCount: 0 }, { status: 200 });
   }
 
-  const isAdminScope = body.scope === "admin" && Boolean(admin);
+  const isAdminScope = scope === "admin" && Boolean(admin);
 
-  if (body.mark_all === true) {
+  if (clearAll) {
     let q = db
       .from("notifications")
-      .update({ is_read: true })
-      .eq("store_id", store.storeId)
-      .eq("is_read", false);
+      .delete()
+      .eq("store_id", store.storeId);
+
     if (isAdminScope) {
       q = q.eq("target_role", "admin");
     } else {
       q = q.eq("user_id", user.id);
     }
-    await q;
-    return Response.json({ ok: true }, { status: 200 });
-  }
 
-  const id = typeof body.id === "string" ? body.id.trim() : "";
-  if (!UUID_RE.test(id)) {
-    return Response.json({ error: "Invalid notification id." }, { status: 400 });
+    const { data, error } = await q.select("id");
+    if (error) {
+      return Response.json(
+        { error: "Failed to clear notifications." },
+        { status: 500 },
+      );
+    }
+    return Response.json(
+      { ok: true, deletedCount: (data ?? []).length },
+      { status: 200 },
+    );
   }
 
   let q = db
     .from("notifications")
-    .update({ is_read: true })
+    .delete()
     .eq("id", id)
     .eq("store_id", store.storeId);
+
   if (!isAdminScope) {
     q = q.eq("user_id", user.id);
   }
-  await q;
 
-  return Response.json({ ok: true }, { status: 200 });
+  const { data, error } = await q.select("id");
+  if (error) {
+    return Response.json(
+      { error: "Failed to delete notification." },
+      { status: 500 },
+    );
+  }
+
+  return Response.json(
+    { ok: true, deletedCount: (data ?? []).length },
+    { status: 200 },
+  );
 }

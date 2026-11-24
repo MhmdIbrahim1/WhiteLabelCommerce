@@ -33,11 +33,13 @@ import dagger.hilt.android.AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
     private val pendingDeepLinkState = mutableStateOf<String?>(null)
+    private val pendingNotificationIdState = mutableStateOf<String?>(null)
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         extractDeepLink(intent)?.let { pendingDeepLinkState.value = it }
+        extractNotificationId(intent)?.let { pendingNotificationIdState.value = it }
     }
 
     private fun extractDeepLink(intent: Intent?): String? {
@@ -46,10 +48,17 @@ class MainActivity : ComponentActivity() {
             ?.takeIf { it.isNotEmpty() }
     }
 
+    private fun extractNotificationId(intent: Intent?): String? {
+        return intent?.getStringExtra(NotificationChannels.EXTRA_NOTIFICATION_ID)
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         extractDeepLink(intent)?.let { pendingDeepLinkState.value = it }
+        extractNotificationId(intent)?.let { pendingNotificationIdState.value = it }
 
         setContent {
             val mainViewModel: MainViewModel = hiltViewModel()
@@ -76,6 +85,12 @@ class MainActivity : ComponentActivity() {
                 if (granted) {
                     mainViewModel.syncPushToken(uiState.storeSettings.locale)
                 }
+            }
+
+            LaunchedEffect(pendingNotificationIdState.value) {
+                val notifId = pendingNotificationIdState.value ?: return@LaunchedEffect
+                mainViewModel.markNotificationRead(notifId)
+                pendingNotificationIdState.value = null
             }
 
             LaunchedEffect(Unit) {

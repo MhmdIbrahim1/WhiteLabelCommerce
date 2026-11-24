@@ -264,6 +264,10 @@ async function sendSingleFcmMessage(params: {
       },
     };
   } else {
+    const notifId = params.data.notification_id;
+    const webLink = notifId
+      ? `${params.deepLink}${params.deepLink.includes("?") ? "&" : "?"}notif_id=${encodeURIComponent(notifId)}`
+      : params.deepLink;
     message.webpush = {
       headers: { Urgency: "high" },
       notification: {
@@ -272,7 +276,7 @@ async function sendSingleFcmMessage(params: {
         icon: "/favicon.ico",
       },
       fcm_options: {
-        link: params.deepLink,
+        link: webLink,
       },
     };
   }

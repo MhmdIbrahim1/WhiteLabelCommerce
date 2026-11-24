@@ -152,3 +152,14 @@
 - **Local Firebase Config & CI Secret:** Copied `google-services.json` (`com.whitelabel.commerce`, project `novasaas-4c25d`) into gitignored `android-app/app/google-services.json` and uploaded its Base64 payload to GitHub Actions secret `GOOGLE_SERVICES_JSON_BASE64`.
 - **Version Bump (`android-app/app/build.gradle.kts`):** Bumped default `versionCode` to `20` (strictly above `v1.0.9`'s `versionCode = 19`) and `versionName` to `"1.1.0"` so installed `1.0.9` clients detect and install the Phase 9 FCM update via the GitHub Releases self-updater.
 - **Tag-Aware Release Workflow (`.github/workflows/android-release.yml`):** Added `tags: ["v*"]` under `on.push` so pushing tag `v1.1.0` builds `versionName = 1.1.0` (`versionCode = github.run_number + 20`) with decoded `google-services.json` and publishes `WhiteLabelCommerce v1.1.0` as the latest GitHub Release.
+
+
+### 6.6 Realtime `DELETE` Sync, Broadcast `read_at` RPC & Push-Tap Auto-Read (2026-11-25)
+- **Realtime Inbox Management (`NotificationRepositoryImpl.kt`, `NotificationsViewModel.kt`, `NotificationsScreen.kt`, `AppNotification.kt`):**
+  - Added `read_at` mapping on `NotificationDto` (`isRead = isRead || !readAt.isNullOrBlank()`).
+  - Upgraded `NotificationRepositoryImpl` to subscribe to Supabase Realtime `PostgresAction.Delete` and `PostgresAction.Update` alongside `Insert` so notifications deleted from `/admin/notifications` immediately vanish from the Android inbox and decrement the badge counter.
+  - Wired `markAsRead(id)` and `markAllAsRead()` to call the `public.mark_notifications_read` `SECURITY DEFINER` RPC so both personal notifications and broadcast promo campaigns (`user_id IS NULL`) persist `read_at` in Supabase.
+  - Added `deleteNotification(id)` and `clearAllNotifications()` in the repository/ViewModel plus per-item Delete icon buttons (`Icons.Rounded.DeleteOutline`) and a TopAppBar **"مسح الكل / Clear All"** action with bilingual confirmation dialog in `NotificationsScreen.kt`.
+- **External Push Tap Auto-Read (`CommerceFirebaseMessagingService.kt`, `MainActivity.kt`, `MainViewModel.kt`):**
+  - `MainActivity` extracts `notification_id` (`NotificationChannels.EXTRA_NOTIFICATION_ID`) from both cold-start `intent` and `onNewIntent` and invokes `mainViewModel.markNotificationRead(notifId)` so tapping an OS push notification immediately marks it as read in Supabase.
+- **Build Verification:** `$env:JAVA_HOME='C:\Users\moham\.jdks\jbr-21.0.11'; .\gradlew.bat assembleGithubDebug assemblePlaystoreDebug --no-daemon` passed (`BUILD SUCCESSFUL`, 0 errors) across both `github` and `playstore` flavors with `google-services.json` processed.

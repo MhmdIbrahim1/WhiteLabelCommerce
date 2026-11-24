@@ -28,6 +28,15 @@ function shortOrderId(id: string): string {
   return `#${id.slice(0, 8)}`;
 }
 
+/** Wraps #xxxxxxxx in Unicode LTR isolate so '#' never flips sides in RTL Arabic prose. */
+function rtlSafeOrderCode(id: string): string {
+  return `\u2066#${id.slice(0, 8)}\u2069`;
+}
+
+function formatArabicCurrency(currency: string): string {
+  return currency.trim().toUpperCase() === "EGP" ? "ج.م" : currency;
+}
+
 /**
  * Fires after checkout creates an order:
  * 1) Customer confirmation alert (for COD orders immediately, or pending payment notice)
@@ -48,7 +57,9 @@ export async function notifyOrderCreated(orderId: string): Promise<void> {
     if (!order) return;
 
     const code = shortOrderId(order.id);
-    const totalLabel = `${Number(order.total).toFixed(0)} ${order.currency}`;
+    const codeAr = rtlSafeOrderCode(order.id);
+    const totalLabelEn = `${Number(order.total).toFixed(0)} ${order.currency}`;
+    const totalLabelAr = `${Number(order.total).toFixed(0)} ${formatArabicCurrency(order.currency)}`;
 
     // Customer confirmation (COD confirmed immediately; online notifies when payment completes)
     if (order.payment_method === "cod") {
@@ -58,10 +69,10 @@ export async function notifyOrderCreated(orderId: string): Promise<void> {
         phone: order.phone,
         targetRole: "customer",
         category: "order_update",
-        titleAr: `تم استلام طلبك ${code}`,
+        titleAr: `تم استلام طلبك ${codeAr}`,
         titleEn: `Order ${code} Received`,
-        bodyAr: `شكراً لتسوّقك معنا! طلبك بقيمة ${totalLabel} قيد المراجعة وسيتم تجهيزه قريباً.`,
-        bodyEn: `Thank you for your order! Your ${totalLabel} COD order is confirmed and being prepared.`,
+        bodyAr: `شكراً لتسوّقك معنا! طلبك بقيمة ${totalLabelAr} قيد المراجعة وسيتم تجهيزه قريباً.`,
+        bodyEn: `Thank you for your order! Your ${totalLabelEn} COD order is confirmed and being prepared.`,
         deepLink: `/orders?order=${order.id}`,
         dedupeKey: `order_created:${order.id}`,
         data: { order_id: order.id, status: order.status },
@@ -71,10 +82,10 @@ export async function notifyOrderCreated(orderId: string): Promise<void> {
     // Admin new order alert
     await notifyStoreAdmins({
       storeId: order.store_id,
-      titleAr: `طلب جديد ${code}`,
+      titleAr: `طلب جديد ${codeAr}`,
       titleEn: `New Order ${code}`,
-      bodyAr: `تم تسجيل طلب جديد بقيمة ${totalLabel} (${order.payment_method === "cod" ? "عند الاستلام" : "دفع إلكتروني"}).`,
-      bodyEn: `A new ${totalLabel} order was placed (${order.payment_method}).`,
+      bodyAr: `تم تسجيل طلب جديد بقيمة ${totalLabelAr} (${order.payment_method === "cod" ? "عند الاستلام" : "دفع إلكتروني"}).`,
+      bodyEn: `A new ${totalLabelEn} order was placed (${order.payment_method}).`,
       deepLink: `/admin/orders/${order.id}`,
       dedupeKey: `admin_new_order:${order.id}`,
       data: { order_id: order.id, total: Number(order.total) },
@@ -127,7 +138,9 @@ export async function notifyPaymentOutcome(
     if (!order) return;
 
     const code = shortOrderId(order.id);
-    const totalLabel = `${Number(order.total).toFixed(0)} ${order.currency}`;
+    const codeAr = rtlSafeOrderCode(order.id);
+    const totalLabelEn = `${Number(order.total).toFixed(0)} ${order.currency}`;
+    const totalLabelAr = `${Number(order.total).toFixed(0)} ${formatArabicCurrency(order.currency)}`;
 
     if (outcome === "paid") {
       await dispatchNotification({
@@ -136,10 +149,10 @@ export async function notifyPaymentOutcome(
         phone: order.phone,
         targetRole: "customer",
         category: "order_update",
-        titleAr: `تم الدفع بنجاح للطلب ${code}`,
+        titleAr: `تم الدفع بنجاح للطلب ${codeAr}`,
         titleEn: `Payment Confirmed for ${code}`,
-        bodyAr: `تم تأكيد دفعتك بقيمة ${totalLabel} بنجاح وجارٍ تجهيز طلبك للشحن.`,
-        bodyEn: `Your ${totalLabel} payment is confirmed. We are now preparing your order.`,
+        bodyAr: `تم تأكيد دفعتك بقيمة ${totalLabelAr} بنجاح وجارٍ تجهيز طلبك للشحن.`,
+        bodyEn: `Your ${totalLabelEn} payment is confirmed. We are now preparing your order.`,
         deepLink: `/orders?payment=success&order=${order.id}`,
         dedupeKey: `payment_paid:${order.id}`,
         data: { order_id: order.id, payment_status: "paid" },
@@ -151,7 +164,7 @@ export async function notifyPaymentOutcome(
         phone: order.phone,
         targetRole: "customer",
         category: "payment_recovery",
-        titleAr: `لم يكتمل الدفع للطلب ${code}`,
+        titleAr: `لم يكتمل الدفع للطلب ${codeAr}`,
         titleEn: `Payment Incomplete for ${code}`,
         bodyAr: `تعذر إتمام عملية الدفع. اضغط لإعادة المحاولة أو التحويل للدفع عند الاستلام.`,
         bodyEn: `Your payment could not be completed. Tap to retry payment or switch to Cash on Delivery.`,
@@ -188,6 +201,7 @@ export async function notifyOrderStatusChanged(params: {
     if (!order) return;
 
     const code = shortOrderId(order.id);
+    const codeAr = rtlSafeOrderCode(order.id);
     const carrier = params.shippingCarrier || order.shipping_carrier || "";
     const tracking = params.trackingNumber || order.tracking_number || "";
 
@@ -198,13 +212,13 @@ export async function notifyOrderStatusChanged(params: {
 
     switch (params.status) {
       case "confirmed":
-        titleAr = `جاري تجهيز طلبك ${code}`;
+        titleAr = `جاري تجهيز طلبك ${codeAr}`;
         titleEn = `Order ${code} is Processing`;
         bodyAr = `تم تأكيد طلبك وجارٍ تغليفه وتجهيزه للشحن الآن.`;
         bodyEn = `Your order has been confirmed and is being packed for shipment.`;
         break;
       case "shipped":
-        titleAr = `تم شحن طلبك ${code}`;
+        titleAr = `تم شحن طلبك ${codeAr}`;
         titleEn = `Order ${code} Has Shipped!`;
         bodyAr = tracking
           ? `شحنتك في الطريق إليك${carrier ? ` عبر ${carrier}` : ""} · رقم التتبع: ${tracking}`
@@ -214,15 +228,15 @@ export async function notifyOrderStatusChanged(params: {
           : `Your parcel is on the way${carrier ? ` via ${carrier}` : ""}. Tap to track live.`;
         break;
       case "delivered":
-        titleAr = `تم تسليم طلبك ${code}`;
+        titleAr = `تم تسليم طلبك ${codeAr}`;
         titleEn = `Order ${code} Delivered`;
         bodyAr = `نتمنى أن تنال مشترياتك إعجابك! شكراً لاختيارك متجرنا.`;
         bodyEn = `Your order has been delivered! We hope you love your items.`;
         break;
       case "cancelled":
-        titleAr = `تم إلغاء الطلب ${code}`;
+        titleAr = `تم إلغاء الطلب ${codeAr}`;
         titleEn = `Order ${code} Cancelled`;
-        bodyAr = `تم إلغاء طلبك ${code}. إذا كان لديك أي استفسار تواصل مع فريق الدعم.`;
+        bodyAr = `تم إلغاء طلبك ${codeAr}. إذا كان لديك أي استفسار تواصل مع فريق الدعم.`;
         bodyEn = `Your order ${code} has been cancelled. Reach out to support if you need help.`;
         break;
       default:
@@ -419,16 +433,19 @@ export async function runRecoveryAutomations(storeId?: string): Promise<{
     currency: string;
   }[]) {
     const code = shortOrderId(o.id);
+    const codeAr = rtlSafeOrderCode(o.id);
+    const amount = Number(o.total).toFixed(0);
+    const currencyAr = formatArabicCurrency(o.currency);
     const res = await dispatchNotification({
       storeId: o.store_id,
       userId: o.user_id,
       phone: o.phone,
       targetRole: "customer",
       category: "payment_recovery",
-      titleAr: `أكمل الدفع لطلبك ${code}`,
+      titleAr: `أكمل الدفع لطلبك ${codeAr}`,
       titleEn: `Complete Payment for ${code}`,
-      bodyAr: `طلبك بقيمة ${Number(o.total).toFixed(0)} ${o.currency} بانتظار تأكيد الدفع. اضغط لإتمام الدفع أو اختيار الدفع عند الاستلام.`,
-      bodyEn: `Your ${Number(o.total).toFixed(0)} ${o.currency} order is awaiting payment. Tap to pay now or switch to COD.`,
+      bodyAr: `طلبك بقيمة ${amount} ${currencyAr} بانتظار تأكيد الدفع. اضغط لإتمام الدفع أو اختيار الدفع عند الاستلام.`,
+      bodyEn: `Your ${amount} ${o.currency} order is awaiting payment. Tap to pay now or switch to COD.`,
       deepLink: `/orders?payment=failed&order=${o.id}`,
       dedupeKey: `payment_recovery_20m:${o.id}`,
       data: { order_id: o.id },

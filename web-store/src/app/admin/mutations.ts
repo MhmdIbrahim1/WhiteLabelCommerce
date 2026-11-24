@@ -770,3 +770,67 @@ export async function triggerRecoveryScan(): Promise<{
   revalidatePath("/admin/notifications");
   return { ok: true, ...result };
 }
+
+export type DeleteAdminNotificationsInput = {
+  ids?: string[];
+  mode: "single" | "selected" | "read" | "all";
+};
+
+export type DeleteAdminNotificationsResult =
+  | { ok: true; deletedCount: number }
+  | { ok: false; error: string };
+
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export async function deleteAdminNotifications(
+  input: DeleteAdminNotificationsInput,
+): Promise<DeleteAdminNotificationsResult> {
+  const { db } = await requireAdmin();
+  const { data: storeRow } = await db
+    .from("store_settings")
+    .select("store_id")
+    .eq("id", true)
+    .maybeSingle<{ store_id: string }>();
+
+  const storeId = storeRow?.store_id || "00000000-0000-0000-0000-000000000001";
+  const svc = adminDb();
+
+  try {
+    let query = svc
+      .from("notifications")
+      .delete()
+      .eq("store_id", storeId);
+
+    if (input.mode === "single" || input.mode === "selected") {
+      const cleanIds = Array.from(
+        new Set(
+          (input.ids ?? [])
+            .map((id) => (typeof id === "string" ? id.trim() : ""))
+            .filter((id) => UUID_REGEX.test(id)),
+        ),
+      );
+      if (cleanIds.length === 0) {
+        return { ok: false, error: "invalid_ids" };
+      }
+      query = query.in("id", cleanIds);
+    } else if (input.mode === "read") {
+      query = query.or("is_read.eq.true,read_at.not.is.null");
+    } else if (input.mode !== "all") {
+      return { ok: false, error: "invalid_mode" };
+    }
+
+    const { data, error } = await query.select("id");
+    if (error) {
+      return { ok: false, error: "delete_failed" };
+    }
+
+    revalidatePath("/admin/notifications");
+    return { ok: true, deletedCount: (data ?? []).length };
+  } catch (err) {
+    console.error("[notifications] deleteAdminNotifications failed", {
+      code: err instanceof Error ? err.message : "unknown",
+    });
+    return { ok: false, error: "delete_failed" };
+  }
+}

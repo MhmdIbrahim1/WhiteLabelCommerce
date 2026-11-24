@@ -35,6 +35,7 @@ data class NotificationDto(
     @SerialName("body_en") val bodyEn: String = "",
     @SerialName("deep_link") val deepLink: String = "/",
     @SerialName("is_read") val isRead: Boolean = false,
+    @SerialName("read_at") val readAt: String? = null,
     @SerialName("created_at") val createdAt: String = "",
 ) {
     fun toDomain(): AppNotification = AppNotification(
@@ -46,7 +47,7 @@ data class NotificationDto(
         bodyAr = bodyAr,
         bodyEn = bodyEn,
         deepLink = deepLink,
-        isRead = isRead,
+        isRead = isRead || !readAt.isNullOrBlank(),
         createdAt = createdAt,
     )
 }

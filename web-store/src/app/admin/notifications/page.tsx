@@ -14,6 +14,7 @@ type NotificationLogRow = {
   body_en: string;
   deep_link: string;
   is_read: boolean;
+  read_at?: string | null;
   sent_push: boolean;
   created_at: string;
 };
@@ -59,7 +60,7 @@ export default async function AdminNotificationsPage() {
     svc
       .from("notifications")
       .select(
-        "id,target_role,category,title_ar,title_en,body_ar,body_en,deep_link,is_read,sent_push,created_at",
+        "id,target_role,category,title_ar,title_en,body_ar,body_en,deep_link,is_read,read_at,sent_push,created_at",
       )
       .eq("store_id", storeId)
       .order("created_at", { ascending: false })
@@ -77,7 +78,12 @@ export default async function AdminNotificationsPage() {
       .limit(50),
   ]);
 
-  const history = (recentNotifsRes.data ?? []) as NotificationLogRow[];
+  const history = ((recentNotifsRes.data ?? []) as NotificationLogRow[]).map(
+    (n) => ({
+      ...n,
+      is_read: Boolean(n.is_read || n.read_at),
+    }),
+  );
   const readCount = history.filter((n) => n.is_read).length;
   const readRate =
     history.length > 0 ? Math.round((readCount / history.length) * 100) : 0;

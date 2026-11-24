@@ -28,7 +28,10 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
@@ -64,21 +67,55 @@ class NotificationRepositoryImpl @Inject constructor(
                     table = "notifications"
                     filter("store_id", FilterOperator.EQ, BuildConfig.STORE_ID)
                 }
+                val updates = ch.postgresChangeFlow<PostgresAction.Update>(schema = "public") {
+                    table = "notifications"
+                    filter("store_id", FilterOperator.EQ, BuildConfig.STORE_ID)
+                }
+                val deletes = ch.postgresChangeFlow<PostgresAction.Delete>(schema = "public") {
+                    table = "notifications"
+                }
                 ch.subscribe()
-                inserts.collect { action ->
-                    val dto = runCatching {
-                        json.decodeFromJsonElement(NotificationDto.serializer(), action.record)
-                    }.getOrNull() ?: return@collect
 
-                    val uid = supabase.auth.currentUserOrNull()?.id
-                    val isVisible = dto.targetRole == "customer" &&
-                        (dto.userId == null || (uid != null && dto.userId == uid))
-                    if (!isVisible) return@collect
+                launch {
+                    inserts.collect { action ->
+                        val dto = runCatching {
+                            json.decodeFromJsonElement(NotificationDto.serializer(), action.record)
+                        }.getOrNull() ?: return@collect
 
-                    val item = dto.toDomain()
-                    val current = _notifications.value
-                    if (current.none { it.id == item.id }) {
-                        _notifications.value = (listOf(item) + current).take(50)
+                        val uid = supabase.auth.currentUserOrNull()?.id
+                        val isVisible = dto.targetRole == "customer" &&
+                            (dto.userId == null || (uid != null && dto.userId == uid))
+                        if (!isVisible) return@collect
+
+                        val item = dto.toDomain()
+                        val current = _notifications.value
+                        if (current.none { it.id == item.id }) {
+                            _notifications.value = (listOf(item) + current).take(50)
+                        }
+                    }
+                }
+
+                launch {
+                    updates.collect { action ->
+                        val dto = runCatching {
+                            json.decodeFromJsonElement(NotificationDto.serializer(), action.record)
+                        }.getOrNull() ?: return@collect
+                        val updated = dto.toDomain()
+                        _notifications.value = _notifications.value.map { existing ->
+                            if (existing.id == updated.id) {
+                                updated.copy(isRead = existing.isRead || updated.isRead)
+                            } else {
+                                existing
+                            }
+                        }
+                    }
+                }
+
+                launch {
+                    deletes.collect { action ->
+                        val deletedId = action.oldRecord["id"]?.jsonPrimitive?.contentOrNull
+                            ?: return@collect
+                        _notifications.value = _notifications.value.filterNot { it.id == deletedId }
                     }
                 }
             }
@@ -86,7 +123,9 @@ class NotificationRepositoryImpl @Inject constructor(
     }
 
     override suspend fun refresh(): Result<List<AppNotification>> = runSuspendCatching {
-        val localReadIds = dataStore.data.first()[KEY_LOCAL_READ_IDS].orEmpty()
+        val prefs = dataStore.data.first()
+        val localReadIds = prefs[KEY_LOCAL_READ_IDS].orEmpty()
+        val localDismissedIds = prefs[KEY_LOCAL_DISMISSED_IDS].orEmpty()
         val rows = supabase.from("notifications")
             .select {
                 filter {
@@ -97,6 +136,7 @@ class NotificationRepositoryImpl @Inject constructor(
                 limit(40)
             }
             .decodeList<NotificationDto>()
+            .filterNot { it.id in localDismissedIds }
             .map { dto ->
                 val domain = dto.toDomain()
                 if (domain.id in localReadIds) domain.copy(isRead = true) else domain
@@ -131,19 +171,20 @@ class NotificationRepositoryImpl @Inject constructor(
             if (it.id == notificationId) it.copy(isRead = true) else it
         }
         dataStore.edit { prefs ->
-            val current = prefs[KEY_LOCAL_READ_IDS].orEmpty()
-            prefs[KEY_LOCAL_READ_IDS] = current + notificationId
+            prefs[KEY_LOCAL_READ_IDS] = prefs[KEY_LOCAL_READ_IDS].orEmpty() + notificationId
         }
-        val uid = supabase.auth.currentUserOrNull()?.id ?: return
         runCatching {
-            supabase.from("notifications").update(
-                buildJsonObject { put("is_read", true) },
-            ) {
-                filter {
-                    eq("id", notificationId)
-                    eq("user_id", uid)
-                }
-            }
+            supabase.postgrest.rpc(
+                "mark_notifications_read",
+                buildJsonObject {
+                    put("p_store_id", BuildConfig.STORE_ID)
+                    put(
+                        "p_notification_ids",
+                        buildJsonArray { add(kotlinx.serialization.json.JsonPrimitive(notificationId)) },
+                    )
+                    put("p_mark_all", false)
+                },
+            )
         }
     }
 
@@ -153,15 +194,46 @@ class NotificationRepositoryImpl @Inject constructor(
         dataStore.edit { prefs ->
             prefs[KEY_LOCAL_READ_IDS] = prefs[KEY_LOCAL_READ_IDS].orEmpty() + allIds
         }
+        runCatching {
+            supabase.postgrest.rpc(
+                "mark_notifications_read",
+                buildJsonObject {
+                    put("p_store_id", BuildConfig.STORE_ID)
+                    put("p_mark_all", true)
+                },
+            )
+        }
+    }
+
+    override suspend fun deleteNotification(notificationId: String) {
+        _notifications.value = _notifications.value.filterNot { it.id == notificationId }
+        dataStore.edit { prefs ->
+            prefs[KEY_LOCAL_DISMISSED_IDS] = prefs[KEY_LOCAL_DISMISSED_IDS].orEmpty() + notificationId
+        }
         val uid = supabase.auth.currentUserOrNull()?.id ?: return
         runCatching {
-            supabase.from("notifications").update(
-                buildJsonObject { put("is_read", true) },
-            ) {
+            supabase.from("notifications").delete {
+                filter {
+                    eq("id", notificationId)
+                    eq("store_id", BuildConfig.STORE_ID)
+                    eq("user_id", uid)
+                }
+            }
+        }
+    }
+
+    override suspend fun clearAllNotifications() {
+        val allIds = _notifications.value.map { it.id }.toSet()
+        _notifications.value = emptyList()
+        dataStore.edit { prefs ->
+            prefs[KEY_LOCAL_DISMISSED_IDS] = prefs[KEY_LOCAL_DISMISSED_IDS].orEmpty() + allIds
+        }
+        val uid = supabase.auth.currentUserOrNull()?.id ?: return
+        runCatching {
+            supabase.from("notifications").delete {
                 filter {
                     eq("store_id", BuildConfig.STORE_ID)
                     eq("user_id", uid)
-                    eq("is_read", false)
                 }
             }
         }
@@ -187,5 +259,6 @@ class NotificationRepositoryImpl @Inject constructor(
 
     companion object {
         private val KEY_LOCAL_READ_IDS = stringSetPreferencesKey("notifications_local_read_ids")
+        private val KEY_LOCAL_DISMISSED_IDS = stringSetPreferencesKey("notifications_local_dismissed_ids")
     }
 }

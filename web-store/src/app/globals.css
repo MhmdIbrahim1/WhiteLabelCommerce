@@ -207,6 +207,8 @@ aside a:hover {
 }
 .workspace {
   min-width: 0;
+  max-width: 100%;
+  overflow-x: clip;
 }
 .top {
   min-height: 72px;
@@ -226,11 +228,15 @@ aside a:hover {
   text-overflow: ellipsis;
 }
 .content {
+  min-width: 0;
+  width: 100%;
   max-width: 1480px;
   margin: auto;
   padding: clamp(1rem, 3.5vw, 3.3rem);
 }
 .card {
+  min-width: 0;
+  max-width: 100%;
   margin-bottom: 1rem;
 }
 .metrics {
@@ -260,6 +266,8 @@ summary {
   gap: 1rem;
 }
 .scroll {
+  width: 100%;
+  max-width: 100%;
   overflow-x: auto;
 }
 table {
@@ -2440,4 +2448,156 @@ details details,
   .notif-two-col {
     grid-template-columns: 1fr;
   }
+}
+
+
+/* Phase 9c: Admin Notification Log Delete Controls & Drawer Per-Item Delete */
+.notif-icon-btn.is-danger:hover {
+  background: rgba(220, 38, 38, 0.14);
+  color: #dc2626;
+  border-color: rgba(220, 38, 38, 0.35);
+}
+.notif-item-row {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: 0.35rem;
+}
+.notif-item-row .notif-card {
+  flex: 1;
+  min-width: 0;
+}
+.notif-item-del-btn {
+  flex: 0 0 32px;
+  align-self: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  opacity: 0.6;
+  border: 1px solid transparent;
+}
+.notif-item-del-btn:hover {
+  opacity: 1;
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.1);
+  border-color: rgba(220, 38, 38, 0.25);
+}
+
+.notif-log-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.notif-log-heading {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.notif-log-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.notif-danger-btn {
+  background: #dc2626;
+  color: #fff;
+  padding: 0.45rem 0.85rem;
+  font-size: 0.84rem;
+}
+.notif-danger-btn:hover {
+  background: #b91c1c;
+}
+.notif-danger-outline-btn {
+  background: transparent;
+  color: #b91c1c;
+  border: 1px solid rgba(220, 38, 38, 0.4);
+  padding: 0.45rem 0.85rem;
+  font-size: 0.84rem;
+}
+.notif-danger-outline-btn:hover {
+  background: rgba(220, 38, 38, 0.08);
+}
+.notif-ghost-btn {
+  background: var(--wash);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  padding: 0.45rem 0.85rem;
+  font-size: 0.84rem;
+}
+.notif-ghost-btn:disabled,
+.notif-danger-btn:disabled,
+.notif-danger-outline-btn:disabled,
+.notif-row-del-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.notif-confirm-bar {
+  margin-top: 0.85rem;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-weight: 600;
+  font-size: 0.88rem;
+}
+.notif-confirm-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+.notif-table-check {
+  width: 17px;
+  height: 17px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+.notif-row-selected {
+  background: color-mix(in srgb, var(--primary) 6%, transparent);
+}
+.notif-row-del-btn {
+  padding: 0.34rem 0.65rem;
+  font-size: 0.78rem;
+  background: transparent;
+  color: #b91c1c;
+  border: 1px solid rgba(220, 38, 38, 0.32);
+}
+.notif-row-del-btn:hover {
+  background: rgba(220, 38, 38, 0.1);
+}
+.notif-badge-push {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+.notif-badge-inapp {
+  background: #f1f5f9;
+  color: #475569;
+}
+.notif-badge-unread {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.notif-log-table th,
+.notif-log-table td {
+  padding: 0.65rem 0.55rem;
+  vertical-align: top;
+}
+.notif-log-table .code {
+  display: block;
+  max-width: 170px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

@@ -95,6 +95,13 @@ class MainViewModel @Inject constructor(
         }
     }
 
+    fun markNotificationRead(notificationId: String) {
+        if (notificationId.isBlank()) return
+        viewModelScope.launch {
+            notificationRepository.markAsRead(notificationId)
+        }
+    }
+
     fun toggleDarkTheme(currentlyDark: Boolean) {
         viewModelScope.launch {
             storeRepository.setDarkThemePreference(isDark = !currentlyDark)
