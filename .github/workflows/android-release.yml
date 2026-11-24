@@ -42,18 +42,22 @@ jobs:
         with:
           gradle-home-cache-cleanup: true
 
-      - name: Decode release keystore (if configured)
+      - name: Decode permanent release keystore
         id: keystore
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
-          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
-            echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android-app/release.keystore
-            echo "KEYSTORE_FILE=release.keystore" >> "$GITHUB_ENV"
-            echo "Decoded release keystore to android-app/release.keystore"
-          else
-            echo "ANDROID_KEYSTORE_BASE64 secret not set; falling back to debug signing."
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 secret is required for CI release builds."
+            exit 1
           fi
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android-app/release.keystore
+          if [ ! -s android-app/release.keystore ]; then
+            echo "::error::Decoded android-app/release.keystore is empty."
+            exit 1
+          fi
+          echo "KEYSTORE_FILE=release.keystore" >> "$GITHUB_ENV"
+          echo "Decoded permanent release keystore to android-app/release.keystore"
 
       - name: Compute version metadata
         run: |
@@ -63,37 +67,71 @@ jobs:
           echo "VERSION_NAME=${VERSION_NAME}" >> "$GITHUB_ENV"
           echo "Building versionName=${VERSION_NAME} (versionCode=${VERSION_CODE})"
 
-      - name: Build Android Release APK
+      - name: Build Android GitHub-Flavor Release APK
         working-directory: android-app
         env:
+          CI: "true"
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           GITHUB_REPO: ${{ github.repository }}
-          ENABLE_GITHUB_UPDATER: "true"
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           STORE_ID: ${{ vars.STORE_ID }}
           WEB_STORE_BASE_URL: ${{ vars.WEB_STORE_BASE_URL }}
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease \
+          ./gradlew assembleGithubRelease \
             -PVERSION_CODE="$VERSION_CODE" \
             -PVERSION_NAME="$VERSION_NAME" \
             --no-daemon
 
-      - name: Prepare release APK asset
+      - name: Verify APK signature & generate release-meta.json
         run: |
-          APK_SOURCE=$(find android-app/app/build/outputs/apk/release -maxdepth 1 -name "*.apk" | head -n 1)
+          APK_SOURCE=$(find android-app/app/build/outputs/apk/github/release -maxdepth 1 -name "*.apk" | head -n 1)
           if [ -z "$APK_SOURCE" ]; then
-            echo "No release APK found!"
+            echo "::error::No githubRelease APK found!"
             exit 1
           fi
+
+          SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          APKSIGNER=$(ls -1 "$SDK_ROOT"/build-tools/*/apksigner | sort -V | tail -n 1)
+          echo "Verifying APK signature with $APKSIGNER..."
+          CERT_OUTPUT=$("$APKSIGNER" verify --print-certs "$APK_SOURCE")
+          echo "$CERT_OUTPUT"
+
+          if echo "$CERT_OUTPUT" | grep -qi "CN=Android Debug"; then
+            echo "::error::APK is signed with Android Debug keystore! Refusing to publish."
+            exit 1
+          fi
+          if ! echo "$CERT_OUTPUT" | grep -Eq "CN=(WhiteLabelCommerce|NovaStore)"; then
+            echo "::error::APK signer certificate does not match expected permanent release certificate."
+            exit 1
+          fi
+
           mkdir -p dist
-          RELEASE_APK="dist/WhiteLabelCommerce-v${VERSION_NAME}-release.apk"
+          APK_FILENAME="WhiteLabelCommerce-v${VERSION_NAME}-release.apk"
+          RELEASE_APK="dist/${APK_FILENAME}"
           cp "$APK_SOURCE" "$RELEASE_APK"
+
+          APK_SHA256=$(sha256sum "$RELEASE_APK" | awk '{print $1}')
+          COMMIT_NOTES=$(git log -1 --pretty=%s)
+
+          python3 - "$VERSION_CODE" "$VERSION_NAME" "$APK_FILENAME" "$APK_SHA256" "$COMMIT_NOTES" << 'PY' > dist/release-meta.json
+          import json, sys
+          meta = {
+              "versionCode": int(sys.argv[1]),
+              "versionName": sys.argv[2],
+              "apkName": sys.argv[3],
+              "sha256": sys.argv[4],
+              "notes": sys.argv[5],
+          }
+          print(json.dumps(meta, indent=2, ensure_ascii=False))
+          PY
+
+          cat dist/release-meta.json
           echo "RELEASE_APK=${RELEASE_APK}" >> "$GITHUB_ENV"
-          ls -lh "$RELEASE_APK"
+          ls -lh "$RELEASE_APK" dist/release-meta.json
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -102,4 +140,6 @@ jobs:
           name: WhiteLabelCommerce v${{ env.VERSION_NAME }}
           generate_release_notes: true
           make_latest: true
-          files: ${{ env.RELEASE_APK }}
+          files: |
+            ${{ env.RELEASE_APK }}
+            dist/release-meta.json

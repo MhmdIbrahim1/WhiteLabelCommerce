@@ -52,13 +52,13 @@ fun AppUpdateDialog(
 
     AlertDialog(
         onDismissRequest = {
-            if (!state.isDownloading) {
+            if (!state.isBusy) {
                 onDismiss()
             }
         },
         properties = DialogProperties(
-            dismissOnBackPress = !state.isDownloading,
-            dismissOnClickOutside = !state.isDownloading,
+            dismissOnBackPress = !state.isBusy,
+            dismissOnClickOutside = !state.isBusy,
         ),
         icon = {
             Icon(
@@ -160,33 +160,75 @@ fun AppUpdateDialog(
                         }
                     }
 
-                    if (state.isDownloading) {
-                        val percent = (state.downloadProgress * 100f).roundToInt().coerceIn(0, 100)
-                        Column(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            Row(
+                    when {
+                        state.isDownloading -> {
+                            val percent = (state.downloadProgress * 100f).roundToInt().coerceIn(0, 100)
+                            Column(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                ) {
+                                    Text(
+                                        text = localized("جاري تحميل التحديث...", "Downloading update…"),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                    Text(
+                                        text = "$percent%",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                }
+                                LinearProgressIndicator(
+                                    progress = { state.downloadProgress.coerceIn(0f, 1f) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
+
+                        state.isVerifying -> {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
                             ) {
                                 Text(
-                                    text = localized("جاري تحميل التحديث...", "Downloading update…"),
+                                    text = localized(
+                                        "جاري التحقق من سلامة التوقيع وملف التحديث...",
+                                        "Verifying update signature & integrity…",
+                                    ),
                                     style = MaterialTheme.typography.labelMedium,
                                     fontWeight = FontWeight.SemiBold,
                                 )
-                                Text(
-                                    text = "$percent%",
-                                    style = MaterialTheme.typography.labelMedium,
+                                LinearProgressIndicator(
+                                    modifier = Modifier.fillMaxWidth(),
                                     color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.Bold,
                                 )
                             }
-                            LinearProgressIndicator(
-                                progress = { state.downloadProgress.coerceIn(0f, 1f) },
+                        }
+
+                        state.isInstalling -> {
+                            Column(
                                 modifier = Modifier.fillMaxWidth(),
-                                color = MaterialTheme.colorScheme.primary,
-                            )
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                Text(
+                                    text = localized(
+                                        "جاري تجهيز وتثبيت التحديث...",
+                                        "Preparing and installing update…",
+                                    ),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                LinearProgressIndicator(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
                         }
                     }
 
@@ -201,12 +243,10 @@ fun AppUpdateDialog(
                         )
                     }
 
-                    if (state.downloadFailed) {
+                    val errorText = if (storeSettings.isRtl) state.errorMessageAr else state.errorMessageEn
+                    if (!errorText.isNullOrBlank()) {
                         Text(
-                            text = localized(
-                                "تعذر تحميل ملف التحديث. تحقق من اتصالك بالإنترنت وحاول مجدداً.",
-                                "Could not download the update package. Please check your connection and try again.",
-                            ),
+                            text = errorText,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error,
                         )
@@ -218,11 +258,13 @@ fun AppUpdateDialog(
             CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
                 Button(
                     onClick = onUpdateNow,
-                    enabled = !state.isDownloading,
+                    enabled = !state.isBusy,
                 ) {
                     Text(
                         text = when {
                             state.isDownloading -> localized("جاري التحميل...", "Downloading…")
+                            state.isVerifying -> localized("جاري التحقق...", "Verifying…")
+                            state.isInstalling -> localized("جاري التثبيت...", "Installing…")
                             hasDownloadedApk -> localized("تثبيت الآن", "Install Now")
                             else -> localized("تحديث الآن", "Update Now")
                         },
@@ -234,7 +276,7 @@ fun AppUpdateDialog(
             CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
                 TextButton(onClick = onDismiss) {
                     Text(
-                        text = if (state.isDownloading) {
+                        text = if (state.isBusy) {
                             localized("إلغاء", "Cancel")
                         } else {
                             localized("لاحقاً", "Later")

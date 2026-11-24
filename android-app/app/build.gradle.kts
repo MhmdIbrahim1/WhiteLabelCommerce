@@ -1,3 +1,4 @@
+import org.gradle.api.GradleException
 import java.util.Properties
 
 plugins {
@@ -37,13 +38,6 @@ fun resolveConfigValue(key: String, fallback: String = ""): String {
         .replace("\"", "\\\"")
 }
 
-fun resolveBooleanConfigValue(key: String, fallback: Boolean): Boolean {
-    val raw = (project.findProperty(key) as? String)?.trim()
-        ?: localProps.getProperty(key)?.trim()
-        ?: System.getenv(key)?.trim()
-    return raw?.toBooleanStrictOrNull() ?: fallback
-}
-
 fun resolveSigningValue(key: String): String? {
     val fromEnv = System.getenv(key)?.trim()?.takeIf { it.isNotEmpty() }
     val fromKeystoreProps = keystoreProps.getProperty(key)?.trim()?.takeIf { it.isNotEmpty() }
@@ -63,6 +57,19 @@ val hasReleaseSigning = releaseKeystoreFile != null &&
     !releaseKeystorePassword.isNullOrBlank() &&
     !releaseKeyAlias.isNullOrBlank() &&
     !releaseKeyPassword.isNullOrBlank()
+
+val isCiEnvironment = System.getenv("CI")?.equals("true", ignoreCase = true) == true
+val isReleaseBuildRequested = gradle.startParameter.taskNames.any { task ->
+    task.contains("Release", ignoreCase = true)
+}
+
+if (isCiEnvironment && isReleaseBuildRequested && !hasReleaseSigning) {
+    throw GradleException(
+        "CI release build aborted: release signing credentials are missing or KEYSTORE_FILE does not exist " +
+            "(resolved path: ${releaseKeystoreFile?.absolutePath ?: "<unset>"}). " +
+            "Set ANDROID_KEYSTORE_BASE64 / KEYSTORE_FILE, KEYSTORE_PASSWORD, KEY_ALIAS, and KEY_PASSWORD.",
+    )
+}
 
 val resolvedVersionCode = (project.findProperty("VERSION_CODE") as? String)
     ?.trim()
@@ -105,15 +112,24 @@ android {
             value = "\"${resolveConfigValue("SUPABASE_ANON_KEY", "unconfigured")}\""
         )
         buildConfigField(
-            type = "Boolean",
-            name = "ENABLE_GITHUB_UPDATER",
-            value = resolveBooleanConfigValue("ENABLE_GITHUB_UPDATER", true).toString()
-        )
-        buildConfigField(
             type = "String",
             name = "GITHUB_REPO",
             value = "\"${resolveConfigValue("GITHUB_REPO", "OWNER/WhiteLabelCommerce")}\""
         )
+    }
+
+    flavorDimensions += "distribution"
+
+    productFlavors {
+        create("github") {
+            dimension = "distribution"
+            isDefault = true
+            buildConfigField("Boolean", "ENABLE_GITHUB_UPDATER", "true")
+        }
+        create("playstore") {
+            dimension = "distribution"
+            buildConfigField("Boolean", "ENABLE_GITHUB_UPDATER", "false")
+        }
     }
 
     signingConfigs {
@@ -131,10 +147,12 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            signingConfig = if (hasReleaseSigning) {
-                signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName("debug")
+            signingConfig = when {
+                hasReleaseSigning -> signingConfigs.getByName("release")
+                isCiEnvironment && isReleaseBuildRequested -> throw GradleException(
+                    "Refusing to fall back to debug signing on CI release build.",
+                )
+                else -> signingConfigs.getByName("debug")
             }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -215,6 +233,10 @@ dependencies {
 
     // Image Loading
     implementation(libs.coil.compose)
+
+    // Google Play In-App Updates (used by playstore flavor when ENABLE_GITHUB_UPDATER == false)
+    implementation(libs.play.app.update)
+    implementation(libs.play.app.update.ktx)
 
     // Testing
     testImplementation(libs.junit)

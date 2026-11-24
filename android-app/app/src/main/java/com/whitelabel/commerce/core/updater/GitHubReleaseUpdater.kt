@@ -1,11 +1,12 @@
 package com.whitelabel.commerce.core.updater
 
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInstaller
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
-import androidx.core.content.FileProvider
 import com.whitelabel.commerce.BuildConfig
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -15,6 +16,7 @@ import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
 import java.util.concurrent.TimeUnit
@@ -37,6 +39,22 @@ class GitHubReleaseUpdater @Inject constructor(
         .followRedirects(true)
         .followSslRedirects(true)
         .build()
+
+    private fun updatesDirectory(): File = File(context.cacheDir, "updates")
+
+    /**
+     * Deletes leftover downloaded `.apk` / `.part` files from previous update sessions so
+     * device cache storage never bloats after updates complete.
+     */
+    suspend fun cleanupStaleUpdateFiles() = withContext(Dispatchers.IO) {
+        val dir = updatesDirectory()
+        if (!dir.exists()) return@withContext
+        dir.listFiles()?.forEach { file ->
+            if (file.isFile && (file.name.endsWith(".apk", ignoreCase = true) || file.name.endsWith(".part", ignoreCase = true))) {
+                runCatching { file.delete() }
+            }
+        }
+    }
 
     suspend fun checkForUpdate(
         githubRepo: String = BuildConfig.GITHUB_REPO,
@@ -67,25 +85,60 @@ class GitHubReleaseUpdater @Inject constructor(
                 val body = response.body?.string()?.takeIf { it.isNotBlank() } ?: return@use null
                 val release = json.decodeFromString(GitHubReleaseDto.serializer(), body)
                 if (release.draft || release.prerelease) return@use null
+
+                val apkAsset = selectApkAsset(release.assets) ?: return@use null
+                val metaAsset = release.assets.firstOrNull {
+                    it.name.equals("release-meta.json", ignoreCase = true) &&
+                        it.browserDownloadUrl.startsWith("https://", ignoreCase = true)
+                }
+                val releaseMeta = metaAsset?.let { fetchReleaseMeta(it.browserDownloadUrl, currentVersionName) }
+
                 if (!ReleaseVersionComparator.isNewerRelease(
                         remoteTag = release.tagName,
                         currentVersionCode = currentVersionCode,
                         currentVersionName = currentVersionName,
+                        remoteVersionCode = releaseMeta?.versionCode,
                     )
                 ) {
                     return@use null
                 }
 
-                val apkAsset = selectApkAsset(release.assets) ?: return@use null
+                val resolvedVersionName = releaseMeta?.versionName?.takeIf { it.isNotBlank() }
+                    ?: ReleaseVersionComparator.normalizeVersionName(release.tagName)
+                        .ifEmpty { release.name.orEmpty().ifEmpty { release.tagName } }
+
+                val rawNotes = releaseMeta?.notes?.takeIf { it.isNotBlank() } ?: release.body
+                val cleanNotes = ReleaseNotesSanitizer.sanitize(rawNotes)
+
+                val expectedSha256 = ApkVerifier.normalizeSha256(releaseMeta?.sha256)
+                    ?: ApkVerifier.normalizeSha256(apkAsset.digest)
+
                 AvailableUpdate(
                     tagName = release.tagName,
-                    versionName = ReleaseVersionComparator.normalizeVersionName(release.tagName)
-                        .ifEmpty { release.name.orEmpty().ifEmpty { release.tagName } },
-                    releaseNotes = release.body?.trim().orEmpty(),
+                    versionCode = releaseMeta?.versionCode,
+                    versionName = resolvedVersionName,
+                    releaseNotes = cleanNotes,
                     downloadUrl = apkAsset.browserDownloadUrl,
                     assetName = apkAsset.name,
                     fileSizeBytes = apkAsset.size,
+                    expectedSha256 = expectedSha256,
                 )
+            }
+        }.getOrNull()
+    }
+
+    private fun fetchReleaseMeta(url: String, currentVersionName: String): ReleaseMetaDto? {
+        return runCatching {
+            val req = Request.Builder()
+                .url(url)
+                .header("Accept", "application/json")
+                .header("User-Agent", "WhiteLabelCommerce-Android/$currentVersionName")
+                .get()
+                .build()
+            client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@use null
+                val text = resp.body?.string()?.takeIf { it.isNotBlank() } ?: return@use null
+                json.decodeFromString(ReleaseMetaDto.serializer(), text)
             }
         }.getOrNull()
     }
@@ -108,8 +161,7 @@ class GitHubReleaseUpdater @Inject constructor(
                 "APK download URL must use HTTPS"
             }
 
-            val updatesDir = File(context.cacheDir, "updates").apply { mkdirs() }
-            // Remove stale APK files before downloading the new release
+            val updatesDir = updatesDirectory().apply { mkdirs() }
             updatesDir.listFiles()?.forEach { oldFile ->
                 runCatching { oldFile.delete() }
             }
@@ -177,6 +229,67 @@ class GitHubReleaseUpdater @Inject constructor(
         }
     }
 
+    suspend fun verifyApk(apkFile: File, expectedSha256: String?): ApkVerificationResult =
+        withContext(Dispatchers.IO) {
+            ApkVerifier.verifyDownloadedApk(context, apkFile, expectedSha256)
+        }
+
+    /**
+     * Installs a verified APK using Android's [PackageInstaller.Session] API instead of
+     * legacy `Intent.ACTION_VIEW`. Status & user confirmation callbacks are routed through
+     * [PackageInstallStatusReceiver].
+     */
+    suspend fun installApkWithSession(apkFile: File): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val packageInstaller = context.packageManager.packageInstaller
+            val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
+                setAppPackageName(context.packageName)
+                setSize(apkFile.length())
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+                }
+            }
+
+            val sessionId = packageInstaller.createSession(params)
+            var session: PackageInstaller.Session? = null
+            try {
+                session = packageInstaller.openSession(sessionId)
+                FileInputStream(apkFile).use { input ->
+                    session.openWrite("base.apk", 0L, apkFile.length()).use { output ->
+                        val buffer = ByteArray(32 * 1024)
+                        while (true) {
+                            coroutineContext.ensureActive()
+                            val read = input.read(buffer)
+                            if (read == -1) break
+                            output.write(buffer, 0, read)
+                        }
+                        session.fsync(output)
+                    }
+                }
+
+                val statusIntent = Intent(context, PackageInstallStatusReceiver::class.java).apply {
+                    action = PackageInstallStatusReceiver.ACTION_INSTALL_STATUS
+                }
+                val flags = PendingIntent.FLAG_UPDATE_CURRENT or
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0
+                val callbackPendingIntent = PendingIntent.getBroadcast(
+                    context,
+                    sessionId,
+                    statusIntent,
+                    flags,
+                )
+
+                session.commit(callbackPendingIntent.intentSender)
+            } catch (t: Throwable) {
+                runCatching { session?.abandon() }
+                runCatching { packageInstaller.abandonSession(sessionId) }
+                throw t
+            } finally {
+                runCatching { session?.close() }
+            }
+        }
+    }
+
     fun canRequestPackageInstalls(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             context.packageManager.canRequestPackageInstalls()
@@ -190,18 +303,5 @@ class GitHubReleaseUpdater @Inject constructor(
             Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
             Uri.parse("package:${context.packageName}"),
         )
-    }
-
-    fun buildInstallApkIntent(apkFile: File): Intent {
-        val apkUri = FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.fileprovider",
-            apkFile,
-        )
-        return Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(apkUri, "application/vnd.android.package-archive")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
     }
 }

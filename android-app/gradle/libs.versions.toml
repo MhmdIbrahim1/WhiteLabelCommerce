@@ -25,6 +25,7 @@ supabase = "3.0.3"
 ktor = "3.0.3"
 okhttp = "4.12.0"
 coil = "2.7.0"
+playAppUpdate = "2.1.0"
 
 # Testing
 junit = "4.13.2"
@@ -76,6 +77,10 @@ okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhtt
 
 # Image Loading
 coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
+
+# Google Play In-App Updates (playstore flavor)
+play-app-update = { group = "com.google.android.play", name = "app-update", version.ref = "playAppUpdate" }
+play-app-update-ktx = { group = "com.google.android.play", name = "app-update-ktx", version.ref = "playAppUpdate" }
 
 # Testing
 junit = { group = "junit", name = "junit", version.ref = "junit" }

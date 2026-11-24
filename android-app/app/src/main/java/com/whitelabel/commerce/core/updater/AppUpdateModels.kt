@@ -19,19 +19,74 @@ internal data class GitHubAssetDto(
     @SerialName("browser_download_url") val browserDownloadUrl: String = "",
     @SerialName("size") val size: Long = 0L,
     @SerialName("content_type") val contentType: String? = null,
+    @SerialName("digest") val digest: String? = null,
+)
+
+@Serializable
+internal data class ReleaseMetaDto(
+    @SerialName("versionCode") val versionCode: Int? = null,
+    @SerialName("versionName") val versionName: String? = null,
+    @SerialName("apkName") val apkName: String? = null,
+    @SerialName("sha256") val sha256: String? = null,
+    @SerialName("notes") val notes: String? = null,
 )
 
 data class AvailableUpdate(
     val tagName: String,
+    val versionCode: Int?,
     val versionName: String,
     val releaseNotes: String,
     val downloadUrl: String,
     val assetName: String,
     val fileSizeBytes: Long,
+    val expectedSha256: String? = null,
 )
 
 /**
- * Compares a GitHub Release tag (e.g. `v1.0.14`, `1.0.14`, `v2.1.0`, or `v25`) against
+ * Strips raw Markdown syntax (`**`, `#`, links, inline code, HTML tags) from GitHub Release notes
+ * so Arabic RTL and English LTR text render cleanly in Material 3 dialogs.
+ */
+object ReleaseNotesSanitizer {
+    private val MARKDOWN_LINK_REGEX = Regex("\\[([^\\]]+)]\\((https?://[^)]+)\\)")
+    private val BARE_URL_REGEX = Regex("https?://\\S+")
+    private val HEADING_PREFIX_REGEX = Regex("^#{1,6}\\s*")
+    private val BULLET_PREFIX_REGEX = Regex("^[*+-]\\s+")
+    private val EMPHASIS_REGEX = Regex("(\\*\\*|__|~~|`|\\*)")
+    private val HTML_TAG_REGEX = Regex("<[^>]+>")
+    private val MULTI_SPACE_REGEX = Regex("[ \\t]{2,}")
+
+    fun sanitize(raw: String?): String {
+        if (raw.isNullOrBlank()) return ""
+        val lines = raw
+            .replace("\r\n", "\n")
+            .replace("\r", "\n")
+            .split('\n')
+            .mapNotNull { originalLine ->
+                var line = originalLine.trim()
+                if (line.isEmpty()) return@mapNotNull null
+                // Drop GitHub's auto-generated "Full Changelog: https://..." footer noise
+                if (line.contains("Full Changelog", ignoreCase = true) && line.contains("http", ignoreCase = true)) {
+                    return@mapNotNull null
+                }
+                line = MARKDOWN_LINK_REGEX.replace(line, "$1")
+                line = HTML_TAG_REGEX.replace(line, "")
+                line = HEADING_PREFIX_REGEX.replace(line, "")
+                line = if (BULLET_PREFIX_REGEX.containsMatchIn(line)) {
+                    "• " + BULLET_PREFIX_REGEX.replaceFirst(line, "")
+                } else {
+                    line
+                }
+                line = EMPHASIS_REGEX.replace(line, "")
+                line = BARE_URL_REGEX.replace(line, "")
+                line = MULTI_SPACE_REGEX.replace(line, " ").trim()
+                line.takeIf { it.isNotBlank() && it != "•" }
+            }
+        return lines.joinToString("\n").trim()
+    }
+}
+
+/**
+ * Compares a GitHub Release tag (and optional `release-meta.json` `versionCode`) against
  * the currently installed app's `versionCode` and `versionName`.
  */
 object ReleaseVersionComparator {
@@ -55,7 +110,12 @@ object ReleaseVersionComparator {
         remoteTag: String,
         currentVersionCode: Int,
         currentVersionName: String,
+        remoteVersionCode: Int? = null,
     ): Boolean {
+        if (remoteVersionCode != null && remoteVersionCode > 0) {
+            return remoteVersionCode > currentVersionCode
+        }
+
         val remoteParts = parseTuple(remoteTag)
         if (remoteParts.isEmpty()) return false
 
@@ -74,14 +134,12 @@ object ReleaseVersionComparator {
                     return remoteVal > currentVal
                 }
             }
-            // Same semantic version tuple -> only treat as newer if an explicit "+code" build metadata is higher
             val remoteBuildCode = remoteTag.substringAfter('+', "")
                 .takeWhile { it.isDigit() }
                 .toIntOrNull()
             return remoteBuildCode != null && remoteBuildCode > currentVersionCode
         }
 
-        // Fallback if currentVersionName has no digits: compare patch/last segment to versionCode
         return remoteParts.last() > currentVersionCode
     }
 }

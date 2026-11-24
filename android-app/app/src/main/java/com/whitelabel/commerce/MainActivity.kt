@@ -9,7 +9,9 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.whitelabel.commerce.app.MainViewModel
@@ -17,6 +19,7 @@ import com.whitelabel.commerce.app.navigation.WhiteLabelAppShell
 import com.whitelabel.commerce.core.designsystem.WhiteLabelCommerceTheme
 import com.whitelabel.commerce.core.updater.AppUpdateDialog
 import com.whitelabel.commerce.core.updater.AppUpdateViewModel
+import com.whitelabel.commerce.core.updater.PlayStoreUpdater
 import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
@@ -32,12 +35,21 @@ class MainActivity : ComponentActivity() {
             val updateState by updateViewModel.uiState.collectAsStateWithLifecycle()
             val systemDark = isSystemInDarkTheme()
             val useDarkTheme = uiState.darkThemeOverride ?: systemDark
+            val context = LocalContext.current
 
             val installPermissionLauncher = rememberLauncherForActivityResult(
                 contract = ActivityResultContracts.StartActivityForResult(),
             ) {
-                updateViewModel.onUnknownSourcesResult { installIntent ->
-                    runCatching { startActivity(installIntent) }
+                updateViewModel.onUnknownSourcesResult()
+            }
+
+            val playStoreUpdateLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.StartIntentSenderForResult(),
+            ) { /* Play Store handles flexible/immediate update lifecycle */ }
+
+            LaunchedEffect(Unit) {
+                if (!BuildConfig.ENABLE_GITHUB_UPDATER) {
+                    PlayStoreUpdater.checkAndPromptIfAvailable(context, playStoreUpdateLauncher)
                 }
             }
 
@@ -89,20 +101,19 @@ class MainActivity : ComponentActivity() {
                     onRefreshStore = mainViewModel::refreshStoreSettings,
                 )
 
-                AppUpdateDialog(
-                    state = updateState,
-                    onUpdateNow = {
-                        updateViewModel.startUpdate(
-                            onRequestInstallPermission = { settingsIntent ->
-                                runCatching { installPermissionLauncher.launch(settingsIntent) }
-                            },
-                            onLaunchInstaller = { installIntent ->
-                                runCatching { startActivity(installIntent) }
-                            },
-                        )
-                    },
-                    onDismiss = updateViewModel::dismiss,
-                )
+                if (BuildConfig.ENABLE_GITHUB_UPDATER) {
+                    AppUpdateDialog(
+                        state = updateState,
+                        onUpdateNow = {
+                            updateViewModel.startUpdate(
+                                onRequestInstallPermission = { settingsIntent ->
+                                    runCatching { installPermissionLauncher.launch(settingsIntent) }
+                                },
+                            )
+                        },
+                        onDismiss = updateViewModel::dismiss,
+                    )
+                }
             }
         }
     }
