@@ -46,8 +46,8 @@ fun resolveSigningValue(key: String): String? {
 
 val releaseKeystorePath = resolveSigningValue("KEYSTORE_FILE")
 val releaseKeystoreFile = releaseKeystorePath?.let { rawPath ->
-    val direct = file(rawPath)
-    if (direct.isAbsolute) direct else rootProject.file(rawPath)
+    val candidate = java.io.File(rawPath)
+    if (candidate.isAbsolute) candidate else rootProject.file(rawPath)
 }
 val releaseKeystorePassword = resolveSigningValue("KEYSTORE_PASSWORD")
 val releaseKeyAlias = resolveSigningValue("KEY_ALIAS")
