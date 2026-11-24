@@ -146,3 +146,9 @@
 ### 6.4 Latest Build Verification (2026-11-24)
 - **Command:** `$env:JAVA_HOME='C:\Users\moham\.jdks\jbr-21.0.11'; .\gradlew.bat assembleGithubDebug assemblePlaystoreDebug --no-daemon`
 - **Result:** `BUILD SUCCESSFUL` across both `github` and `playstore` product flavors with `firebase-bom:35.2.0`, `firebase-messaging`, Hilt DI, and Supabase Realtime.
+
+
+### 6.5 `v1.1.0` Release Bump & Tag-Triggered CI Pipeline (2026-11-25)
+- **Local Firebase Config & CI Secret:** Copied `google-services.json` (`com.whitelabel.commerce`, project `novasaas-4c25d`) into gitignored `android-app/app/google-services.json` and uploaded its Base64 payload to GitHub Actions secret `GOOGLE_SERVICES_JSON_BASE64`.
+- **Version Bump (`android-app/app/build.gradle.kts`):** Bumped default `versionCode` to `20` (strictly above `v1.0.9`'s `versionCode = 19`) and `versionName` to `"1.1.0"` so installed `1.0.9` clients detect and install the Phase 9 FCM update via the GitHub Releases self-updater.
+- **Tag-Aware Release Workflow (`.github/workflows/android-release.yml`):** Added `tags: ["v*"]` under `on.push` so pushing tag `v1.1.0` builds `versionName = 1.1.0` (`versionCode = github.run_number + 20`) with decoded `google-services.json` and publishes `WhiteLabelCommerce v1.1.0` as the latest GitHub Release.

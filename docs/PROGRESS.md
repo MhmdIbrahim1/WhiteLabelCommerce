@@ -644,3 +644,13 @@ Stored as `store_settings.ui_config.homeSections` (ordered array, up to 15 items
   - `npx tsc --noEmit` (0 errors), `npm run lint -- --max-warnings 0` (0 errors, 0 warnings), and `npm run build` (21/21 routes compiled cleanly).
   - Supabase SQL migration applied & rolled-back verification returned `tables_count: 5`, `realtime_enabled: 1`, `rpc_push_ok: true`.
   - Live Chrome check at `http://localhost:3000` verified storefront Notification Bell, pure AR/EN slide-over Notification Drawer, cart heartbeat sync, and `/admin/notifications` auth guard with 0 console errors and 0 5xx responses.
+
+
+### Phase 9b (Complete Firebase Web Push Setup, Notification Drawer Portal Fix & Android `v1.1.0` Release) — 2026-11-25
+
+- **Firebase Web App & Web Push SDK (`web-store/src/lib/notifications/web-push.ts`, `web-store/.env.example`, `web-store/package.json`):**
+  - Registered `NovaSaas Web Store` Web App inside Firebase project `novasaas-4c25d` and populated all client/server keys in local gitignored `web-store/.env.local` (`FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`, `CRON_SECRET`, `NEXT_PUBLIC_FIREBASE_VAPID_KEY`, `NEXT_PUBLIC_FIREBASE_API_KEY`, `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`, `NEXT_PUBLIC_FIREBASE_PROJECT_ID`, `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`, `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`, `NEXT_PUBLIC_FIREBASE_APP_ID`).
+  - Installed `firebase` Web SDK in `web-store/` and created `syncWebPushSubscription(lang)` using `firebase/messaging` (`getToken` with `vapidKey` and `/firebase-messaging-sw.js`, plus PushManager fallback) so browsers with granted notification permission automatically register and refresh their Web Push subscription via `POST /api/notifications/register` on mount and language/user change.
+- **Full-Viewport Notification Drawer Portal Fix (`web-store/src/components/notifications/notification-bell.tsx`, `web-store/src/app/globals.css`):**
+  - Portaled the Notification Drawer and backdrop to `document.body` via `createPortal(..., document.body)` (SSR-safe `useSyncExternalStore` client gate) with `fixed inset-0 z-[100] h-dvh` and body scroll lock so the sticky `<header>` (`backdrop-filter: blur`) never clips the slide-over drawer.
+- **Verification:** `npx tsc --noEmit`, `npm run lint -- --max-warnings 0`, and `npm run build` passed with **0 errors and 0 warnings**; verified full-viewport portaled drawer and live Web Push subscription registration (`platform = 'web'`) on `http://localhost:3000`.
