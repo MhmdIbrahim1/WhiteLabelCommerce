@@ -47,7 +47,7 @@ export default async function Home() {
   )?.id;
 
   return (
-    <>
+    <div className="home-sections-stack flex flex-col gap-6">
       {visibleSections.map((sec) => {
         switch (sec.type) {
           case "hero_banner":
@@ -216,6 +216,6 @@ export default async function Home() {
             );
         }
       })}
-    </>
+    </div>
   );
 }

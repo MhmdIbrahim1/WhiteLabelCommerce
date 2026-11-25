@@ -149,6 +149,20 @@ fun WhiteLabelAppShell(
         }
     }
 
+    fun showActionSnackbar(message: String, actionLabel: String, onAction: () -> Unit) {
+        scope.launch {
+            snackbarHostState.currentSnackbarData?.dismiss()
+            val result = snackbarHostState.showSnackbar(
+                message = message,
+                actionLabel = actionLabel,
+                duration = SnackbarDuration.Long,
+            )
+            if (result == SnackbarResult.ActionPerformed) {
+                onAction()
+            }
+        }
+    }
+
     Scaffold(
         modifier = modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
@@ -354,7 +368,13 @@ fun WhiteLabelAppShell(
                     onOpenSupport = { orderId ->
                         navController.navigate(AppRoutes.support(orderId))
                     },
+                    onOpenAccount = {
+                        navController.navigate(AppRoutes.ACCOUNT)
+                    },
                     onShowMessage = { msg -> showSnackbar(msg) },
+                    onShowActionMessage = { msg, actionLabel, onAction ->
+                        showActionSnackbar(msg, actionLabel, onAction)
+                    },
                 )
             }
 

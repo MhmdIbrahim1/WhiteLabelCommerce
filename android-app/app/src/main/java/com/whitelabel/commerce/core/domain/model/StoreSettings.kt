@@ -34,11 +34,24 @@ data class StoreSettings(
     val whatsappNumber: String = "",
     val supportEmail: String = "support@example.com",
     val shippingFee: Double = 50.0,
+    val cartIncentiveEnabled: Boolean = true,
+    val freeShippingThreshold: Double = 1000.0,
+    val cashbackEnabled: Boolean = true,
+    val cashbackPercentage: Double = 5.0,
     val banners: List<String> = emptyList(),
     val presets: BrandPresets = BrandPresets(),
     val isSyncedFromRemote: Boolean = false,
     val themeTemplate: String = "modern-minimal",
 ) {
+    fun effectiveShippingFee(subtotal: Double): Double =
+        if (cartIncentiveEnabled && freeShippingThreshold > 0.0 && subtotal >= freeShippingThreshold) {
+            0.0
+        } else {
+            shippingFee
+        }
+
+    fun isFreeShippingUnlocked(subtotal: Double): Boolean =
+        cartIncentiveEnabled && freeShippingThreshold > 0.0 && subtotal >= freeShippingThreshold
     /**
      * Master Hero Banner visibility honoring both `ui_config.pages.home.hero_visible`
      * and the `hero_banner` entry inside `ui_config.homeSections`.

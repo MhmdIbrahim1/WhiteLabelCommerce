@@ -194,6 +194,11 @@ export function Timeline({
   };
 
   const paymentBadge = (() => {
+    if (effectiveMethod === "wallet" && effectivePaymentStatus === "paid")
+      return {
+        tone: "paid",
+        label: isEn ? "Paid via Wallet" : "مدفوع بالمحفظة",
+      };
     if (effectivePaymentStatus === "paid")
       return { tone: "paid", label: t("paymentStatusPaid") };
     if (effectivePaymentStatus === "failed")

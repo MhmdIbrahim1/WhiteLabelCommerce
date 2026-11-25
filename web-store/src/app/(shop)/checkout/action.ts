@@ -101,6 +101,7 @@ export async function checkout(
   lines: { id: string; quantity: number; size: string; color: string }[],
   couponCode?: string,
   customerName?: string,
+  useWallet = false,
 ): Promise<CheckoutResult> {
   const isEn = (await getServerLang()) === "en";
   const shippingAddress = typeof address === "string" ? address.trim() : "";
@@ -124,7 +125,7 @@ export async function checkout(
         ? "cod"
         : payment.trim().toLowerCase()
       : "";
-  const allowedPayments = new Set(["cod", "paymob_card", "paymob_wallet"]);
+  const allowedPayments = new Set(["cod", "paymob_card", "paymob_wallet", "wallet"]);
   if (
     !Array.isArray(lines) ||
     !lines.length ||
@@ -156,11 +157,18 @@ export async function checkout(
       lines,
       p_coupon_code: cleanCoupon,
       p_customer_name: cleanName,
+      p_use_wallet: Boolean(useWallet) || normalizedPayment === "wallet",
     })
     .single<{ order_number: string; amount: number; order_currency: string }>();
 
   if (error || !data) {
     switch (error?.message) {
+      case "insufficient_wallet_balance":
+        return {
+          error: isEn
+            ? "Your wallet balance is no longer sufficient to cover the full order."
+            : "رصيد المحفظة لم يعد كافياً لتغطية كامل قيمة الطلب.",
+        };
       case "payment_method_disabled":
         return {
           error: isEn

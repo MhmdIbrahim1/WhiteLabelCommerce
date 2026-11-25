@@ -69,6 +69,7 @@ class OrderRepositoryImpl @Inject constructor(
         coupon: String?,
         name: String,
         requestKey: String,
+        useWallet: Boolean,
     ): Result<CheckoutResult> = runSuspendCatching {
         val cleanAddress = shippingAddress.trim()
         require(cleanAddress.length in 3..500) { localized("يرجى إدخال عنوان توصيل صحيح (3 أحرف على الأقل).", "Enter a delivery address of at least three characters.") }
@@ -86,6 +87,7 @@ class OrderRepositoryImpl @Inject constructor(
             payment = method.rawValue,
             coupon = coupon,
             name = name,
+            useWallet = useWallet || method == PaymentMethod.STORE_WALLET,
             lines = items.map { line ->
                 CheckoutLineDto(
                     id = line.productId,

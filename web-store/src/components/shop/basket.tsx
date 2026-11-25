@@ -14,6 +14,8 @@ import {
   Smartphone,
   ShieldCheck,
   Loader2,
+  Wallet,
+  CheckCircle2,
 } from "lucide-react";
 import {
   useCart,
@@ -28,8 +30,10 @@ import {
 } from "@/app/(shop)/checkout/action";
 import { money } from "@/lib/brand";
 import { localizedText, translateColor } from "@/lib/i18n";
+import type { StoreIncentives } from "@/lib/shop";
 import { useLanguage } from "@/components/language-provider";
 import { EgyptAddressFields } from "./egypt-address-fields";
+import { CartIncentiveBar } from "./cart-incentive-bar";
 
 const EGYPT_WALLET_RE = /^01[0125][0-9]{8}$/;
 
@@ -58,6 +62,13 @@ export function Basket({
     paymobCardEnabled: false,
     paymobWalletEnabled: false,
   },
+  incentives = {
+    cartIncentiveEnabled: true,
+    freeShippingThreshold: 1000,
+    cashbackEnabled: true,
+    cashbackPercentage: 5,
+  },
+  walletBalance = 0,
 }: {
   order?: boolean;
   fee: number;
@@ -69,6 +80,8 @@ export function Basket({
   defaultAddress?: string;
   signedInEmail?: string | null;
   paymentOptions?: StorePaymentOptions;
+  incentives?: StoreIncentives;
+  walletBalance?: number;
 }) {
   const router = useRouter();
   const { lang, t } = useLanguage();
@@ -107,6 +120,7 @@ export function Basket({
     text: string;
   } | null>(null);
   const [checkingCoupon, setCheckingCoupon] = useState(false);
+  const [useWallet, setUseWallet] = useState(false);
   const lock = useRef(false);
 
   const activePayment: SelectedPayment = availableMethods.includes(
@@ -119,7 +133,19 @@ export function Basket({
   const discount = appliedCoupon
     ? Math.min(subtotal, appliedCoupon.discount)
     : 0;
-  const finalTotal = Math.max(0, subtotal - discount) + fee;
+  const freeShippingUnlocked =
+    incentives.cartIncentiveEnabled &&
+    incentives.freeShippingThreshold > 0 &&
+    subtotal >= incentives.freeShippingThreshold;
+  const effectiveFee = freeShippingUnlocked ? 0 : fee;
+  const preWalletTotal = Math.max(0, subtotal - discount) + effectiveFee;
+  const canUseWallet = Boolean(order && signedInEmail && walletBalance > 0);
+  const walletApplied =
+    canUseWallet && useWallet
+      ? Math.min(walletBalance, preWalletTotal)
+      : 0;
+  const finalTotal = Math.max(0, preWalletTotal - walletApplied);
+  const fullyPaidByWallet = walletApplied > 0 && finalTotal === 0;
 
   const handleApplyCoupon = async () => {
     if (!couponInput.trim()) return;
@@ -210,6 +236,12 @@ export function Basket({
           />
         </div>
       </div>
+      <CartIncentiveBar
+        enabled={incentives.cartIncentiveEnabled}
+        threshold={incentives.freeShippingThreshold}
+        subtotal={subtotal}
+        currency={currency}
+      />
       <div className="details-grid">
         <section className="panel">
           <h2>{t("cartItemsTitle")}</h2>
@@ -289,8 +321,26 @@ export function Basket({
             </p>
           )}
           <p>
-            {t("shippingLabel")} · {money(fee, currency, lang)}
+            {t("shippingLabel")} ·{" "}
+            {freeShippingUnlocked || effectiveFee === 0 ? (
+              <span className="free-shipping-badge">
+                {isEn ? "Free" : "مجاني"}
+                {fee > 0 && (
+                  <del className="free-shipping-old">
+                    {money(fee, currency, lang)}
+                  </del>
+                )}
+              </span>
+            ) : (
+              money(effectiveFee, currency, lang)
+            )}
           </p>
+          {walletApplied > 0 && (
+            <p className="coupon-discount-line">
+              {isEn ? "Wallet Credit" : "خصم رصيد المحفظة"} · -
+              {money(walletApplied, currency, lang)}
+            </p>
+          )}
           <strong>
             {t("estimatedTotalLabel")} · {money(finalTotal, currency, lang)}
           </strong>
@@ -352,11 +402,18 @@ export function Basket({
             <form
               onSubmit={async (e) => {
                 e.preventDefault();
-                if (lock.current || availableMethods.length === 0) return;
+                if (
+                  lock.current ||
+                  (!fullyPaidByWallet && availableMethods.length === 0)
+                )
+                  return;
 
+                const effectivePaymentMethod = fullyPaidByWallet
+                  ? "wallet"
+                  : activePayment;
                 const cleanWallet = walletPhone.replace(/\s+/g, "");
                 if (
-                  activePayment === "paymob_wallet" &&
+                  effectivePaymentMethod === "paymob_wallet" &&
                   !EGYPT_WALLET_RE.test(cleanWallet)
                 ) {
                   setWalletError(t("paymentWalletPhoneError"));
@@ -378,12 +435,14 @@ export function Basket({
                   }));
                 try {
                   const couponCode = appliedCoupon?.code ?? "";
+                  const useWalletFlag = canUseWallet && useWallet;
                   const payload = JSON.stringify([
                     address,
                     phone,
                     items,
                     couponCode,
-                    activePayment,
+                    effectivePaymentMethod,
+                    useWalletFlag,
                   ]);
                   const hash = Array.from(
                     new Uint8Array(
@@ -404,10 +463,11 @@ export function Basket({
                     request,
                     address,
                     phone,
-                    activePayment,
+                    effectivePaymentMethod,
                     items,
                     couponCode || undefined,
                     defaultName || undefined,
+                    useWalletFlag,
                   );
 
                   if (!receipt.id) {
@@ -415,11 +475,25 @@ export function Basket({
                     return;
                   }
 
+                  // Full Store Wallet Payment (remainingTotal === 0): skip Paymob, clear cart & confirm
+                  if (
+                    effectivePaymentMethod === "wallet" ||
+                    Number(receipt.total ?? 0) <= 0
+                  ) {
+                    purchased(lines);
+                    localStorage.removeItem(key);
+                    router.push(
+                      "/orders?placed=wallet&order=" +
+                        encodeURIComponent(receipt.id),
+                    );
+                    return;
+                  }
+
                   // Online Paymob Flow: keep cart intact and show full-screen redirecting state
                   // Cart is cleared ONLY when payment is confirmed on /orders (?payment=success or paid)
                   if (
-                    activePayment === "paymob_card" ||
-                    activePayment === "paymob_wallet"
+                    effectivePaymentMethod === "paymob_card" ||
+                    effectivePaymentMethod === "paymob_wallet"
                   ) {
                     setRedirectingPayment(true);
                     setPendingOnlineOrder(receipt.id);
@@ -431,11 +505,11 @@ export function Basket({
                         body: JSON.stringify({
                           order_id: receipt.id,
                           method:
-                            activePayment === "paymob_card"
+                            effectivePaymentMethod === "paymob_card"
                               ? "card"
                               : "wallet",
                           wallet_phone:
-                            activePayment === "paymob_wallet"
+                            effectivePaymentMethod === "paymob_wallet"
                               ? cleanWallet
                               : undefined,
                         }),
@@ -518,108 +592,160 @@ export function Basket({
                 />
               </label>
 
-              <fieldset className="payment-options-group">
-                <legend>{t("paymentMethodLabel")}</legend>
-                {availableMethods.length === 0 ? (
-                  <p role="alert">{t("paymentNoMethods")}</p>
-                ) : (
-                  <div className="payment-options-list">
-                    {paymentOptions.codEnabled && (
-                      <label
-                        className={`payment-option-card ${activePayment === "cod" ? "is-selected" : ""}`}
-                      >
-                        <input
-                          type="radio"
-                          name="payment"
-                          value="cod"
-                          checked={activePayment === "cod"}
-                          onChange={() => {
-                            setSelectedPayment("cod");
-                            setWalletError(null);
-                          }}
-                        />
-                        <Banknote size={18} aria-hidden="true" />
-                        <span>{t("paymentCod")}</span>
-                      </label>
+              {canUseWallet && (
+                <div
+                  className={`wallet-checkout-toggle ${useWallet ? "is-active" : ""}`}
+                >
+                  <label className="wallet-checkout-label">
+                    <span className="wallet-checkout-info">
+                      <Wallet size={18} aria-hidden="true" />
+                      <span>
+                        <strong>
+                          {isEn
+                            ? `Use Wallet Credit (${money(walletBalance, currency, "en")})`
+                            : `استخدام رصيد المحفظة (${money(walletBalance, currency, "ar")})`}
+                        </strong>
+                        <small>
+                          {useWallet
+                            ? isEn
+                              ? `Deducting ${money(walletApplied, currency, "en")} from your order total`
+                              : `سيتم خصم ${money(walletApplied, currency, "ar")} من إجمالي الطلب`
+                            : isEn
+                              ? "Apply your available store credit instantly to this order"
+                              : "استخدم رصيدك المتاح في المحفظة للخصم الفوري على هذا الطلب"}
+                        </small>
+                      </span>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={useWallet}
+                      onChange={(e) => setUseWallet(e.target.checked)}
+                    />
+                  </label>
+                </div>
+              )}
+
+              {fullyPaidByWallet ? (
+                <div className="wallet-full-cover-banner" role="status">
+                  <CheckCircle2 size={18} aria-hidden="true" />
+                  <span>
+                    {isEn
+                      ? "Paid in full via Store Wallet — no extra payment required."
+                      : "مغطّى بالكامل برصيد محفظة المتجر — لا يلزم دفع إضافي."}
+                  </span>
+                </div>
+              ) : (
+                <>
+                  <fieldset className="payment-options-group">
+                    <legend>{t("paymentMethodLabel")}</legend>
+                    {availableMethods.length === 0 ? (
+                      <p role="alert">{t("paymentNoMethods")}</p>
+                    ) : (
+                      <div className="payment-options-list">
+                        {paymentOptions.codEnabled && (
+                          <label
+                            className={`payment-option-card ${activePayment === "cod" ? "is-selected" : ""}`}
+                          >
+                            <input
+                              type="radio"
+                              name="payment"
+                              value="cod"
+                              checked={activePayment === "cod"}
+                              onChange={() => {
+                                setSelectedPayment("cod");
+                                setWalletError(null);
+                              }}
+                            />
+                            <Banknote size={18} aria-hidden="true" />
+                            <span>{t("paymentCod")}</span>
+                          </label>
+                        )}
+
+                        {paymentOptions.paymobEnabled &&
+                          paymentOptions.paymobCardEnabled && (
+                            <label
+                              className={`payment-option-card ${activePayment === "paymob_card" ? "is-selected" : ""}`}
+                            >
+                              <input
+                                type="radio"
+                                name="payment"
+                                value="paymob_card"
+                                checked={activePayment === "paymob_card"}
+                                onChange={() => {
+                                  setSelectedPayment("paymob_card");
+                                  setWalletError(null);
+                                }}
+                              />
+                              <CreditCard size={18} aria-hidden="true" />
+                              <span>{t("paymentCardOption")}</span>
+                            </label>
+                          )}
+
+                        {paymentOptions.paymobEnabled &&
+                          paymentOptions.paymobWalletEnabled && (
+                            <label
+                              className={`payment-option-card ${activePayment === "paymob_wallet" ? "is-selected" : ""}`}
+                            >
+                              <input
+                                type="radio"
+                                name="payment"
+                                value="paymob_wallet"
+                                checked={activePayment === "paymob_wallet"}
+                                onChange={() => {
+                                  setSelectedPayment("paymob_wallet");
+                                  setWalletError(null);
+                                }}
+                              />
+                              <Smartphone size={18} aria-hidden="true" />
+                              <span>{t("paymentWalletOption")}</span>
+                            </label>
+                          )}
+                      </div>
                     )}
+                  </fieldset>
 
-                    {paymentOptions.paymobEnabled &&
-                      paymentOptions.paymobCardEnabled && (
-                        <label
-                          className={`payment-option-card ${activePayment === "paymob_card" ? "is-selected" : ""}`}
-                        >
-                          <input
-                            type="radio"
-                            name="payment"
-                            value="paymob_card"
-                            checked={activePayment === "paymob_card"}
-                            onChange={() => {
-                              setSelectedPayment("paymob_card");
-                              setWalletError(null);
-                            }}
-                          />
-                          <CreditCard size={18} aria-hidden="true" />
-                          <span>{t("paymentCardOption")}</span>
-                        </label>
+                  {activePayment === "paymob_wallet" && (
+                    <label className="wallet-phone-field">
+                      {t("paymentWalletPhoneLabel")}
+                      <input
+                        type="tel"
+                        name="wallet_phone"
+                        dir="ltr"
+                        inputMode="numeric"
+                        maxLength={11}
+                        value={walletPhone}
+                        onChange={(e) => {
+                          setWalletPhone(e.target.value);
+                          if (walletError) setWalletError(null);
+                        }}
+                        placeholder={t("paymentWalletPhonePlaceholder")}
+                        required
+                      />
+                      {walletError && (
+                        <small role="alert" className="wallet-error-text">
+                          {walletError}
+                        </small>
                       )}
-
-                    {paymentOptions.paymobEnabled &&
-                      paymentOptions.paymobWalletEnabled && (
-                        <label
-                          className={`payment-option-card ${activePayment === "paymob_wallet" ? "is-selected" : ""}`}
-                        >
-                          <input
-                            type="radio"
-                            name="payment"
-                            value="paymob_wallet"
-                            checked={activePayment === "paymob_wallet"}
-                            onChange={() => {
-                              setSelectedPayment("paymob_wallet");
-                              setWalletError(null);
-                            }}
-                          />
-                          <Smartphone size={18} aria-hidden="true" />
-                          <span>{t("paymentWalletOption")}</span>
-                        </label>
-                      )}
-                  </div>
-                )}
-              </fieldset>
-
-              {activePayment === "paymob_wallet" && (
-                <label className="wallet-phone-field">
-                  {t("paymentWalletPhoneLabel")}
-                  <input
-                    type="tel"
-                    name="wallet_phone"
-                    dir="ltr"
-                    inputMode="numeric"
-                    maxLength={11}
-                    value={walletPhone}
-                    onChange={(e) => {
-                      setWalletPhone(e.target.value);
-                      if (walletError) setWalletError(null);
-                    }}
-                    placeholder={t("paymentWalletPhonePlaceholder")}
-                    required
-                  />
-                  {walletError && (
-                    <small role="alert" className="wallet-error-text">
-                      {walletError}
-                    </small>
+                    </label>
                   )}
-                </label>
+                </>
               )}
 
               <button
                 className="checkout-cta"
-                disabled={busy || availableMethods.length === 0}
+                disabled={
+                  busy || (!fullyPaidByWallet && availableMethods.length === 0)
+                }
               >
                 {redirectingPayment
                   ? t("paymentRedirectingBtn")
                   : busy
                     ? t("confirmingOrderBtn")
-                    : t("confirmOrderBtn")}
+                    : fullyPaidByWallet
+                      ? isEn
+                        ? "Complete Order with Store Wallet"
+                        : "إتمام الطلب برصيد المحفظة"
+                      : t("confirmOrderBtn")}
               </button>
               {result.error && <p role="alert">{result.error}</p>}
             </form>

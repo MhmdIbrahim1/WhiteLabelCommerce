@@ -9,9 +9,11 @@ import com.whitelabel.commerce.core.domain.model.CustomerProfile
 import com.whitelabel.commerce.core.domain.model.Order
 import com.whitelabel.commerce.core.domain.model.SignUpOutcome
 import com.whitelabel.commerce.core.domain.model.StoreSettings
+import com.whitelabel.commerce.core.domain.model.WalletSummary
 import com.whitelabel.commerce.core.domain.repository.AuthRepository
 import com.whitelabel.commerce.core.domain.repository.OrderRepository
 import com.whitelabel.commerce.core.domain.repository.StoreRepository
+import com.whitelabel.commerce.core.domain.repository.WalletRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -76,6 +78,8 @@ data class AccountUiState(
     val profileForm: ProfileFormState = ProfileFormState(),
     val orders: List<Order> = emptyList(),
     val isLoadingOrders: Boolean = false,
+    val walletSummary: WalletSummary = WalletSummary(),
+    val isLoadingWallet: Boolean = false,
     val storeSettings: StoreSettings = StoreSettings(),
 )
 
@@ -83,6 +87,7 @@ data class AccountUiState(
 class AccountViewModel @Inject constructor(
     private val authRepository: AuthRepository,
     private val orderRepository: OrderRepository,
+    private val walletRepository: WalletRepository,
     storeRepository: StoreRepository,
 ) : ViewModel() {
 
@@ -90,6 +95,8 @@ class AccountViewModel @Inject constructor(
     private val profileFormState = MutableStateFlow(ProfileFormState())
     private val ordersState = MutableStateFlow<List<Order>>(emptyList())
     private val loadingOrdersState = MutableStateFlow(false)
+    private val walletSummaryState = MutableStateFlow(WalletSummary())
+    private val loadingWalletState = MutableStateFlow(false)
 
     private var cooldownJob: Job? = null
 
@@ -98,13 +105,16 @@ class AccountViewModel @Inject constructor(
         authFormState,
         profileFormState,
         combine(ordersState, loadingOrdersState, storeRepository.storeSettings) { o, l, s -> Triple(o, l, s) },
-    ) { session, authForm, profileForm, (orders, loadingOrders, settings) ->
+        combine(walletSummaryState, loadingWalletState) { w, lw -> w to lw },
+    ) { session, authForm, profileForm, (orders, loadingOrders, settings), (wallet, loadingWallet) ->
         AccountUiState(
             session = session,
             authForm = authForm,
             profileForm = profileForm,
             orders = orders,
             isLoadingOrders = loadingOrders,
+            walletSummary = wallet,
+            isLoadingWallet = loadingWallet,
             storeSettings = settings,
         )
     }.stateIn(
@@ -140,16 +150,27 @@ class AccountViewModel @Inject constructor(
                             )
                         }
                         loadAccountOrders()
+                        loadWallet()
                     }
 
                     AuthSessionState.SignedOut -> {
                         profileFormState.value = ProfileFormState()
                         ordersState.value = emptyList()
+                        walletSummaryState.value = WalletSummary()
                     }
 
                     AuthSessionState.Loading -> Unit
                 }
             }
+        }
+    }
+
+    fun loadWallet() {
+        viewModelScope.launch {
+            loadingWalletState.value = true
+            walletRepository.getMyWalletSummary()
+                .onSuccess { summary -> walletSummaryState.value = summary }
+            loadingWalletState.value = false
         }
     }
 

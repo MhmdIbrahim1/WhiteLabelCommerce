@@ -223,9 +223,28 @@ export default async function OrderDetails({
           </Empty>
         )}
         <div className="order-totals-footer">
-          <p>
-            {t(lang, "shippingLabel")} · {money(o.shipping_fee, o.currency, lang)}
-          </p>
+          <div className="order-totals-breakdown">
+            <p>
+              {t(lang, "shippingLabel")} ·{" "}
+              {Number(o.shipping_fee) === 0
+                ? isEn
+                  ? "Free"
+                  : "مجاني"
+                : money(o.shipping_fee, o.currency, lang)}
+            </p>
+            {Number(o.wallet_discount ?? 0) > 0 && (
+              <p style={{ color: "#15803d", fontWeight: 600 }}>
+                {isEn ? "Wallet Credit Used" : "خصم رصيد المحفظة"} · -
+                {money(Number(o.wallet_discount), o.currency, lang)}
+              </p>
+            )}
+            {Number(o.cashback_earned ?? 0) > 0 && (
+              <p style={{ color: "#0369a1", fontWeight: 600 }}>
+                {isEn ? "Cashback Credited" : "الكاش باك المضاف"} · +
+                {money(Number(o.cashback_earned), o.currency, lang)}
+              </p>
+            )}
+          </div>
           <strong>
             {isEn ? "Total" : "الإجمالي"} · {money(o.total, o.currency, lang)}
           </strong>

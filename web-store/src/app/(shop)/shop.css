@@ -380,6 +380,24 @@
   margin-top: clamp(2.4rem, 4.8vw, 4rem);
 }
 
+.shop .home-sections-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.shop .home-sections-stack > .shop-section {
+  margin-top: 0;
+}
+
+.shop .home-sections-stack > .shop-section:not(.promo-banner-section) {
+  margin-top: clamp(0.9rem, 2.2vw, 1.85rem);
+}
+
+.shop .home-sections-stack > [data-home-section="hero_banner"] .promo-carousel-shell {
+  margin-bottom: 0;
+}
+
 .shop .section-head {
   display: flex;
   align-items: flex-end;
@@ -694,6 +712,10 @@
 .shop .hero-eyebrow {
   display: inline-flex;
   align-items: center;
+  justify-self: start;
+  align-self: flex-start;
+  width: fit-content;
+  max-width: 100%;
   gap: 0.4rem;
   font-size: 0.8rem;
   font-weight: 650;
@@ -2941,4 +2963,323 @@
 .shop .order-retry-payment-btn:disabled {
   opacity: 0.65;
   cursor: not-allowed;
+}
+
+/* Phase 10A: Gamified Free-Shipping Cart Incentive Bar & Customer Wallet */
+.shop .cart-incentive-bar {
+  margin-bottom: 1.25rem;
+  padding: 0.95rem 1.15rem;
+  border-radius: calc(var(--radius, 12px) + 2px);
+  background: color-mix(in srgb, var(--primary) 6%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--primary) 22%, var(--line));
+  display: grid;
+  gap: 0.65rem;
+  transition:
+    background-color 280ms var(--ease-editorial),
+    border-color 280ms var(--ease-editorial);
+}
+
+.shop .cart-incentive-bar.is-unlocked {
+  background: rgba(5, 150, 105, 0.1);
+  border-color: rgba(5, 150, 105, 0.35);
+}
+
+.shop .cart-incentive-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.shop .cart-incentive-icon {
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  display: inline-grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--primary) 14%, var(--surface));
+  color: var(--primary);
+}
+
+.shop .cart-incentive-bar.is-unlocked .cart-incentive-icon {
+  background: rgba(5, 150, 105, 0.16);
+  color: #059669;
+}
+
+.shop .cart-incentive-text {
+  flex: 1;
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.shop .cart-incentive-bar.is-unlocked .cart-incentive-text {
+  color: #047857;
+}
+
+[data-shop-theme="dark"] .shop .cart-incentive-bar.is-unlocked .cart-incentive-text {
+  color: #34d399;
+}
+
+.shop .cart-incentive-pct {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.shop .cart-incentive-track {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 10%, transparent);
+  overflow: hidden;
+}
+
+.shop .cart-incentive-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--primary), var(--secondary));
+  transition: width 420ms var(--ease-editorial), background 280ms ease;
+}
+
+.shop .cart-incentive-bar.is-unlocked .cart-incentive-fill {
+  background: linear-gradient(90deg, #059669, #10b981);
+}
+
+.shop .free-shipping-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #059669;
+  font-weight: 700;
+}
+
+[data-shop-theme="dark"] .shop .free-shipping-badge {
+  color: #34d399;
+}
+
+.shop .free-shipping-old {
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.shop .wallet-checkout-toggle {
+  margin-top: 0.65rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--glass-border);
+  background: color-mix(in srgb, var(--primary) 4%, var(--surface));
+  transition: border-color 180ms ease, background-color 180ms ease;
+}
+
+.shop .wallet-checkout-toggle.is-active {
+  border-color: #059669;
+  background: rgba(5, 150, 105, 0.08);
+}
+
+.shop .wallet-checkout-label {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.85rem;
+  cursor: pointer;
+}
+
+.shop .wallet-checkout-info {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+}
+
+.shop .wallet-checkout-info svg {
+  color: #059669;
+  margin-top: 0.15rem;
+  flex-shrink: 0;
+}
+
+.shop .wallet-checkout-info strong {
+  display: block;
+  font-size: 0.9rem;
+  color: var(--ink);
+}
+
+.shop .wallet-checkout-info small {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.shop .wallet-checkout-label input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  accent-color: #059669;
+  cursor: pointer;
+}
+
+.shop .wallet-full-cover-banner {
+  margin-top: 0.65rem;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.8rem 1rem;
+  border-radius: var(--radius);
+  background: rgba(5, 150, 105, 0.12);
+  border: 1px solid rgba(5, 150, 105, 0.3);
+  color: #047857;
+  font-size: 0.88rem;
+  font-weight: 650;
+}
+
+[data-shop-theme="dark"] .shop .wallet-full-cover-banner {
+  color: #34d399;
+}
+
+/* Account Wallet Card & History */
+.shop .wallet-account-card {
+  margin-top: 1.5rem;
+  display: grid;
+  gap: 1.25rem;
+}
+
+.shop .wallet-hero-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 1.2rem 1.35rem;
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary) 72%, #0f172a));
+  color: #ffffff;
+}
+
+.shop .wallet-hero-main {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.shop .wallet-hero-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  display: inline-grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+}
+
+.shop .wallet-hero-label {
+  display: block;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+.shop .wallet-hero-balance {
+  display: block;
+  font-size: clamp(1.45rem, 2.8vw, 1.95rem);
+  font-weight: 750;
+  color: #ffffff;
+  line-height: 1.2;
+}
+
+.shop .wallet-cashback-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.85rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.shop .wallet-history-wrap {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.shop .wallet-history-title {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 1rem;
+}
+
+.shop .wallet-empty-note {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.shop .wallet-tx-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.shop .wallet-tx-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--glass-border);
+  background: color-mix(in srgb, var(--ink) 2%, var(--surface));
+}
+
+.shop .wallet-tx-badge {
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  display: inline-grid;
+  place-items: center;
+}
+
+.shop .wallet-tx-badge.is-credit {
+  background: rgba(5, 150, 105, 0.14);
+  color: #059669;
+}
+
+.shop .wallet-tx-badge.is-debit {
+  background: rgba(220, 38, 38, 0.12);
+  color: #dc2626;
+}
+
+.shop .wallet-tx-meta {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 0.1rem;
+}
+
+.shop .wallet-tx-meta strong {
+  font-size: 0.9rem;
+  color: var(--ink);
+}
+
+.shop .wallet-tx-amount-col {
+  text-align: end;
+  display: grid;
+  gap: 0.1rem;
+  flex-shrink: 0;
+}
+
+.shop .wallet-amt-credit {
+  color: #059669;
+  font-size: 0.94rem;
+}
+
+.shop .wallet-amt-debit {
+  color: #dc2626;
+  font-size: 0.94rem;
 }

@@ -19,11 +19,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
+import androidx.compose.material.icons.rounded.AccountBalanceWallet
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Phone
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Save
+import androidx.compose.material.icons.rounded.SouthWest
+import androidx.compose.material.icons.rounded.NorthEast
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -221,6 +225,18 @@ fun AccountScreen(
                             }
                         }
                     }
+
+                    // 1b. Store Credit & Cashback Wallet Card
+                    WalletAccountCard(
+                        balance = state.walletSummary.balance,
+                        currency = state.walletSummary.currency.ifBlank { state.storeSettings.currency },
+                        locale = state.storeSettings.locale,
+                        cashbackEnabled = state.storeSettings.cashbackEnabled,
+                        cashbackPercentage = state.storeSettings.cashbackPercentage,
+                        transactions = state.walletSummary.transactions,
+                        isLoading = state.isLoadingWallet,
+                        onRefresh = viewModel::loadWallet,
+                    )
 
                     // 2. Editable Default Shipping Profile Card
                     Card(
@@ -427,6 +443,230 @@ fun AccountScreen(
                                         )
                                     }
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WalletAccountCard(
+    balance: Double,
+    currency: String,
+    locale: String,
+    cashbackEnabled: Boolean,
+    cashbackPercentage: Double,
+    transactions: List<com.whitelabel.commerce.core.domain.model.WalletTransaction>,
+    isLoading: Boolean,
+    onRefresh: () -> Unit,
+) {
+    val brandColors = LocalBrandColors.current
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, brandColors.hairline),
+        shape = MaterialTheme.shapes.medium,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Surface(
+                color = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                shape = MaterialTheme.shapes.medium,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.AccountBalanceWallet,
+                                contentDescription = null,
+                                modifier = Modifier.size(24.dp),
+                            )
+                            Column {
+                                Text(
+                                    text = localized("رصيد المحفظة المتاح", "Available Wallet Balance"),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f),
+                                )
+                                Text(
+                                    text = formatPrice(balance, currency, locale),
+                                    style = MaterialTheme.typography.headlineSmall,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            }
+                        }
+                        IconButton(onClick = onRefresh) {
+                            Icon(
+                                imageVector = Icons.Rounded.Refresh,
+                                contentDescription = localized("تحديث المحفظة", "Refresh wallet"),
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                            )
+                        }
+                    }
+
+                    if (cashbackEnabled && cashbackPercentage > 0.0) {
+                        val pctStr = if (cashbackPercentage % 1.0 == 0.0) {
+                            cashbackPercentage.toInt().toString()
+                        } else {
+                            cashbackPercentage.toString()
+                        }
+                        Surface(
+                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.16f),
+                            shape = CircleShape,
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.AutoAwesome,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp),
+                                )
+                                Text(
+                                    text = localized(
+                                        "اكسب $pctStr% كاش باك عند اكتمال كل طلب",
+                                        "Earn $pctStr% cashback on every delivered order",
+                                    ),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            Text(
+                text = localized("سجل حركات المحفظة", "Wallet Transaction History"),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+            )
+
+            when {
+                isLoading && transactions.isEmpty() -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 10.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(22.dp))
+                    }
+                }
+
+                transactions.isEmpty() -> {
+                    Text(
+                        text = localized(
+                            "لا توجد حركات على المحفظة بعد. أكمل طلباتك لتربح كاش باك تلقائياً!",
+                            "No wallet transactions yet. Complete orders to earn automatic cashback!",
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                else -> {
+                    transactions.take(12).forEachIndexed { idx, tx ->
+                        if (idx > 0) HorizontalDivider(color = brandColors.hairline)
+                        val isCredit = tx.amount > 0.0
+                        val shortOrder = tx.orderId?.take(8)?.let { "#$it" }.orEmpty()
+                        val title = localized(
+                            arabic = tx.noteAr.ifBlank {
+                                when (tx.type) {
+                                    "cashback_earned" -> "كاش باك طلب $shortOrder".trim()
+                                    "order_redemption" -> "خصم على طلب $shortOrder".trim()
+                                    "order_refund" -> "استرداد طلب ملغي $shortOrder".trim()
+                                    "admin_credit" -> "رصيد إداري"
+                                    "admin_debit" -> "خصم إداري"
+                                    else -> "حركة محفظة"
+                                }
+                            },
+                            english = tx.noteEn.ifBlank {
+                                when (tx.type) {
+                                    "cashback_earned" -> "Cashback earned $shortOrder".trim()
+                                    "order_redemption" -> "Redeemed on order $shortOrder".trim()
+                                    "order_refund" -> "Refunded from order $shortOrder".trim()
+                                    "admin_credit" -> "Store credit added"
+                                    "admin_debit" -> "Store credit deducted"
+                                    else -> "Wallet adjustment"
+                                }
+                            },
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Surface(
+                                shape = CircleShape,
+                                color = if (isCredit) {
+                                    brandColors.success.copy(alpha = 0.14f)
+                                } else {
+                                    MaterialTheme.colorScheme.errorContainer
+                                },
+                                contentColor = if (isCredit) {
+                                    brandColors.success
+                                } else {
+                                    MaterialTheme.colorScheme.error
+                                },
+                                modifier = Modifier.size(32.dp),
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = if (isCredit) Icons.Rounded.SouthWest else Icons.Rounded.NorthEast,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                }
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = title,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                Text(
+                                    text = formatOrderDate(tx.createdAt),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                val sign = if (isCredit) "+" else "-"
+                                Text(
+                                    text = "$sign${formatPrice(kotlin.math.abs(tx.amount), currency, locale)}",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isCredit) brandColors.success else MaterialTheme.colorScheme.error,
+                                )
+                                Text(
+                                    text = localized(
+                                        "الرصيد: ${formatPrice(tx.balanceAfter, currency, locale)}",
+                                        "Bal: ${formatPrice(tx.balanceAfter, currency, locale)}",
+                                    ),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
                         }
                     }

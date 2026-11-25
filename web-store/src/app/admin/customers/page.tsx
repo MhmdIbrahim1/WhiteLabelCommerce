@@ -6,6 +6,7 @@ import { CustomersClient, type CustomerCrmRow } from "./customers-client";
 
 type RawCustomer = {
   id: string;
+  user_id: string | null;
   full_name: string;
   phone: string;
   email: string;
@@ -25,6 +26,18 @@ type RawOrder = {
   shipping_carrier: string | null;
 };
 
+type RawWalletTx = {
+  id: string;
+  user_id: string;
+  order_id: string | null;
+  type: string;
+  amount: number;
+  balance_after: number;
+  note_ar: string;
+  note_en: string;
+  created_at: string;
+};
+
 export default async function AdminCustomersPage({
   searchParams,
 }: {
@@ -41,7 +54,7 @@ export default async function AdminCustomersPage({
       .single<{ store_id: string; currency: string }>(),
     db
       .from("store_customers")
-      .select("id,full_name,phone,email,city,address,notes,created_at")
+      .select("id,user_id,full_name,phone,email,city,address,notes,created_at")
       .order("created_at", { ascending: false })
       .limit(500),
     db
@@ -51,9 +64,38 @@ export default async function AdminCustomersPage({
       .limit(1000),
   ]);
 
+  const storeId =
+    settingsRes.data?.store_id || "00000000-0000-0000-0000-000000000001";
   const currency = settingsRes.data?.currency || brand.currency;
   const customers = (checked(customersRes) as RawCustomer[]) ?? [];
   const orders = (checked(ordersRes) as RawOrder[]) ?? [];
+
+  const walletRes = await db
+    .from("wallet_transactions")
+    .select("id,user_id,order_id,type,amount,balance_after,note_ar,note_en,created_at")
+    .eq("store_id", storeId)
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(2000);
+  const walletRows = (!walletRes.error && walletRes.data
+    ? (walletRes.data as RawWalletTx[])
+    : []);
+
+  const walletByUser = new Map<
+    string,
+    { balance: number; transactions: RawWalletTx[] }
+  >();
+  for (const tx of walletRows) {
+    const entry = walletByUser.get(tx.user_id) ?? {
+      balance: 0,
+      transactions: [],
+    };
+    entry.balance = Math.round((entry.balance + Number(tx.amount)) * 100) / 100;
+    if (entry.transactions.length < 30) {
+      entry.transactions.push(tx);
+    }
+    walletByUser.set(tx.user_id, entry);
+  }
 
   const ordersByCustomer = new Map<string, RawOrder[]>();
   for (const o of orders) {
@@ -92,8 +134,11 @@ export default async function AdminCustomersPage({
       badge = "repeat";
     }
 
+    const walletInfo = c.user_id ? walletByUser.get(c.user_id) : undefined;
+
     return {
       id: c.id,
+      userId: c.user_id,
       fullName: c.full_name,
       phone: c.phone,
       email: c.email,
@@ -108,6 +153,17 @@ export default async function AdminCustomersPage({
       averageOrderValue,
       lastOrderDate,
       badge,
+      walletBalance: Math.max(0, walletInfo?.balance ?? 0),
+      walletTransactions: (walletInfo?.transactions ?? []).map((tx) => ({
+        id: tx.id,
+        order_id: tx.order_id,
+        type: tx.type,
+        amount: Number(tx.amount),
+        balance_after: Number(tx.balance_after),
+        note_ar: tx.note_ar,
+        note_en: tx.note_en,
+        created_at: tx.created_at,
+      })),
       orders: custOrders.map((o) => ({
         id: o.id,
         status: o.status,

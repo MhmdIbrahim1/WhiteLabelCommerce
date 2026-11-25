@@ -30,6 +30,7 @@ interface OrderRepository {
         coupon: String?,
         name: String,
         requestKey: String = UUID.randomUUID().toString(),
+        useWallet: Boolean = false,
     ): Result<CheckoutResult>
 
     /**

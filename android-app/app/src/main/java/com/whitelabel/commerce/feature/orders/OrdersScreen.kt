@@ -118,7 +118,9 @@ fun OrdersScreen(
     initialPaymentOutcome: PaymentFlowOutcome?,
     onConsumePrefill: () -> Unit,
     onOpenSupport: (orderId: String?) -> Unit,
+    onOpenAccount: () -> Unit = {},
     onShowMessage: (String) -> Unit,
+    onShowActionMessage: (message: String, actionLabel: String, onAction: () -> Unit) -> Unit = { msg, _, _ -> onShowMessage(msg) },
     modifier: Modifier = Modifier,
     viewModel: OrdersViewModel = hiltViewModel(),
 ) {
@@ -128,6 +130,7 @@ fun OrdersScreen(
     var pendingRetryChooser by remember { mutableStateOf<PendingRetrySelection?>(null) }
     var activeRetrySession by remember { mutableStateOf<ActiveRetrySession?>(null) }
     var paymentBanner by remember { mutableStateOf<PaymentFlowOutcome?>(null) }
+    var showGuestCodSignInPrompt by remember { mutableStateOf(false) }
 
     val enabledOnlineMethods = remember(state.storeSettings) {
         state.storeSettings.paymentMethods.filter { it == PaymentMethod.CARD || it == PaymentMethod.WALLET }
@@ -189,6 +192,68 @@ fun OrdersScreen(
                     outcome = outcome,
                     onDismiss = { paymentBanner = null },
                 )
+            }
+        }
+
+        if (showGuestCodSignInPrompt && !state.isSignedIn) {
+            item {
+                Surface(
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    shape = MaterialTheme.shapes.medium,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.35f)),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.ErrorOutline,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.secondary,
+                                modifier = Modifier.size(22.dp),
+                            )
+                            Text(
+                                text = localized(
+                                    "سجّل الدخول أولاً لتغيير طريقة الدفع",
+                                    "Please sign in first to switch payment method",
+                                ),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.weight(1f),
+                            )
+                            IconButton(
+                                onClick = { showGuestCodSignInPrompt = false },
+                                modifier = Modifier.size(28.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Close,
+                                    contentDescription = localized("إغلاق", "Dismiss"),
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                        ) {
+                            Button(
+                                onClick = {
+                                    showGuestCodSignInPrompt = false
+                                    onOpenAccount()
+                                },
+                                shape = MaterialTheme.shapes.small,
+                            ) {
+                                Text(localized("تسجيل الدخول", "Sign In"))
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -498,22 +563,37 @@ fun OrdersScreen(
             onConfirm = { chosenMethod, walletPhone ->
                 pendingRetryChooser = null
                 if (chosenMethod == PaymentMethod.COD) {
-                    viewModel.switchOrderToCod(selection.orderId, selection.orderPhone) { ok ->
-                        if (ok) {
-                            paymentBanner = PaymentFlowOutcome.SWITCHED_TO_COD
-                            onShowMessage(
-                                localized(
-                                    "تم تحويل الطلب إلى الدفع عند الاستلام بنجاح",
-                                    "Order switched to Cash on Delivery",
-                                ),
-                            )
-                        } else {
-                            onShowMessage(
-                                localized(
-                                    "تعذر تحويل الطلب إلى الدفع عند الاستلام حالياً",
-                                    "Could not switch order to Cash on Delivery right now",
-                                ),
-                            )
+                    viewModel.switchOrderToCod(selection.orderId, selection.orderPhone) { outcome ->
+                        when (outcome) {
+                            SwitchToCodOutcome.Success -> {
+                                showGuestCodSignInPrompt = false
+                                paymentBanner = PaymentFlowOutcome.SWITCHED_TO_COD
+                                onShowMessage(
+                                    localized(
+                                        "تم تحويل الطلب إلى الدفع عند الاستلام بنجاح",
+                                        "Order switched to Cash on Delivery",
+                                    ),
+                                )
+                            }
+                            SwitchToCodOutcome.RequiresSignIn -> {
+                                showGuestCodSignInPrompt = true
+                                onShowActionMessage(
+                                    localized(
+                                        "سجّل الدخول أولاً لتغيير طريقة الدفع",
+                                        "Please sign in first to switch payment method",
+                                    ),
+                                    localized("تسجيل الدخول", "Sign In"),
+                                    onOpenAccount,
+                                )
+                            }
+                            SwitchToCodOutcome.Failure -> {
+                                onShowMessage(
+                                    localized(
+                                        "تعذر تحويل الطلب إلى الدفع عند الاستلام حالياً",
+                                        "Could not switch order to Cash on Delivery right now",
+                                    ),
+                                )
+                            }
                         }
                     }
                 } else {
@@ -598,17 +678,19 @@ private fun RetryPaymentMethodSheet(
                     val isSelected = selectedMethod == method
                     val icon = when (method) {
                         PaymentMethod.CARD -> Icons.Rounded.CreditCard
-                        PaymentMethod.WALLET -> Icons.Rounded.AccountBalanceWallet
+                        PaymentMethod.WALLET, PaymentMethod.STORE_WALLET -> Icons.Rounded.AccountBalanceWallet
                         PaymentMethod.COD -> Icons.Rounded.Payments
                     }
                     val title = when (method) {
                         PaymentMethod.CARD -> localized("بطاقة بنكية (فيزا / ماستركارد)", "Bank Card (Visa / Mastercard)")
                         PaymentMethod.WALLET -> localized("محفظة إلكترونية", "Mobile Wallet")
+                        PaymentMethod.STORE_WALLET -> localized("رصيد محفظة المتجر", "Store Credit Wallet")
                         PaymentMethod.COD -> localized("الدفع عند الاستلام (كاش)", "Cash on Delivery (COD)")
                     }
                     val subtitle = when (method) {
                         PaymentMethod.CARD -> localized("دفع فوري وآمن عبر Paymob.", "Instant encrypted card checkout via Paymob.")
                         PaymentMethod.WALLET -> localized("فودافون كاش / اتصالات / أورنج / وي باي.", "Vodafone Cash / Etisalat / Orange / WE Pay.")
+                        PaymentMethod.STORE_WALLET -> localized("الدفع باستخدام رصيد محفظتك في المتجر.", "Pay using your available store credit balance.")
                         PaymentMethod.COD -> localized(
                             "حوّل الطلب فوراً إلى الدفع نقداً عند الاستلام وابدأ التجهيز.",
                             "Switch immediately to pay cash on delivery and start processing.",

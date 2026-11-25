@@ -24,7 +24,8 @@ enum class OrderStatus(val rawValue: String, private val arabicText: String) {
 enum class PaymentMethod(val rawValue: String, val arabicLabel: String) {
     COD("cod", "الدفع عند الاستلام"),
     CARD("paymob_card", "بطاقة ائتمان"),
-    WALLET("paymob_wallet", "محفظة إلكترونية");
+    WALLET("paymob_wallet", "محفظة إلكترونية"),
+    STORE_WALLET("wallet", "محفظة المتجر");
 
     companion object {
         fun fromRaw(value: String?): PaymentMethod? =
@@ -59,6 +60,8 @@ data class Order(
     val currency: String,
     val subtotal: Double? = null,
     val shippingFee: Double,
+    val walletDiscount: Double = 0.0,
+    val cashbackEarned: Double = 0.0,
     val total: Double? = null,
     val guestTracking: Boolean = false,
     val createdAt: String,

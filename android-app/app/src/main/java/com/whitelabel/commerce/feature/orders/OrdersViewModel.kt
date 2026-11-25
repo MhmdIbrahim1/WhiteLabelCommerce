@@ -33,10 +33,17 @@ data class OrderTrackingFormState(
     val isLoadingAccountOrders: Boolean = false,
 )
 
+sealed interface SwitchToCodOutcome {
+    data object Success : SwitchToCodOutcome
+    data object RequiresSignIn : SwitchToCodOutcome
+    data object Failure : SwitchToCodOutcome
+}
+
 data class OrdersUiState(
     val tracking: OrderTrackingFormState = OrderTrackingFormState(),
     val localReceipts: List<SavedOrderReceipt> = emptyList(),
     val storeSettings: StoreSettings = StoreSettings(),
+    val isSignedIn: Boolean = false,
 ) {
     val matchedReceiptForTracked: SavedOrderReceipt?
         get() {
@@ -58,16 +65,21 @@ class OrdersViewModel @Inject constructor(
         trackingState,
         orderRepository.savedLocalOrders,
         storeRepository.storeSettings,
-    ) { tracking, receipts, settings ->
+        authRepository.sessionState,
+    ) { tracking, receipts, settings, session ->
         OrdersUiState(
             tracking = tracking,
             localReceipts = receipts,
             storeSettings = settings,
+            isSignedIn = session is AuthSessionState.SignedIn,
         )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
-        initialValue = OrdersUiState(storeSettings = storeRepository.storeSettings.value),
+        initialValue = OrdersUiState(
+            storeSettings = storeRepository.storeSettings.value,
+            isSignedIn = authRepository.sessionState.value is AuthSessionState.SignedIn,
+        ),
     )
 
     init {
@@ -195,8 +207,12 @@ class OrdersViewModel @Inject constructor(
     fun switchOrderToCod(
         orderNumber: String,
         phone: String,
-        onComplete: (Boolean) -> Unit,
+        onComplete: (SwitchToCodOutcome) -> Unit,
     ) {
+        if (authRepository.sessionState.value !is AuthSessionState.SignedIn) {
+            onComplete(SwitchToCodOutcome.RequiresSignIn)
+            return
+        }
         viewModelScope.launch {
             val result = orderRepository.switchOrderToCod(orderNumber, phone)
             if (result.isSuccess) {
@@ -204,8 +220,15 @@ class OrdersViewModel @Inject constructor(
                 if (phone.isNotBlank()) {
                     prefillAndTrack(orderNumber, phone)
                 }
+                onComplete(SwitchToCodOutcome.Success)
+            } else {
+                val raw = result.exceptionOrNull()?.message.orEmpty().lowercase()
+                if ("not_authorized" in raw || "unauthorized" in raw) {
+                    onComplete(SwitchToCodOutcome.RequiresSignIn)
+                } else {
+                    onComplete(SwitchToCodOutcome.Failure)
+                }
             }
-            onComplete(result.isSuccess)
         }
     }
 }

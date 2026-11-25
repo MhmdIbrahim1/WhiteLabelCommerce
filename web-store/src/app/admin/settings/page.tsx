@@ -1,6 +1,10 @@
-import { ShieldCheck } from "lucide-react";
+import { ShieldCheck, Wallet } from "lucide-react";
 import { checked, requireAdmin } from "@/lib/db";
-import { savePaymentSettings, saveSettings } from "../mutations";
+import {
+  savePaymentSettings,
+  saveSettings,
+  saveWalletIncentiveSettings,
+} from "../mutations";
 import { TemplateGallery } from "./template-gallery";
 import { isTemplate } from "@/lib/theme-templates";
 import { getServerLang } from "@/lib/i18n-server";
@@ -18,6 +22,10 @@ type StoreSettingsRow = {
   paymob_enabled: boolean;
   paymob_card_enabled: boolean;
   paymob_wallet_enabled: boolean;
+  cart_incentive_enabled?: boolean | null;
+  free_shipping_threshold?: number | null;
+  cashback_enabled?: boolean | null;
+  cashback_percentage?: number | null;
 };
 
 type PaymentSecretRow = {
@@ -41,7 +49,7 @@ export default async function Settings({
     await db
       .from("store_settings")
       .select(
-        "store_id,store_name,shipping_fee,currency,whatsapp_number,banners,theme_template,cod_enabled,paymob_enabled,paymob_card_enabled,paymob_wallet_enabled",
+        "store_id,store_name,shipping_fee,currency,whatsapp_number,banners,theme_template,cod_enabled,paymob_enabled,paymob_card_enabled,paymob_wallet_enabled,cart_incentive_enabled,free_shipping_threshold,cashback_enabled,cashback_percentage",
       )
       .eq("id", true)
       .single<StoreSettingsRow>(),
@@ -271,6 +279,100 @@ export default async function Settings({
           <div className="wide">
             <button>
               {isEn ? "Save Payment Gateways" : "حفظ إعدادات بوابات الدفع"}
+            </button>
+          </div>
+        </form>
+      </section>
+
+      {/* Free Shipping & Cashback Wallet Settings */}
+      <section className="card">
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "0.75rem",
+            flexWrap: "wrap",
+            marginBottom: "0.5rem",
+          }}
+        >
+          <h2
+            style={{
+              margin: 0,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.45rem",
+            }}
+          >
+            <Wallet size={19} />
+            {isEn
+              ? "Free Shipping & Cashback Wallet"
+              : "الشحن المجاني ومحفظة الكاش باك"}
+          </h2>
+        </div>
+        <p style={{ marginTop: 0, opacity: 0.78, fontSize: "0.9rem" }}>
+          {isEn
+            ? "Boost average order value with a live free-shipping progress bar in the cart and reward repeat buyers with automatic cashback credit on delivered orders."
+            : "ارفع متوسط قيمة الطلب عبر شريط التقدم للشحن المجاني في السلة، وكافئ عملاءك بكاش باك تلقائي يُضاف لمحفظتهم عند اكتمال كل طلب."}
+        </p>
+
+        <form className="fields" action={saveWalletIncentiveSettings}>
+          <label className="check">
+            <input
+              type="checkbox"
+              name="cart_incentive_enabled"
+              defaultChecked={s.cart_incentive_enabled ?? true}
+            />{" "}
+            {isEn
+              ? "Enable Free-Shipping Cart Progress Bar"
+              : "تفعيل شريط التقدم للشحن المجاني في السلة"}
+          </label>
+
+          <label className="check">
+            <input
+              type="checkbox"
+              name="cashback_enabled"
+              defaultChecked={s.cashback_enabled ?? true}
+            />{" "}
+            {isEn
+              ? "Enable Automatic Cashback Wallet"
+              : "تفعيل نظام الكاش باك التلقائي للمحفظة"}
+          </label>
+
+          <label>
+            {isEn
+              ? `Free Shipping Threshold (${s.currency})`
+              : `الحد الأدنى للشحن المجاني (${s.currency})`}
+            <input
+              type="number"
+              name="free_shipping_threshold"
+              min="0"
+              step="1"
+              defaultValue={s.free_shipping_threshold ?? 1000}
+              required
+            />
+          </label>
+
+          <label>
+            {isEn
+              ? "Cashback Percentage (% · 0–50)"
+              : "نسبة الكاش باك (% · من 0 إلى 50)"}
+            <input
+              type="number"
+              name="cashback_percentage"
+              min="0"
+              max="50"
+              step="0.5"
+              defaultValue={s.cashback_percentage ?? 5}
+              required
+            />
+          </label>
+
+          <div className="wide">
+            <button>
+              {isEn
+                ? "Save Free Shipping & Wallet Settings"
+                : "حفظ إعدادات الشحن المجاني والمحفظة"}
             </button>
           </div>
         </form>

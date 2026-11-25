@@ -61,18 +61,27 @@ export async function notifyOrderCreated(orderId: string): Promise<void> {
     const totalLabelEn = `${Number(order.total).toFixed(0)} ${order.currency}`;
     const totalLabelAr = `${Number(order.total).toFixed(0)} ${formatArabicCurrency(order.currency)}`;
 
-    // Customer confirmation (COD confirmed immediately; online notifies when payment completes)
-    if (order.payment_method === "cod") {
+    // Customer confirmation (COD or full Store Wallet confirmed immediately; online notifies when payment completes)
+    if (order.payment_method === "cod" || order.payment_method === "wallet") {
+      const isWallet = order.payment_method === "wallet";
       await dispatchNotification({
         storeId: order.store_id,
         userId: order.user_id,
         phone: order.phone,
         targetRole: "customer",
         category: "order_update",
-        titleAr: `تم استلام طلبك ${codeAr}`,
-        titleEn: `Order ${code} Received`,
-        bodyAr: `شكراً لتسوّقك معنا! طلبك بقيمة ${totalLabelAr} قيد المراجعة وسيتم تجهيزه قريباً.`,
-        bodyEn: `Thank you for your order! Your ${totalLabelEn} COD order is confirmed and being prepared.`,
+        titleAr: isWallet
+          ? `تم تأكيد طلبك بالمحفظة ${codeAr}`
+          : `تم استلام طلبك ${codeAr}`,
+        titleEn: isWallet
+          ? `Wallet Order ${code} Confirmed`
+          : `Order ${code} Received`,
+        bodyAr: isWallet
+          ? `تم سداد طلبك بالكامل باستخدام رصيد محفظة المتجر وجارٍ تجهيزه للشحن الآن.`
+          : `شكراً لتسوّقك معنا! طلبك بقيمة ${totalLabelAr} قيد المراجعة وسيتم تجهيزه قريباً.`,
+        bodyEn: isWallet
+          ? `Your order was paid in full using your store wallet and is now being prepared.`
+          : `Thank you for your order! Your ${totalLabelEn} COD order is confirmed and being prepared.`,
         deepLink: `/orders?order=${order.id}`,
         dedupeKey: `order_created:${order.id}`,
         data: { order_id: order.id, status: order.status },
@@ -80,11 +89,17 @@ export async function notifyOrderCreated(orderId: string): Promise<void> {
     }
 
     // Admin new order alert
+    const methodLabelAr =
+      order.payment_method === "wallet"
+        ? "رصيد المحفظة"
+        : order.payment_method === "cod"
+          ? "عند الاستلام"
+          : "دفع إلكتروني";
     await notifyStoreAdmins({
       storeId: order.store_id,
       titleAr: `طلب جديد ${codeAr}`,
       titleEn: `New Order ${code}`,
-      bodyAr: `تم تسجيل طلب جديد بقيمة ${totalLabelAr} (${order.payment_method === "cod" ? "عند الاستلام" : "دفع إلكتروني"}).`,
+      bodyAr: `تم تسجيل طلب جديد بقيمة ${totalLabelAr} (${methodLabelAr}).`,
       bodyEn: `A new ${totalLabelEn} order was placed (${order.payment_method}).`,
       deepLink: `/admin/orders/${order.id}`,
       dedupeKey: `admin_new_order:${order.id}`,
@@ -454,4 +469,51 @@ export async function runRecoveryAutomations(storeId?: string): Promise<{
   }
 
   return { abandonedCartsNotified, unpaidOrdersNotified };
+}
+
+/**
+ * Fires when cashback is credited to a customer's wallet on order delivery.
+ */
+export async function notifyWalletCashback(params: {
+  storeId: string;
+  userId: string;
+  orderId: string;
+  amount: number;
+  balanceAfter: number;
+  currency: string;
+}): Promise<void> {
+  try {
+    if (!params.userId || params.amount <= 0) return;
+    const code = shortOrderId(params.orderId);
+    const codeAr = rtlSafeOrderCode(params.orderId);
+    const formattedAmount = Number(params.amount).toFixed(
+      Number.isInteger(params.amount) ? 0 : 2,
+    );
+    const formattedBalance = Number(params.balanceAfter).toFixed(
+      Number.isInteger(params.balanceAfter) ? 0 : 2,
+    );
+    const currencyAr = formatArabicCurrency(params.currency);
+
+    await dispatchNotification({
+      storeId: params.storeId,
+      userId: params.userId,
+      targetRole: "customer",
+      category: "order_update",
+      titleAr: `تم إضافة ${formattedAmount} ${currencyAr} كاش باك إلى محفظتك!`,
+      titleEn: `${formattedAmount} ${params.currency} cashback added to your wallet!`,
+      bodyAr: `مبروك! ربحت ${formattedAmount} ${currencyAr} كاش باك عن الطلب ${codeAr}. رصيدك المتاح الآن: ${formattedBalance} ${currencyAr}.`,
+      bodyEn: `Congrats! You earned ${formattedAmount} ${params.currency} cashback on order ${code}. Available balance: ${formattedBalance} ${params.currency}.`,
+      deepLink: "/account",
+      dedupeKey: `wallet_cashback:${params.orderId}`,
+      data: {
+        order_id: params.orderId,
+        cashback_amount: params.amount,
+        balance_after: params.balanceAfter,
+      },
+    });
+  } catch (err) {
+    console.error("[notifications] notifyWalletCashback failed", {
+      code: err instanceof Error ? err.message : "unknown",
+    });
+  }
 }

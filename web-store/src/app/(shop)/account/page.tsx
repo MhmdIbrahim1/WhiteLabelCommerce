@@ -18,6 +18,10 @@ import { getServerLang } from "@/lib/i18n-server";
 import { Timeline } from "@/components/shop/tracking";
 import { HybridAuthPanel } from "@/components/shop/hybrid-auth-panel";
 import { EgyptAddressFields } from "@/components/shop/egypt-address-fields";
+import {
+  WalletSection,
+  type WalletSummaryData,
+} from "@/components/shop/wallet-section";
 import type { Summary } from "../orders/actions";
 import { logout, saveCustomerAccount } from "../../login/actions";
 
@@ -88,7 +92,7 @@ export default async function AccountPage({
     );
   }
 
-  const [profileRes, ordersRes] = await Promise.all([
+  const [profileRes, ordersRes, walletRes] = await Promise.all([
     db
       .from("store_customers")
       .select("full_name,phone,email,governorate,city,address")
@@ -97,12 +101,32 @@ export default async function AccountPage({
     db
       .from("orders")
       .select(
-        "id,status,created_at,total,currency,shipping_carrier,tracking_number,tracking_url,courier_note,shipped_at,delivered_at,order_items(id,product_name,quantity,unit_price,size,color)",
+        "id,status,created_at,total,currency,payment_method,payment_status,shipping_carrier,tracking_number,tracking_url,courier_note,shipped_at,delivered_at,order_items(id,product_name,quantity,unit_price,size,color)",
       )
       .eq("user_id", user.id)
       .order("created_at", { ascending: false })
       .limit(50),
+    db.rpc("get_customer_wallet_summary", {
+      p_store_id: store.storeId,
+      p_user_id: user.id,
+    }),
   ]);
+
+  const rawWallet = (!walletRes.error && walletRes.data
+    ? (walletRes.data as Partial<WalletSummaryData>)
+    : null);
+  const walletSummary: WalletSummaryData = {
+    balance: Math.max(0, Number(rawWallet?.balance ?? 0)),
+    currency: String(rawWallet?.currency || store.currency),
+    cashback_enabled:
+      rawWallet?.cashback_enabled ?? store.incentives.cashbackEnabled,
+    cashback_percentage: Number(
+      rawWallet?.cashback_percentage ?? store.incentives.cashbackPercentage,
+    ),
+    transactions: Array.isArray(rawWallet?.transactions)
+      ? rawWallet.transactions
+      : [],
+  };
 
   const ArrowIcon = lang === "en" ? ArrowRight : ArrowLeft;
   const profile = profileRes.data;
@@ -170,6 +194,8 @@ export default async function AccountPage({
           </div>
         </article>
       </div>
+
+      <WalletSection summary={walletSummary} />
 
       <div className="details-grid" style={{ marginTop: "1.75rem" }}>
         <section className="panel">

@@ -15,6 +15,7 @@ import com.whitelabel.commerce.core.domain.repository.AuthRepository
 import com.whitelabel.commerce.core.domain.repository.CartRepository
 import com.whitelabel.commerce.core.domain.repository.OrderRepository
 import com.whitelabel.commerce.core.domain.repository.StoreRepository
+import com.whitelabel.commerce.core.domain.repository.WalletRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -38,6 +39,7 @@ data class CheckoutFormState(
     val isApplyingCoupon: Boolean = false,
     val couponError: String? = null,
     val wallet: String = "",
+    val useStoreWallet: Boolean = false,
     val customerName: String = "",
     val phone: String = "",
     val governorate: String = "",
@@ -60,15 +62,32 @@ data class CheckoutUiState(
     val subtotal: Double = 0.0,
     val storeSettings: StoreSettings = StoreSettings(),
     val signedInEmail: String? = null,
+    val walletBalance: Double = 0.0,
 ) {
     val shippingFee: Double
-        get() = if (cartItems.isEmpty()) 0.0 else storeSettings.shippingFee
+        get() = if (cartItems.isEmpty()) 0.0 else storeSettings.effectiveShippingFee(subtotal)
 
     val appliedDiscount: Double
         get() = if (form.couponSubtotal == subtotal) form.discount else 0.0
 
-    val grandTotal: Double
+    val preWalletTotal: Double
         get() = (subtotal - appliedDiscount).coerceAtLeast(0.0) + shippingFee
+
+    val canUseStoreWallet: Boolean
+        get() = signedInEmail != null && walletBalance > 0.0
+
+    val walletApplied: Double
+        get() = if (canUseStoreWallet && form.useStoreWallet) {
+            minOf(walletBalance, preWalletTotal)
+        } else {
+            0.0
+        }
+
+    val grandTotal: Double
+        get() = (preWalletTotal - walletApplied).coerceAtLeast(0.0)
+
+    val fullyPaidByWallet: Boolean
+        get() = walletApplied > 0.0 && grandTotal <= 0.0
 }
 
 @HiltViewModel
@@ -76,10 +95,12 @@ class CheckoutViewModel @Inject constructor(
     private val cartRepository: CartRepository,
     private val orderRepository: OrderRepository,
     private val authRepository: AuthRepository,
+    private val walletRepository: WalletRepository,
     storeRepository: StoreRepository,
 ) : ViewModel() {
 
     private val formState = MutableStateFlow(CheckoutFormState())
+    private val walletBalanceState = MutableStateFlow(0.0)
 
     // Held stable across retries for identical cart + form so `mobile_checkout` stays idempotent.
     private var idempotencyKey: String = UUID.randomUUID().toString()
@@ -104,8 +125,19 @@ class CheckoutViewModel @Inject constructor(
                             address = current.address.ifBlank { profile.address },
                         )
                     }
+                    refreshWalletBalance()
+                } else if (session is AuthSessionState.SignedOut) {
+                    walletBalanceState.value = 0.0
+                    formState.update { it.copy(useStoreWallet = false) }
                 }
             }
+        }
+    }
+
+    private fun refreshWalletBalance() {
+        viewModelScope.launch {
+            walletRepository.getMyWalletSummary()
+                .onSuccess { summary -> walletBalanceState.value = summary.balance.coerceAtLeast(0.0) }
         }
     }
 
@@ -114,8 +146,8 @@ class CheckoutViewModel @Inject constructor(
         cartRepository.cartItems,
         cartRepository.subtotal,
         storeRepository.storeSettings,
-        authRepository.sessionState,
-    ) { form, items, subtotal, settings, session ->
+        combine(authRepository.sessionState, walletBalanceState) { s, bal -> s to bal },
+    ) { form, items, subtotal, settings, (session, walletBal) ->
         val resolvedMethod = form.paymentMethod.takeIf { it in settings.paymentMethods }
             ?: settings.paymentMethods.firstOrNull()
             ?: PaymentMethod.COD
@@ -125,12 +157,17 @@ class CheckoutViewModel @Inject constructor(
             subtotal = subtotal,
             storeSettings = settings,
             signedInEmail = (session as? AuthSessionState.SignedIn)?.email?.takeIf { it.isNotBlank() },
+            walletBalance = walletBal,
         )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = CheckoutUiState(storeSettings = storeRepository.storeSettings.value),
     )
+
+    fun setUseStoreWallet(enabled: Boolean) {
+        formState.update { it.copy(useStoreWallet = enabled, submitError = null) }
+    }
 
     fun method(value: PaymentMethod) {
         formState.update { it.copy(paymentMethod = value, submitError = null) }
@@ -204,7 +241,15 @@ class CheckoutViewModel @Inject constructor(
         val form = current.form
         if (form.isSubmitting || form.confirmedReceipt != null) return
 
-        if (form.paymentMethod !in current.storeSettings.paymentMethods || !current.storeSettings.isSyncedFromRemote) {
+        val effectiveMethod = if (current.fullyPaidByWallet) {
+            PaymentMethod.STORE_WALLET
+        } else {
+            form.paymentMethod
+        }
+
+        if (!current.storeSettings.isSyncedFromRemote ||
+            (!current.fullyPaidByWallet && effectiveMethod !in current.storeSettings.paymentMethods)
+        ) {
             formState.update {
                 it.copy(submitError = localized("طريقة الدفع المختارة غير متاحة حالياً.", "Selected payment method is currently unavailable."))
             }
@@ -212,7 +257,7 @@ class CheckoutViewModel @Inject constructor(
         }
 
         val cleanWallet = PhoneNormalizer.normalize(form.wallet)
-        if (form.paymentMethod == PaymentMethod.WALLET && !WALLET_REGEX.matches(cleanWallet)) {
+        if (effectiveMethod == PaymentMethod.WALLET && !WALLET_REGEX.matches(cleanWallet)) {
             formState.update {
                 it.copy(
                     submitError = localized(
@@ -293,23 +338,32 @@ class CheckoutViewModel @Inject constructor(
         val subtotalSnapshot = current.subtotal
         val shippingSnapshot = current.shippingFee
         val couponToSend = form.coupon.trim().takeIf { it.isNotEmpty() && form.couponSubtotal == current.subtotal }
+        val useWalletFlag = current.canUseStoreWallet && form.useStoreWallet
 
         viewModelScope.launch {
             formState.update { it.copy(isSubmitting = true, submitError = null) }
 
             orderRepository.placeOrder(
-                method = form.paymentMethod,
+                method = effectiveMethod,
                 coupon = couponToSend,
                 name = cleanName,
                 shippingAddress = cleanAddress,
                 customerPhone = normalizedPhone,
                 items = cartSnapshot,
                 requestKey = idempotencyKey,
+                useWallet = useWalletFlag,
             ).onSuccess { result ->
+                val isPaidViaWallet = effectiveMethod == PaymentMethod.STORE_WALLET || result.amount <= 0.0
+                val receiptMethod = if (isPaidViaWallet) PaymentMethod.STORE_WALLET.rawValue else effectiveMethod.rawValue
+                val receiptPaymentStatus = when {
+                    isPaidViaWallet -> "paid"
+                    effectiveMethod == PaymentMethod.COD -> "unpaid"
+                    else -> "pending"
+                }
                 val receipt = SavedOrderReceipt(
                     orderNumber = result.orderNumber,
-                    method = form.paymentMethod.rawValue,
-                    paymentStatus = if (form.paymentMethod == PaymentMethod.COD) "unpaid" else "pending",
+                    method = receiptMethod,
+                    paymentStatus = receiptPaymentStatus,
                     customerName = cleanName,
                     phone = normalizedPhone,
                     shippingAddress = cleanAddress,
@@ -317,7 +371,7 @@ class CheckoutViewModel @Inject constructor(
                     subtotal = subtotalSnapshot,
                     shippingFee = shippingSnapshot,
                     total = result.amount,
-                    status = OrderStatus.PENDING,
+                    status = if (isPaidViaWallet) OrderStatus.CONFIRMED else OrderStatus.PENDING,
                     createdAt = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date()),
                     items = cartSnapshot.map { line ->
                         SavedOrderLine(
@@ -332,9 +386,12 @@ class CheckoutViewModel @Inject constructor(
                     },
                 )
                 orderRepository.saveLocalOrderReceipt(receipt)
-                // COD clears cart immediately; Paymob online methods keep cart intact until paid!
-                if (form.paymentMethod == PaymentMethod.COD) {
+                // COD & full Store Wallet clear cart immediately; Paymob online methods keep cart intact until paid!
+                if (effectiveMethod == PaymentMethod.COD || isPaidViaWallet) {
                     cartRepository.settleReceipt(receipt)
+                }
+                if (useWalletFlag) {
+                    refreshWalletBalance()
                 }
                 idempotencyKey = UUID.randomUUID().toString()
 
@@ -360,6 +417,10 @@ class CheckoutViewModel @Inject constructor(
     }
 
     private fun mapCheckoutError(raw: String): String = when {
+        "insufficient_wallet_balance" in raw -> localized(
+            "رصيد المحفظة لم يعد كافياً لتغطية كامل قيمة الطلب.",
+            "Your wallet balance is no longer sufficient to cover the full order.",
+        )
         "stock_unavailable" in raw -> localized(
             "بعض المنتجات غير متوفرة حالياً بالكمية المطلوبة. يرجى مراجعة السلة.",
             "Some items are no longer available in this quantity.",

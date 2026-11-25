@@ -49,6 +49,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.SubcomposeAsyncImage
 import com.whitelabel.commerce.core.designsystem.LocalBrandColors
 import com.whitelabel.commerce.core.designsystem.components.BrandEmptyState
+import com.whitelabel.commerce.core.designsystem.components.FreeShippingProgressBar
 import com.whitelabel.commerce.core.designsystem.components.ProductImageFallback
 import com.whitelabel.commerce.core.designsystem.components.rememberShimmerBrush
 import com.whitelabel.commerce.core.designsystem.formatPrice
@@ -104,6 +105,18 @@ fun CartScreen(
                             color = MaterialTheme.colorScheme.error,
                         )
                     }
+                }
+            }
+
+            if (state.cartIncentiveEnabled && state.freeShippingThreshold > 0.0) {
+                item {
+                    FreeShippingProgressBar(
+                        enabled = state.cartIncentiveEnabled,
+                        threshold = state.freeShippingThreshold,
+                        subtotal = state.subtotal,
+                        currency = state.currency,
+                        locale = state.locale,
+                    )
                 }
             }
 

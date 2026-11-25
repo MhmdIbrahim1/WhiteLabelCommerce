@@ -1978,6 +1978,7 @@ details details,
   z-index: 2;
   max-width: 620px;
   display: grid;
+  justify-items: start;
   gap: 0.65rem;
   transition:
     opacity 460ms ease 80ms,
@@ -2685,4 +2686,163 @@ details details,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Phase 10A: Admin Customer Wallet Badges & Manage Wallet Modal */
+.crm-wallet-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.22rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  background: var(--wash);
+  color: var(--muted);
+  border: 1px solid var(--line);
+}
+
+.crm-wallet-badge.has-credit {
+  background: #e1f4e8;
+  color: #166534;
+  border-color: #bbf7d0;
+}
+
+.crm-wallet-btn {
+  padding: 0.36rem 0.7rem;
+  font-size: 0.8rem;
+}
+
+.wallet-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  background: rgba(15, 23, 42, 0.5);
+  backdrop-filter: blur(4px);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.wallet-modal {
+  width: min(100%, 480px);
+  max-height: 90dvh;
+  overflow-y: auto;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 1.35rem;
+  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.28);
+  display: grid;
+  gap: 1rem;
+}
+
+.wallet-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.wallet-modal-head h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.wallet-modal-balance {
+  padding: 0.95rem 1.1rem;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary) 75%, #0f172a));
+  color: #fff;
+  display: grid;
+  gap: 0.15rem;
+}
+
+.wallet-modal-balance small {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.wallet-modal-balance strong {
+  font-size: 1.55rem;
+  line-height: 1.2;
+}
+
+.wallet-modal-form {
+  margin-top: 0;
+  display: grid;
+  gap: 0.8rem;
+}
+
+.wallet-dir-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.wallet-dir-toggle button {
+  width: 100%;
+  background: var(--wash);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  padding: 0.55rem 0.75rem;
+  font-size: 0.86rem;
+}
+
+.wallet-dir-toggle button.is-credit-active {
+  background: #15803d;
+  color: #fff;
+  border-color: #15803d;
+}
+
+.wallet-dir-toggle button.is-debit-active {
+  background: #b91c1c;
+  color: #fff;
+  border-color: #b91c1c;
+}
+
+.wallet-modal-history {
+  border-top: 1px solid var(--line);
+  padding-top: 0.9rem;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.wallet-modal-history h3 {
+  margin: 0;
+  font-size: 0.94rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.wallet-modal-tx-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.45rem;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.wallet-modal-tx-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 10px;
+  background: var(--wash);
+  border: 1px solid var(--line);
+  font-size: 0.84rem;
+}
+
+.wallet-modal-tx-row strong {
+  display: block;
+}
+
+.order-totals-breakdown {
+  display: grid;
+  gap: 0.2rem;
 }

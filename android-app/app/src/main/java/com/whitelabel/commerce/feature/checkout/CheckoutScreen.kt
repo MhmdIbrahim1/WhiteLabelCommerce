@@ -42,6 +42,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -64,6 +65,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.whitelabel.commerce.core.designsystem.LocalBrandColors
 import com.whitelabel.commerce.core.designsystem.components.ColorSwatchMapper
 import com.whitelabel.commerce.core.designsystem.components.EgyptCascadingAddressFields
+import com.whitelabel.commerce.core.designsystem.components.FreeShippingProgressBar
 import com.whitelabel.commerce.core.designsystem.formatPrice
 import com.whitelabel.commerce.core.designsystem.localized
 import com.whitelabel.commerce.core.domain.model.PaymentMethod
@@ -87,7 +89,12 @@ fun CheckoutScreen(
     val confirmedReceipt = state.form.confirmedReceipt
 
     // Online payment flow (Paymob Card / Wallet): opens in-app WebView while preserving local cart
-    if (confirmedReceipt != null && confirmedReceipt.method != "cod") {
+    // Skip Paymob when paid via COD or Store Wallet (total == 0)
+    if (confirmedReceipt != null &&
+        confirmedReceipt.method != "cod" &&
+        confirmedReceipt.method != "wallet" &&
+        confirmedReceipt.total > 0.0
+    ) {
         PaymentFlow(
             id = confirmedReceipt.orderNumber,
             phone = confirmedReceipt.phone,
@@ -100,7 +107,7 @@ fun CheckoutScreen(
         return
     }
 
-    // COD order confirmation receipt (local cart already cleared)
+    // COD or Full Store Wallet order confirmation receipt (local cart already cleared)
     if (confirmedReceipt != null) {
         OrderConfirmationScreen(
             receipt = confirmedReceipt,
@@ -113,7 +120,8 @@ fun CheckoutScreen(
         return
     }
 
-    val walletValid = state.form.paymentMethod != PaymentMethod.WALLET ||
+    val walletValid = state.fullyPaidByWallet ||
+        state.form.paymentMethod != PaymentMethod.WALLET ||
         WALLET_INPUT_REGEX.matches(state.form.wallet)
 
     Scaffold(
@@ -178,7 +186,7 @@ fun CheckoutScreen(
                             enabled = !state.form.isSubmitting &&
                                 state.cartItems.isNotEmpty() &&
                                 state.storeSettings.isSyncedFromRemote &&
-                                state.form.paymentMethod in state.storeSettings.paymentMethods &&
+                                (state.fullyPaidByWallet || state.form.paymentMethod in state.storeSettings.paymentMethods) &&
                                 walletValid,
                             shape = MaterialTheme.shapes.small,
                             modifier = Modifier
@@ -193,10 +201,19 @@ fun CheckoutScreen(
                                 )
                             } else {
                                 Text(
-                                    text = if (state.form.paymentMethod == PaymentMethod.COD) {
-                                        localized("تأكيد الطلب", "Confirm order")
-                                    } else {
-                                        localized("المتابعة للدفع الآمن", "Proceed to secure payment")
+                                    text = when {
+                                        state.fullyPaidByWallet -> localized(
+                                            "إتمام الطلب برصيد المحفظة",
+                                            "Complete with Store Wallet",
+                                        )
+                                        state.form.paymentMethod == PaymentMethod.COD -> localized(
+                                            "تأكيد الطلب",
+                                            "Confirm order",
+                                        )
+                                        else -> localized(
+                                            "المتابعة للدفع الآمن",
+                                            "Proceed to secure payment",
+                                        )
                                     },
                                     style = MaterialTheme.typography.labelLarge,
                                 )
@@ -215,6 +232,15 @@ fun CheckoutScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            if (state.storeSettings.cartIncentiveEnabled && state.storeSettings.freeShippingThreshold > 0.0) {
+                FreeShippingProgressBar(
+                    enabled = state.storeSettings.cartIncentiveEnabled,
+                    threshold = state.storeSettings.freeShippingThreshold,
+                    subtotal = state.subtotal,
+                    currency = state.storeSettings.currency,
+                    locale = state.storeSettings.locale,
+                )
+            }
             // 0. Optional Account Sign-In / Signed-In Sync Banner (Guest Checkout remains fully open)
             Surface(
                 color = if (state.signedInEmail != null) {
@@ -354,112 +380,215 @@ fun CheckoutScreen(
                 }
             }
 
-            // 2. Payment Methods Card (strictly renders only store-enabled methods)
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = BorderStroke(1.dp, brandColors.hairline),
-                shape = MaterialTheme.shapes.medium,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+            // 2. Store Credit Wallet Opt-In Card + Payment Methods Card
+            if (state.canUseStoreWallet) {
+                Surface(
+                    color = if (state.form.useStoreWallet) {
+                        brandColors.success.copy(alpha = 0.10f)
+                    } else {
+                        MaterialTheme.colorScheme.surface
+                    },
+                    shape = MaterialTheme.shapes.medium,
+                    border = BorderStroke(
+                        width = if (state.form.useStoreWallet) 1.5.dp else 1.dp,
+                        color = if (state.form.useStoreWallet) brandColors.success else brandColors.hairline,
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(
-                        text = localized("طريقة الدفع", "Payment method"),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
-
-                    state.storeSettings.paymentMethods.forEach { option ->
-                        val isSelected = state.form.paymentMethod == option
-                        val icon = when (option) {
-                            PaymentMethod.COD -> Icons.Rounded.Payments
-                            PaymentMethod.CARD -> Icons.Rounded.CreditCard
-                            PaymentMethod.WALLET -> Icons.Rounded.AccountBalanceWallet
-                        }
-                        val title = when (option) {
-                            PaymentMethod.COD -> localized("الدفع عند الاستلام", "Cash on delivery")
-                            PaymentMethod.CARD -> localized("بطاقة بنكية (فيزا / ماستركارد)", "Credit / Debit card")
-                            PaymentMethod.WALLET -> localized("محفظة إلكترونية (فودافون / اتصالات / أورنج)", "Mobile wallet")
-                        }
-                        val subtitle = when (option) {
-                            PaymentMethod.COD -> localized("ادفع نقداً للمندوب عند استلام طلبك.", "Pay in cash upon delivery.")
-                            PaymentMethod.CARD -> localized("دفع إلكتروني آمن ومشفّر عبر Paymob.", "Encrypted online card checkout via Paymob.")
-                            PaymentMethod.WALLET -> localized("استلم طلب التأكيد على محفظتك المصرية.", "Confirm payment directly on your Egyptian wallet.")
-                        }
-
-                        Surface(
-                            color = if (isSelected) {
-                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
-                            } else {
-                                MaterialTheme.colorScheme.surface
-                            },
-                            shape = MaterialTheme.shapes.small,
-                            border = BorderStroke(
-                                width = if (isSelected) 1.5.dp else 1.dp,
-                                color = if (isSelected) MaterialTheme.colorScheme.primary else brandColors.hairline,
-                            ),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .selectable(
-                                    selected = isSelected,
-                                    role = Role.RadioButton,
-                                    onClick = { viewModel.method(option) },
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.AccountBalanceWallet,
+                            contentDescription = null,
+                            tint = brandColors.success,
+                            modifier = Modifier.size(24.dp),
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            val balStr = formatPrice(
+                                state.walletBalance,
+                                state.storeSettings.currency,
+                                state.storeSettings.locale,
+                            )
+                            Text(
+                                text = localized(
+                                    "استخدام رصيد المحفظة ($balStr)",
+                                    "Use Wallet Credit ($balStr)",
                                 ),
-                        ) {
-                            Row(
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                                text = if (state.form.useStoreWallet) {
+                                    val dedStr = formatPrice(
+                                        state.walletApplied,
+                                        state.storeSettings.currency,
+                                        state.storeSettings.locale,
+                                    )
+                                    localized(
+                                        "سيتم خصم $dedStr فوراً من إجمالي الطلب.",
+                                        "Deducting $dedStr from your payable total.",
+                                    )
+                                } else {
+                                    localized(
+                                        "فعّل لاستخدام رصيد محفظة المتجر على هذا الطلب.",
+                                        "Toggle on to apply your available store credit.",
+                                    )
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(
+                            checked = state.form.useStoreWallet,
+                            onCheckedChange = viewModel::setUseStoreWallet,
+                        )
+                    }
+                }
+            }
+
+            if (state.fullyPaidByWallet) {
+                Surface(
+                    color = brandColors.success.copy(alpha = 0.14f),
+                    contentColor = brandColors.success,
+                    shape = MaterialTheme.shapes.medium,
+                    border = BorderStroke(1.dp, brandColors.success.copy(alpha = 0.4f)),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.CheckCircle,
+                            contentDescription = null,
+                            modifier = Modifier.size(22.dp),
+                        )
+                        Text(
+                            text = localized(
+                                "مغطّى بالكامل برصيد محفظة المتجر — لا يلزم دفع إضافي.",
+                                "Paid in full via Store Wallet — no extra payment required.",
+                            ),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
+            } else {
+                // Payment Methods Card (strictly renders only store-enabled methods)
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, brandColors.hairline),
+                    shape = MaterialTheme.shapes.medium,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Text(
+                            text = localized("طريقة الدفع", "Payment method"),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+
+                        state.storeSettings.paymentMethods.forEach { option ->
+                            val isSelected = state.form.paymentMethod == option
+                            val icon = when (option) {
+                                PaymentMethod.COD -> Icons.Rounded.Payments
+                                PaymentMethod.CARD -> Icons.Rounded.CreditCard
+                                PaymentMethod.WALLET, PaymentMethod.STORE_WALLET -> Icons.Rounded.AccountBalanceWallet
+                            }
+                            val title = when (option) {
+                                PaymentMethod.COD -> localized("الدفع عند الاستلام", "Cash on delivery")
+                                PaymentMethod.CARD -> localized("بطاقة بنكية (فيزا / ماستركارد)", "Credit / Debit card")
+                                PaymentMethod.WALLET -> localized("محفظة إلكترونية (فودافون / اتصالات / أورنج)", "Mobile wallet")
+                                PaymentMethod.STORE_WALLET -> localized("محفظة المتجر", "Store wallet")
+                            }
+                            val subtitle = when (option) {
+                                PaymentMethod.COD -> localized("ادفع نقداً للمندوب عند استلام طلبك.", "Pay in cash upon delivery.")
+                                PaymentMethod.CARD -> localized("دفع إلكتروني آمن ومشفّر عبر Paymob.", "Encrypted online card checkout via Paymob.")
+                                PaymentMethod.WALLET -> localized("استلم طلب التأكيد على محفظتك المصرية.", "Confirm payment directly on your Egyptian wallet.")
+                                PaymentMethod.STORE_WALLET -> localized("الدفع برصيد محفظتك في المتجر.", "Pay using your store wallet balance.")
+                            }
+
+                            Surface(
+                                color = if (isSelected) {
+                                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                                } else {
+                                    MaterialTheme.colorScheme.surface
+                                },
+                                shape = MaterialTheme.shapes.small,
+                                border = BorderStroke(
+                                    width = if (isSelected) 1.5.dp else 1.dp,
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary else brandColors.hairline,
+                                ),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    .selectable(
+                                        selected = isSelected,
+                                        role = Role.RadioButton,
+                                        onClick = { viewModel.method(option) },
+                                    ),
                             ) {
-                                RadioButton(selected = isSelected, onClick = null)
-                                Icon(
-                                    imageVector = icon,
-                                    contentDescription = null,
-                                    tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = title,
-                                        style = MaterialTheme.typography.titleSmall,
-                                        fontWeight = FontWeight.Bold,
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                ) {
+                                    RadioButton(selected = isSelected, onClick = null)
+                                    Icon(
+                                        imageVector = icon,
+                                        contentDescription = null,
+                                        tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
-                                    Text(
-                                        text = subtitle,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = title,
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold,
+                                        )
+                                        Text(
+                                            text = subtitle,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
                                 }
                             }
                         }
-                    }
 
-                    if (state.form.paymentMethod == PaymentMethod.WALLET) {
-                        val walletInvalid = !WALLET_INPUT_REGEX.matches(state.form.wallet)
-                        OutlinedTextField(
-                            value = state.form.wallet,
-                            onValueChange = viewModel::wallet,
-                            singleLine = true,
-                            label = { Text(localized("رقم المحفظة الإلكترونية", "Wallet mobile number")) },
-                            placeholder = { Text("010xxxxxxxx") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                            isError = walletInvalid && state.form.wallet.isNotEmpty(),
-                            supportingText = {
-                                if (walletInvalid) {
-                                    Text(
-                                        localized(
-                                            "أدخل رقم موبايل مصري من 11 رقماً (010 / 011 / 012 / 015)",
-                                            "Enter an 11-digit Egyptian mobile number (010 / 011 / 012 / 015)",
-                                        ),
-                                    )
-                                }
-                            },
-                            shape = MaterialTheme.shapes.small,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
+                        if (state.form.paymentMethod == PaymentMethod.WALLET) {
+                            val walletInvalid = !WALLET_INPUT_REGEX.matches(state.form.wallet)
+                            OutlinedTextField(
+                                value = state.form.wallet,
+                                onValueChange = viewModel::wallet,
+                                singleLine = true,
+                                label = { Text(localized("رقم المحفظة الإلكترونية", "Wallet mobile number")) },
+                                placeholder = { Text("010xxxxxxxx") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                                isError = walletInvalid && state.form.wallet.isNotEmpty(),
+                                supportingText = {
+                                    if (walletInvalid) {
+                                        Text(
+                                            localized(
+                                                "أدخل رقم موبايل مصري من 11 رقماً (010 / 011 / 012 / 015)",
+                                                "Enter an 11-digit Egyptian mobile number (010 / 011 / 012 / 015)",
+                                            ),
+                                        )
+                                    }
+                                },
+                                shape = MaterialTheme.shapes.small,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
                     }
                 }
             }
@@ -635,13 +764,37 @@ fun CheckoutScreen(
                     ) {
                         Text(localized("الشحن", "Shipping"), style = MaterialTheme.typography.bodyMedium)
                         Text(
-                            formatPrice(
-                                state.shippingFee,
-                                state.storeSettings.currency,
-                                state.storeSettings.locale,
-                            ),
+                            text = if (state.shippingFee <= 0.0) {
+                                localized("مجاني", "Free")
+                            } else {
+                                formatPrice(
+                                    state.shippingFee,
+                                    state.storeSettings.currency,
+                                    state.storeSettings.locale,
+                                )
+                            },
                             style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = if (state.shippingFee <= 0.0) FontWeight.Bold else FontWeight.Normal,
+                            color = if (state.shippingFee <= 0.0) brandColors.success else MaterialTheme.colorScheme.onSurface,
                         )
+                    }
+                    if (state.walletApplied > 0.0) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text(
+                                localized("خصم رصيد المحفظة", "Wallet credit"),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = brandColors.success,
+                            )
+                            Text(
+                                "-${formatPrice(state.walletApplied, state.storeSettings.currency, state.storeSettings.locale)}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = brandColors.success,
+                            )
+                        }
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth(),

@@ -24,6 +24,8 @@ export default async function Orders({ searchParams }: PageProps<"/orders">) {
     typeof params.order === "string" ? params.order.trim() : "";
   const placedCod =
     typeof params.placed === "string" && params.placed.trim() === "cod";
+  const placedWallet =
+    typeof params.placed === "string" && params.placed.trim() === "wallet";
   const result = user
     ? await db
         .from("orders")
@@ -54,6 +56,7 @@ export default async function Orders({ searchParams }: PageProps<"/orders">) {
         paymentCallback={paymentCallback}
         callbackOrder={callbackOrder}
         placedCod={placedCod}
+        placedWallet={placedWallet}
         paidOrderIds={paidOrderIds}
       />
       <div className="details-grid">

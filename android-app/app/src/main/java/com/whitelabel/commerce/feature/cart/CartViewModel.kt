@@ -17,7 +17,10 @@ import javax.inject.Inject
 data class CartUiState(
     val items: List<CartItem> = emptyList(),
     val subtotal: Double = 0.0,
+    val baseShippingFee: Double = 0.0,
     val shippingFee: Double = 0.0,
+    val cartIncentiveEnabled: Boolean = true,
+    val freeShippingThreshold: Double = 1000.0,
     val currency: String = "EGP",
     val locale: String = "ar-EG",
 ) {
@@ -39,7 +42,10 @@ class CartViewModel @Inject constructor(
         CartUiState(
             items = items,
             subtotal = subtotal,
-            shippingFee = settings.shippingFee,
+            baseShippingFee = settings.shippingFee,
+            shippingFee = if (items.isEmpty()) 0.0 else settings.effectiveShippingFee(subtotal),
+            cartIncentiveEnabled = settings.cartIncentiveEnabled,
+            freeShippingThreshold = settings.freeShippingThreshold,
             currency = settings.currency,
             locale = settings.locale,
         )

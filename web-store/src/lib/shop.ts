@@ -43,6 +43,17 @@ type SettingsRow = {
   paymob_enabled?: boolean | null;
   paymob_card_enabled?: boolean | null;
   paymob_wallet_enabled?: boolean | null;
+  cart_incentive_enabled?: boolean | null;
+  free_shipping_threshold?: number | null;
+  cashback_enabled?: boolean | null;
+  cashback_percentage?: number | null;
+};
+
+export type StoreIncentives = {
+  cartIncentiveEnabled: boolean;
+  freeShippingThreshold: number;
+  cashbackEnabled: boolean;
+  cashbackPercentage: number;
 };
 
 export const settings = cache(async () => {
@@ -50,7 +61,7 @@ export const settings = cache(async () => {
   const primary = await db
     .from("store_settings")
     .select(
-      "store_id,store_name,primary_color,secondary_color,surface_color,border_radius,currency,shipping_fee,whatsapp_number,banners,theme_template,ui_config,cod_enabled,paymob_enabled,paymob_card_enabled,paymob_wallet_enabled",
+      "store_id,store_name,primary_color,secondary_color,surface_color,border_radius,currency,shipping_fee,whatsapp_number,banners,theme_template,ui_config,cod_enabled,paymob_enabled,paymob_card_enabled,paymob_wallet_enabled,cart_incentive_enabled,free_shipping_threshold,cashback_enabled,cashback_percentage",
     )
     .eq("id", true)
     .single<SettingsRow>();
@@ -60,7 +71,7 @@ export const settings = cache(async () => {
     const fallback = await db
       .from("store_settings")
       .select(
-        "store_id,store_name,primary_color,secondary_color,surface_color,border_radius,currency,shipping_fee,whatsapp_number,banners,theme_template,ui_config",
+        "store_id,store_name,primary_color,secondary_color,surface_color,border_radius,currency,shipping_fee,whatsapp_number,banners,theme_template,ui_config,cod_enabled,paymob_enabled,paymob_card_enabled,paymob_wallet_enabled",
       )
       .eq("id", true)
       .single<SettingsRow>();
@@ -97,6 +108,12 @@ export const settings = cache(async () => {
       paymobCardEnabled: data.paymob_card_enabled ?? false,
       paymobWalletEnabled: data.paymob_wallet_enabled ?? false,
     },
+    incentives: {
+      cartIncentiveEnabled: data.cart_incentive_enabled ?? true,
+      freeShippingThreshold: Number(data.free_shipping_threshold ?? 1000),
+      cashbackEnabled: data.cashback_enabled ?? true,
+      cashbackPercentage: Number(data.cashback_percentage ?? 5),
+    } satisfies StoreIncentives,
   };
 });
 export const categories = cache(async () => {

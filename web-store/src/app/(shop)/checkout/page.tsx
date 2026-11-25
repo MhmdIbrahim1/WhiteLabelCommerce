@@ -12,18 +12,26 @@ export default async function Checkout() {
   let defaultGovernorate = "";
   let defaultCity = "";
   let defaultAddress = "";
+  let walletBalance = 0;
   if (user) {
-    const { data: profile } = await db
-      .from("store_customers")
-      .select("full_name,phone,governorate,city,address")
-      .eq("user_id", user.id)
-      .maybeSingle<{
-        full_name: string;
-        phone: string;
-        governorate: string;
-        city: string;
-        address: string;
-      }>();
+    const [profileRes, walletRes] = await Promise.all([
+      db
+        .from("store_customers")
+        .select("full_name,phone,governorate,city,address")
+        .eq("user_id", user.id)
+        .maybeSingle<{
+          full_name: string;
+          phone: string;
+          governorate: string;
+          city: string;
+          address: string;
+        }>(),
+      db.rpc("get_customer_wallet_summary", {
+        p_store_id: s.storeId,
+        p_user_id: user.id,
+      }),
+    ]);
+    const profile = profileRes.data;
     defaultName =
       profile?.full_name ||
       (typeof user.user_metadata?.full_name === "string"
@@ -37,6 +45,10 @@ export default async function Checkout() {
     defaultGovernorate = profile?.governorate?.trim() ?? "";
     defaultCity = profile?.city?.trim() ?? "";
     defaultAddress = profile?.address?.trim() ?? "";
+    const walletData = walletRes.data as { balance?: number } | null;
+    if (!walletRes.error && walletData && Number.isFinite(Number(walletData.balance))) {
+      walletBalance = Math.max(0, Number(walletData.balance));
+    }
   }
   return (
     <Basket
@@ -50,6 +62,8 @@ export default async function Checkout() {
       defaultAddress={defaultAddress}
       signedInEmail={user?.email ?? null}
       paymentOptions={s.payment}
+      incentives={s.incentives}
+      walletBalance={walletBalance}
     />
   );
 }

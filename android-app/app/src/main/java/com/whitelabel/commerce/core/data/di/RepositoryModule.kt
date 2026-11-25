@@ -6,12 +6,14 @@ import com.whitelabel.commerce.core.data.repository.CatalogRepositoryImpl
 import com.whitelabel.commerce.core.data.repository.OrderRepositoryImpl
 import com.whitelabel.commerce.core.data.repository.StoreRepositoryImpl
 import com.whitelabel.commerce.core.data.repository.SupportRepositoryImpl
+import com.whitelabel.commerce.core.data.repository.WalletRepositoryImpl
 import com.whitelabel.commerce.core.domain.repository.AuthRepository
 import com.whitelabel.commerce.core.domain.repository.CartRepository
 import com.whitelabel.commerce.core.domain.repository.CatalogRepository
 import com.whitelabel.commerce.core.domain.repository.OrderRepository
 import com.whitelabel.commerce.core.domain.repository.StoreRepository
 import com.whitelabel.commerce.core.domain.repository.SupportRepository
+import com.whitelabel.commerce.core.domain.repository.WalletRepository
 import com.whitelabel.commerce.core.notifications.NotificationRepository
 import com.whitelabel.commerce.core.notifications.NotificationRepositoryImpl
 import dagger.Binds
@@ -51,4 +53,8 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindNotificationRepository(impl: NotificationRepositoryImpl): NotificationRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindWalletRepository(impl: WalletRepositoryImpl): WalletRepository
 }

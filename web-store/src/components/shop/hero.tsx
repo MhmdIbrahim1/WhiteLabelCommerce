@@ -248,7 +248,10 @@ export function PromoBannerCarousel({
 
               <div className="promo-carousel-copy">
                 {badge && (
-                  <span className="hero-eyebrow" style={{ color: "#FFFFFF" }}>
+                  <span
+                    className="hero-eyebrow inline-flex w-fit self-start"
+                    style={{ color: "#FFFFFF" }}
+                  >
                     <Sparkles size={13} /> {badge}
                   </span>
                 )}

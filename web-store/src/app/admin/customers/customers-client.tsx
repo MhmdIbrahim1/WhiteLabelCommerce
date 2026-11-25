@@ -1,6 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Search,
   Download,
@@ -12,11 +13,15 @@ import {
   ArrowLeft,
   Save,
   UserRound,
+  Wallet,
+  PlusCircle,
+  MinusCircle,
+  History,
 } from "lucide-react";
 import { date, money } from "@/lib/brand";
 import { orderStatusLabel } from "@/lib/i18n";
 import { useLanguage } from "@/components/language-provider";
-import { saveCustomerNotes } from "../mutations";
+import { adjustCustomerWallet, saveCustomerNotes } from "../mutations";
 
 export type CustomerOrderSummary = {
   id: string;
@@ -27,8 +32,20 @@ export type CustomerOrderSummary = {
   shipping_carrier: string | null;
 };
 
+export type CustomerWalletTxSummary = {
+  id: string;
+  order_id: string | null;
+  type: string;
+  amount: number;
+  balance_after: number;
+  note_ar: string;
+  note_en: string;
+  created_at: string;
+};
+
 export type CustomerCrmRow = {
   id: string;
+  userId: string | null;
   fullName: string;
   phone: string;
   email: string;
@@ -43,6 +60,8 @@ export type CustomerCrmRow = {
   averageOrderValue: number;
   lastOrderDate: string | null;
   badge: "vip" | "repeat" | "new" | "high_return";
+  walletBalance: number;
+  walletTransactions: CustomerWalletTxSummary[];
   orders: CustomerOrderSummary[];
 };
 
@@ -67,15 +86,128 @@ export function CustomersClient({
   rows: CustomerCrmRow[];
   currency: string;
 }) {
+  const router = useRouter();
   const { lang } = useLanguage();
   const isEn = lang === "en";
+  const [localRows, setLocalRows] = useState<CustomerCrmRow[]>(rows);
   const [query, setQuery] = useState("");
   const [badgeFilter, setBadgeFilter] = useState<string>("all");
-  const [selected, setSelected] = useState<CustomerCrmRow | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [walletModalId, setWalletModalId] = useState<string | null>(null);
+  const [adjustDirection, setAdjustDirection] = useState<"credit" | "debit">("credit");
+  const [adjustAmount, setAdjustAmount] = useState("");
+  const [adjustNote, setAdjustNote] = useState("");
+  const [adjustBusy, setAdjustBusy] = useState(false);
+  const [adjustFeedback, setAdjustFeedback] = useState<{
+    ok: boolean;
+    text: string;
+  } | null>(null);
+
+  const selected = useMemo(
+    () => localRows.find((r) => r.id === selectedId) ?? null,
+    [localRows, selectedId],
+  );
+  const walletTarget = useMemo(
+    () => localRows.find((r) => r.id === walletModalId) ?? null,
+    [localRows, walletModalId],
+  );
+
+  const openWalletModal = (customer: CustomerCrmRow) => {
+    setWalletModalId(customer.id);
+    setAdjustDirection("credit");
+    setAdjustAmount("");
+    setAdjustNote("");
+    setAdjustFeedback(null);
+  };
+
+  const handleWalletSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!walletTarget?.userId || adjustBusy) return;
+    const rawNum = Number(adjustAmount);
+    if (!Number.isFinite(rawNum) || rawNum <= 0) {
+      setAdjustFeedback({
+        ok: false,
+        text: isEn ? "Enter a valid positive amount." : "أدخل مبلغاً صحيحاً أكبر من الصفر.",
+      });
+      return;
+    }
+    const signedAmount = adjustDirection === "credit" ? rawNum : -rawNum;
+    setAdjustBusy(true);
+    setAdjustFeedback(null);
+    try {
+      const res = await adjustCustomerWallet({
+        userId: walletTarget.userId,
+        amount: signedAmount,
+        noteAr: adjustNote.trim(),
+        noteEn: adjustNote.trim(),
+      });
+      if (!res.ok) {
+        setAdjustFeedback({
+          ok: false,
+          text:
+            res.error === "insufficient_wallet_balance"
+              ? isEn
+                ? "Cannot deduct more than the customer's current balance."
+                : "لا يمكن خصم مبلغ أكبر من رصيد المحفظة الحالي للعميل."
+              : isEn
+                ? "Could not update wallet right now."
+                : "تعذر تحديث رصيد المحفظة حالياً.",
+        });
+        return;
+      }
+
+      const newTx: CustomerWalletTxSummary = {
+        id: res.transactionId,
+        order_id: null,
+        type: signedAmount > 0 ? "admin_credit" : "admin_debit",
+        amount: signedAmount,
+        balance_after: res.balanceAfter,
+        note_ar:
+          adjustNote.trim() ||
+          (signedAmount > 0
+            ? "رصيد إضافي من إدارة المتجر"
+            : "خصم إداري من رصيد المحفظة"),
+        note_en:
+          adjustNote.trim() ||
+          (signedAmount > 0
+            ? "Store credit added by merchant"
+            : "Store credit deducted by merchant"),
+        created_at: new Date().toISOString(),
+      };
+
+      setLocalRows((prev) =>
+        prev.map((row) =>
+          row.userId === walletTarget.userId
+            ? {
+                ...row,
+                walletBalance: res.balanceAfter,
+                walletTransactions: [newTx, ...row.walletTransactions].slice(0, 30),
+              }
+            : row,
+        ),
+      );
+      setAdjustAmount("");
+      setAdjustNote("");
+      setAdjustFeedback({
+        ok: true,
+        text: isEn
+          ? `Wallet updated! New balance: ${money(res.balanceAfter, currency, "en")}`
+          : `تم تحديث المحفظة بنجاح! الرصيد الجديد: ${money(res.balanceAfter, currency, "ar")}`,
+      });
+      router.refresh();
+    } catch {
+      setAdjustFeedback({
+        ok: false,
+        text: isEn ? "Network error while updating wallet." : "حدث خطأ أثناء تحديث المحفظة.",
+      });
+    } finally {
+      setAdjustBusy(false);
+    }
+  };
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return rows.filter((c) => {
+    return localRows.filter((c) => {
       if (badgeFilter !== "all" && c.badge !== badgeFilter) return false;
       if (!q) return true;
       return (
@@ -86,7 +218,7 @@ export function CustomersClient({
         c.address.toLowerCase().includes(q)
       );
     });
-  }, [rows, query, badgeFilter]);
+  }, [localRows, query, badgeFilter]);
 
   const handleExportCsv = () => {
     const headers = [
@@ -101,6 +233,7 @@ export function CustomersClient({
       "الملغاة",
       "إجمالي الإنفاق (LTV)",
       "متوسط الطلب (AOV)",
+      "رصيد المحفظة",
       "آخر طلب",
       "ملاحظات",
     ];
@@ -121,6 +254,7 @@ export function CustomersClient({
           c.cancelledOrders,
           c.lifetimeSpend.toFixed(2),
           c.averageOrderValue.toFixed(2),
+          c.walletBalance.toFixed(2),
           c.lastOrderDate ? date(c.lastOrderDate, lang) : "",
           c.notes,
         ]
@@ -161,7 +295,7 @@ export function CustomersClient({
           <div className="crm-filter-pills">
             {(
               [
-                ["all", isEn ? `All (${rows.length})` : `الكل (${rows.length})`],
+                ["all", isEn ? `All (${localRows.length})` : `الكل (${localRows.length})`],
                 ["vip", isEn ? "VIP" : "عميل VIP"],
                 ["repeat", isEn ? "Repeat" : "عميل متكرر"],
                 ["new", isEn ? "New" : "عميل جديد"],
@@ -204,9 +338,9 @@ export function CustomersClient({
                   <th>{isEn ? "City / Address" : "المدينة / العنوان"}</th>
                   <th>{isEn ? "Orders (Del / Can)" : "الطلبات (مسلّم / ملغي)"}</th>
                   <th>{isEn ? "Lifetime Spend (LTV)" : "إجمالي الإنفاق (LTV)"}</th>
-                  <th>{isEn ? "Avg Order (AOV)" : "متوسط الطلب (AOV)"}</th>
+                  <th>{isEn ? "Wallet Balance" : "رصيد المحفظة"}</th>
                   <th>{isEn ? "Segment" : "التصنيف"}</th>
-                  <th>{isEn ? "Last Order" : "آخر طلب"}</th>
+                  <th>{isEn ? "Actions" : "إجراءات"}</th>
                 </tr>
               </thead>
               <tbody>
@@ -216,7 +350,7 @@ export function CustomersClient({
                     <tr
                       key={c.id}
                       className="crm-clickable-row"
-                      onClick={() => setSelected(c)}
+                      onClick={() => setSelectedId(c.id)}
                     >
                       <td className="order-cell-wrap">
                         <strong>
@@ -244,14 +378,38 @@ export function CustomersClient({
                       <td>
                         <strong>{money(c.lifetimeSpend, currency, lang)}</strong>
                       </td>
-                      <td>{money(c.averageOrderValue, currency, lang)}</td>
+                      <td>
+                        {c.userId ? (
+                          <span
+                            className={`crm-wallet-badge ${c.walletBalance > 0 ? "has-credit" : ""}`}
+                          >
+                            <Wallet size={13} aria-hidden="true" />
+                            {money(c.walletBalance, currency, lang)}
+                          </span>
+                        ) : (
+                          <small>{isEn ? "Guest" : "زائر"}</small>
+                        )}
+                      </td>
                       <td>
                         <span className={badge.className}>
                           {isEn ? badge.label_en : badge.label_ar}
                         </span>
                       </td>
-                      <td>
-                        {c.lastOrderDate ? date(c.lastOrderDate, lang) : "—"}
+                      <td onClick={(e) => e.stopPropagation()}>
+                        {c.userId ? (
+                          <button
+                            type="button"
+                            className="btn-outline-admin crm-wallet-btn"
+                            onClick={() => openWalletModal(c)}
+                          >
+                            <Wallet size={14} aria-hidden="true" />
+                            <span>
+                              {isEn ? "Manage Wallet" : "إدارة المحفظة"}
+                            </span>
+                          </button>
+                        ) : (
+                          <small>—</small>
+                        )}
                       </td>
                     </tr>
                   );
@@ -269,7 +427,7 @@ export function CustomersClient({
           role="dialog"
           aria-modal="true"
           aria-label={isEn ? "Customer details" : "تفاصيل العميل"}
-          onClick={() => setSelected(null)}
+          onClick={() => setSelectedId(null)}
         >
           <aside
             className="crm-drawer"
@@ -296,7 +454,7 @@ export function CustomersClient({
               <button
                 type="button"
                 className="btn-outline-admin"
-                onClick={() => setSelected(null)}
+                onClick={() => setSelectedId(null)}
                 aria-label={isEn ? "Close" : "إغلاق"}
               >
                 <X size={16} />
@@ -309,8 +467,8 @@ export function CustomersClient({
                 <strong>{money(selected.lifetimeSpend, currency, lang)}</strong>
               </div>
               <div>
-                <small>{isEn ? "Avg Order (AOV)" : "متوسط الطلب (AOV)"}</small>
-                <strong>{money(selected.averageOrderValue, currency, lang)}</strong>
+                <small>{isEn ? "Wallet Balance" : "رصيد المحفظة"}</small>
+                <strong>{money(selected.walletBalance, currency, lang)}</strong>
               </div>
               <div>
                 <small>{isEn ? "Delivered / Cancelled" : "مسلّم / ملغي"}</small>
@@ -319,6 +477,18 @@ export function CustomersClient({
                 </strong>
               </div>
             </div>
+
+            {selected.userId && (
+              <button
+                type="button"
+                className="btn-ship-link"
+                style={{ width: "100%" }}
+                onClick={() => openWalletModal(selected)}
+              >
+                <Wallet size={15} />{" "}
+                {isEn ? "Manage Customer Wallet" : "إدارة محفظة العميل"}
+              </button>
+            )}
 
             <div className="crm-drawer-contact">
               {selected.phone && (
@@ -414,6 +584,173 @@ export function CustomersClient({
               )}
             </div>
           </aside>
+        </div>
+      )}
+
+      {/* Manage Wallet Modal */}
+      {walletTarget && walletTarget.userId && (
+        <div
+          className="wallet-modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label={isEn ? "Manage Customer Wallet" : "إدارة محفظة العميل"}
+          onClick={() => setWalletModalId(null)}
+        >
+          <div
+            className="wallet-modal"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="wallet-modal-head">
+              <div className="with-icon">
+                <span className="metric-icon">
+                  <Wallet size={18} />
+                </span>
+                <div>
+                  <h2>
+                    {isEn ? "Manage Wallet" : "إدارة المحفظة"}
+                  </h2>
+                  <small>
+                    {walletTarget.fullName || walletTarget.email}
+                  </small>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn-outline-admin"
+                onClick={() => setWalletModalId(null)}
+                aria-label={isEn ? "Close" : "إغلاق"}
+              >
+                <X size={16} />
+              </button>
+            </header>
+
+            <div className="wallet-modal-balance">
+              <small>
+                {isEn ? "Current Available Balance" : "الرصيد الحالي المتاح"}
+              </small>
+              <strong>
+                {money(walletTarget.walletBalance, currency, lang)}
+              </strong>
+            </div>
+
+            <form className="wallet-modal-form" onSubmit={handleWalletSubmit}>
+              <div className="wallet-dir-toggle">
+                <button
+                  type="button"
+                  className={adjustDirection === "credit" ? "is-credit-active" : ""}
+                  onClick={() => setAdjustDirection("credit")}
+                >
+                  <PlusCircle size={15} />
+                  {isEn ? "Add Credit (+)" : "إضافة رصيد (+)"}
+                </button>
+                <button
+                  type="button"
+                  className={adjustDirection === "debit" ? "is-debit-active" : ""}
+                  onClick={() => setAdjustDirection("debit")}
+                >
+                  <MinusCircle size={15} />
+                  {isEn ? "Deduct Credit (-)" : "خصم رصيد (-)"}
+                </button>
+              </div>
+
+              <label>
+                {isEn ? `Amount (${currency})` : `المبلغ (${currency})`}
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  dir="ltr"
+                  value={adjustAmount}
+                  onChange={(e) => setAdjustAmount(e.target.value)}
+                  placeholder="100"
+                  required
+                />
+              </label>
+
+              <label>
+                {isEn ? "Reason / Note" : "السبب / ملاحظة"}
+                <input
+                  type="text"
+                  value={adjustNote}
+                  onChange={(e) => setAdjustNote(e.target.value)}
+                  placeholder={
+                    isEn
+                      ? "e.g. VIP Bonus or Refund credit"
+                      : "مثال: مكافأة عميل VIP أو رصيد استرجاع"
+                  }
+                  maxLength={200}
+                />
+              </label>
+
+              {adjustFeedback && (
+                <p
+                  className={`notif-feedback ${adjustFeedback.ok ? "is-ok" : "is-err"}`}
+                  role="status"
+                >
+                  {adjustFeedback.text}
+                </p>
+              )}
+
+              <button type="submit" disabled={adjustBusy} style={{ width: "100%" }}>
+                {adjustBusy
+                  ? isEn
+                    ? "Saving…"
+                    : "جارٍ الحفظ…"
+                  : adjustDirection === "credit"
+                    ? isEn
+                      ? "Credit Customer Wallet"
+                      : "إضافة الرصيد للمحفظة"
+                    : isEn
+                      ? "Deduct from Customer Wallet"
+                      : "خصم الرصيد من المحفظة"}
+              </button>
+            </form>
+
+            <div className="wallet-modal-history">
+              <h3>
+                <History size={15} />{" "}
+                {isEn ? "Ledger History" : "سجل حركات المحفظة"}
+              </h3>
+              {walletTarget.walletTransactions.length === 0 ? (
+                <p style={{ fontSize: "0.86rem" }}>
+                  {isEn
+                    ? "No transactions recorded yet."
+                    : "لا توجد حركات مسجلة في محفظة هذا العميل بعد."}
+                </p>
+              ) : (
+                <ul className="wallet-modal-tx-list">
+                  {walletTarget.walletTransactions.map((tx) => {
+                    const isCredit = tx.amount > 0;
+                    return (
+                      <li key={tx.id} className="wallet-modal-tx-row">
+                        <div>
+                          <strong>
+                            {isEn
+                              ? tx.note_en || tx.note_ar || tx.type
+                              : tx.note_ar || tx.note_en || tx.type}
+                          </strong>
+                          <small>{date(tx.created_at, lang)}</small>
+                        </div>
+                        <div style={{ textAlign: "end" }}>
+                          <strong
+                            dir="ltr"
+                            style={{ color: isCredit ? "#15803d" : "#b91c1c" }}
+                          >
+                            {isCredit ? "+" : "-"}
+                            {money(Math.abs(tx.amount), currency, lang)}
+                          </strong>
+                          <small style={{ display: "block" }}>
+                            {isEn ? "Bal" : "الرصيد"}:{" "}
+                            {money(tx.balance_after, currency, lang)}
+                          </small>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </>

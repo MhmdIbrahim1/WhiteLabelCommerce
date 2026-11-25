@@ -176,3 +176,20 @@
 - **Release `v1.1.1` Version Bump (`android-app/app/build.gradle.kts`):**
   - Bumped default `versionCode` to `21` and `versionName` to `"1.1.1"` (bundling Phase 9c/9d notification read/delete sync + the new Compose Multi-Slide Hero Carousel) and pushed release tag `v1.1.1` to trigger GitHub Actions signed APK publication.
 - **Build & Test Verification:** `$env:JAVA_HOME='C:\Users\moham\.jdks\jbr-21.0.11'; .\gradlew.bat testGithubDebugUnitTest assembleGithubDebug assemblePlaystoreDebug --no-daemon` passed (`BUILD SUCCESSFUL`, 0 errors) across both `github` and `playstore` flavors.
+
+
+### 6.8 Phase 10A: Guest Switch-to-COD UX, Free-Shipping Cart Progress Bar, Store Credit / Cashback Wallet & `v1.1.2` Release (2026-11-25)
+- **Guest "Switch to COD" Actionable UX (`OrdersViewModel.kt`, `OrdersScreen.kt`, `WhiteLabelAppShell.kt`):**
+  - Exposed live `isSignedIn` state and `SwitchToCodOutcome` (`Success`, `RequiresSignIn`, `Failure`) in `OrdersViewModel`.
+  - When an unauthenticated guest taps "تحويل إلى الدفع عند الاستلام / Cash on Delivery" on an unpaid card order, displays an actionable bilingual prompt (`"سجّل الدخول أولاً لتغيير طريقة الدفع"` / `"Please sign in first to switch payment method"`) with both an inline banner and Snackbar **"تسجيل الدخول / Sign In"** button routing directly to `AccountScreen`.
+- **Gamified Free-Shipping Cart Progress Bar (`StoreSettings.kt`, `StoreSettingsDto.kt`, `FreeShippingProgressBar.kt`, `CartViewModel.kt`, `CartScreen.kt`, `CheckoutScreen.kt`):**
+  - Decoded `cart_incentive_enabled`, `free_shipping_threshold`, `cashback_enabled`, and `cashback_percentage` from `store_settings` with `effectiveShippingFee(subtotal)` helper.
+  - Built animated Material 3 `FreeShippingProgressBar` (`animateFloatAsState` fill + emerald celebration transition at threshold) rendered at the top of `CartScreen` and `CheckoutScreen`, updating shipping to `مجاني / Free` (`0 EGP`) in sync with server-side `store_checkout` / `mobile_checkout`.
+- **Store Credit & Cashback Wallet (`WalletModels.kt`, `WalletDto.kt`, `WalletRepository.kt`, `WalletRepositoryImpl.kt`, `RepositoryModule.kt`, `AccountViewModel.kt`, `AccountScreen.kt`, `CheckoutViewModel.kt`, `CheckoutScreen.kt`, `Order.kt`, `OrderDto.kt`, `OrderRepositoryImpl.kt`):**
+  - Added `WalletRepositoryImpl` calling `public.get_customer_wallet_summary(p_store_id, p_user_id)` RPC and bound it in Hilt `RepositoryModule`.
+  - Added a premium **Wallet Balance Card & Bilingual Transaction History** in `AccountScreen.kt` showing available balance, live cashback rate badge, and signed credit/debit ledger rows.
+  - Added an opt-in **"استخدام رصيد المحفظة / Use Wallet Credit"** `Switch` card on `CheckoutScreen.kt` passing `p_use_wallet` to `mobile_checkout`, deducting `min(walletBalance, preWalletTotal)` live, and completing zero-remaining orders directly as **Paid via Store Wallet** (`PaymentMethod.STORE_WALLET`, skipping Paymob WebView).
+- **Unit Tests & Release `v1.1.2` (`WalletAndIncentivesTest.kt`, `app/build.gradle.kts`):**
+  - Added 4 JUnit tests in `WalletAndIncentivesTest.kt` verifying free-shipping threshold math, disabled-incentive behavior, `StoreSettingsDto` Phase 10A field decoding, and `WalletSummaryDto` decoding.
+  - Bumped default `versionCode` to `22` and `versionName` to `"1.1.2"`.
+- **Build & Test Verification:** `$env:JAVA_HOME='C:\Users\moham\.jdks\jbr-21.0.11'; .\gradlew.bat testGithubDebugUnitTest assembleGithubDebug assemblePlaystoreDebug --no-daemon` passed (`BUILD SUCCESSFUL`, 0 errors) across both `github` and `playstore` flavors.

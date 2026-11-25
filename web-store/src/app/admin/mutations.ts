@@ -19,6 +19,7 @@ import { dispatchNotification } from "@/lib/notifications/dispatcher";
 import {
   notifyBackInStock,
   notifyOrderStatusChanged,
+  notifyWalletCashback,
   runRecoveryAutomations,
 } from "@/lib/notifications/events";
 import { normalizeSpecs } from "@/lib/specs";
@@ -246,10 +247,59 @@ export async function updateOrder(f: FormData) {
     .update(updatePayload)
     .eq("id", id)
     .eq("status", prev)
-    .select("id")
-    .single();
+    .select("id,store_id,user_id,currency,wallet_discount")
+    .single<{
+      id: string;
+      store_id: string;
+      user_id: string | null;
+      currency: string;
+      wallet_discount: number | null;
+    }>();
 
-  if (!result.error) {
+  if (!result.error && result.data) {
+    const orderRow = result.data;
+    if (status === "delivered" && orderRow.user_id) {
+      try {
+        const svc = adminDb();
+        const { data: cbData } = await svc.rpc("award_order_cashback", {
+          p_store_id: orderRow.store_id,
+          p_order_id: id,
+          p_create_notification: false,
+        });
+        const cbRow = Array.isArray(cbData)
+          ? (cbData[0] as
+              | {
+                  awarded?: boolean;
+                  amount?: number;
+                  balance_after?: number;
+                  user_id?: string;
+                }
+              | undefined)
+          : (cbData as
+              | {
+                  awarded?: boolean;
+                  amount?: number;
+                  balance_after?: number;
+                  user_id?: string;
+                }
+              | null);
+        if (cbRow?.awarded && Number(cbRow.amount ?? 0) > 0 && cbRow.user_id) {
+          void notifyWalletCashback({
+            storeId: orderRow.store_id,
+            userId: cbRow.user_id,
+            orderId: id,
+            amount: Number(cbRow.amount),
+            balanceAfter: Number(cbRow.balance_after ?? 0),
+            currency: orderRow.currency || "EGP",
+          });
+        }
+      } catch (err) {
+        console.error("[wallet] award_order_cashback failed", {
+          code: err instanceof Error ? err.message : "unknown",
+        });
+      }
+    }
+
     void notifyOrderStatusChanged({
       orderId: id,
       status,
@@ -263,6 +313,8 @@ export async function updateOrder(f: FormData) {
           : null,
     });
     revalidatePath("/orders");
+    revalidatePath("/account");
+    revalidatePath("/admin/customers");
     revalidatePath("/products");
     revalidatePath("/");
   }
@@ -398,6 +450,93 @@ export async function savePaymentSettings(f: FormData) {
     .single();
 
   finish("/admin/settings", !secretUpsert.error);
+}
+
+export async function saveWalletIncentiveSettings(f: FormData) {
+  const { db } = await requireAdmin();
+
+  const cartIncentiveEnabled = f.has("cart_incentive_enabled");
+  const cashbackEnabled = f.has("cashback_enabled");
+  const freeShippingThreshold = numberField(text(f, "free_shipping_threshold"));
+  const cashbackPercentage = numberField(text(f, "cashback_percentage"));
+
+  if (
+    freeShippingThreshold === null ||
+    cashbackPercentage === null ||
+    cashbackPercentage < 0 ||
+    cashbackPercentage > 50
+  ) {
+    finish("/admin/settings", false);
+  }
+
+  const res = await db
+    .from("store_settings")
+    .update({
+      cart_incentive_enabled: cartIncentiveEnabled,
+      free_shipping_threshold: freeShippingThreshold,
+      cashback_enabled: cashbackEnabled,
+      cashback_percentage: cashbackPercentage,
+    })
+    .eq("id", true)
+    .select("store_id")
+    .single();
+
+  finish("/admin/settings", !res.error);
+}
+
+export type AdjustWalletResult =
+  | { ok: true; transactionId: string; balanceAfter: number }
+  | { ok: false; error: string };
+
+export async function adjustCustomerWallet(input: {
+  userId: string;
+  amount: number;
+  noteAr?: string;
+  noteEn?: string;
+}): Promise<AdjustWalletResult> {
+  const { db } = await requireAdmin();
+  const cleanUserId = (input.userId ?? "").trim();
+  const amount = Number(input.amount);
+  if (!UUID_REGEX.test(cleanUserId) || !Number.isFinite(amount) || amount === 0) {
+    return { ok: false, error: "invalid_wallet_adjustment" };
+  }
+
+  const { data: storeRow } = await db
+    .from("store_settings")
+    .select("store_id")
+    .eq("id", true)
+    .maybeSingle<{ store_id: string }>();
+
+  const storeId = storeRow?.store_id || "00000000-0000-0000-0000-000000000001";
+
+  const { data, error } = await db.rpc("admin_adjust_customer_wallet", {
+    p_store_id: storeId,
+    p_user_id: cleanUserId,
+    p_amount: Math.round(amount * 100) / 100,
+    p_note_ar: (input.noteAr ?? "").trim().slice(0, 300),
+    p_note_en: (input.noteEn ?? "").trim().slice(0, 300),
+  });
+
+  if (error) {
+    return {
+      ok: false,
+      error: error.message || "wallet_adjustment_failed",
+    };
+  }
+
+  const row = Array.isArray(data)
+    ? (data[0] as { transaction_id?: string; balance_after?: number } | undefined)
+    : (data as { transaction_id?: string; balance_after?: number } | null);
+
+  revalidatePath("/admin/customers");
+  revalidatePath("/account");
+  revalidatePath("/checkout");
+
+  return {
+    ok: true,
+    transactionId: row?.transaction_id || crypto.randomUUID(),
+    balanceAfter: Number(row?.balance_after ?? 0),
+  };
 }
 export async function applyTemplate(form: FormData) {
   const { db } = await requireAdmin();
