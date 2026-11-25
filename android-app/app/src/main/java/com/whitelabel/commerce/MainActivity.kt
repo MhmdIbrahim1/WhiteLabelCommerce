@@ -51,7 +51,7 @@ class MainActivity : ComponentActivity() {
     private fun extractNotificationId(intent: Intent?): String? {
         return intent?.getStringExtra(NotificationChannels.EXTRA_NOTIFICATION_ID)
             ?.trim()
-            ?.takeIf { it.isNotEmpty() }
+            ?.takeIf { Regex("[a-fA-F0-9]{8}(-[a-fA-F0-9]{4}){3}-[a-fA-F0-9]{12}").matches(it) }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -135,9 +135,7 @@ class MainActivity : ComponentActivity() {
                 onDispose {}
             }
 
-            val prefs = androidx.compose.runtime.remember { getSharedPreferences("language_" + BuildConfig.STORE_ID, MODE_PRIVATE) }
-            val language = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(prefs.getString("language", null)) }
-            val settings = uiState.storeSettings.copy(locale = language.value ?: uiState.storeSettings.locale)
+            val settings = uiState.storeSettings
             com.whitelabel.commerce.core.designsystem.arabicLanguage.value = settings.isRtl
             WhiteLabelCommerceTheme(
                 storeSettings = settings,
@@ -154,14 +152,22 @@ class MainActivity : ComponentActivity() {
                     darkThemeOverride = uiState.darkThemeOverride,
                     isSignedIn = uiState.isSignedIn,
                     onSetDarkThemePreference = mainViewModel::setDarkThemePreference,
-                    onSelectLanguage = { next ->
-                        prefs.edit().putString("language", next).apply()
-                        language.value = next
-                        mainViewModel.syncPushToken(next)
-                    },
+                    onSelectLanguage = mainViewModel::setLanguage,
                     onRefreshStore = mainViewModel::refreshStoreSettings,
                 )
 
+                if (BuildConfig.IS_WHITE_LABEL_TENANT && updateState.tenantVersion != null && !updateState.isDismissed) {
+                    androidx.compose.material3.AlertDialog(
+                        onDismissRequest = updateViewModel::dismiss,
+                        title = { androidx.compose.material3.Text(if (settings.isRtl) "يتوفر تحديث للتطبيق" else "App update available") },
+                        text = { androidx.compose.material3.Text(settings.storeName + " " + updateState.tenantVersion) },
+                        confirmButton = {
+                            androidx.compose.material3.TextButton(onClick = updateViewModel::dismiss) {
+                                androidx.compose.material3.Text(if (settings.isRtl) "حسنًا" else "OK")
+                            }
+                        },
+                    )
+                }
                 if (BuildConfig.ENABLE_GITHUB_UPDATER && !BuildConfig.IS_WHITE_LABEL_TENANT) {
                     AppUpdateDialog(
                         state = updateState,

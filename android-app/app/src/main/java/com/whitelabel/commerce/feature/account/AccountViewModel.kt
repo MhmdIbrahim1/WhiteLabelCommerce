@@ -73,6 +73,7 @@ data class ProfileFormState(
 )
 
 data class AccountUiState(
+    val errorMessage: String? = null,
     val session: AuthSessionState = AuthSessionState.Loading,
     val authForm: AuthFormState = AuthFormState(),
     val profileForm: ProfileFormState = ProfileFormState(),
@@ -93,6 +94,7 @@ class AccountViewModel @Inject constructor(
 
     private val authFormState = MutableStateFlow(AuthFormState())
     private val profileFormState = MutableStateFlow(ProfileFormState())
+    private val accountError = MutableStateFlow<String?>(null)
     private val ordersState = MutableStateFlow<List<Order>>(emptyList())
     private val loadingOrdersState = MutableStateFlow(false)
     private val walletSummaryState = MutableStateFlow(WalletSummary())
@@ -117,7 +119,7 @@ class AccountViewModel @Inject constructor(
             isLoadingWallet = loadingWallet,
             storeSettings = settings,
         )
-    }.stateIn(
+    }.combine(accountError) { state, error -> state.copy(errorMessage = error) }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = AccountUiState(
@@ -143,7 +145,7 @@ class AccountViewModel @Inject constructor(
                             profileFormState.value = ProfileFormState(
                                 initializedForUserId = session.userId,
                                 fullName = profile.fullName,
-                                phone = PhoneNormalizer.normalize(profile.phone),
+                                phone = PhoneNormalizer.normalizeForEgyptCheckout(profile.phone),
                                 governorate = profile.governorate,
                                 city = profile.city,
                                 address = profile.address,
@@ -209,7 +211,7 @@ class AccountViewModel @Inject constructor(
     }
 
     fun onAuthPhoneChange(value: String) {
-        authFormState.update { it.copy(phone = PhoneNormalizer.normalize(value), errorMessage = null) }
+        authFormState.update { it.copy(phone = PhoneNormalizer.normalizeForEgyptCheckout(value), errorMessage = null) }
     }
 
     fun onPasswordEmailChange(value: String) {
@@ -249,8 +251,8 @@ class AccountViewModel @Inject constructor(
                     startResendCooldown(60)
                 }
                 .onFailure { err ->
-                    val raw = err.message.orEmpty().lowercase()
-                    if ("rate limit" in raw || "security purposes" in raw || "429" in raw) {
+                    val raw = authErrorDetail(err)
+                    if ("rate_limit" in raw || "rate limit" in raw || "security purposes" in raw || "429" in raw) {
                         startResendCooldown(60)
                     }
                     authFormState.update {
@@ -293,7 +295,7 @@ class AccountViewModel @Inject constructor(
                     authFormState.update {
                         it.copy(
                             isSubmitting = false,
-                            errorMessage = mapAuthError(err.message.orEmpty().lowercase()),
+                            errorMessage = mapAuthError(authErrorDetail(err)),
                         )
                     }
                 }
@@ -327,7 +329,7 @@ class AccountViewModel @Inject constructor(
 
         if (form.passwordMode == PasswordAuthMode.REGISTER) {
             val cleanName = form.fullName.trim()
-            val cleanPhone = PhoneNormalizer.normalize(form.phone)
+            val cleanPhone = PhoneNormalizer.normalizeForEgyptCheckout(form.phone)
             if (cleanName.length < 2) {
                 authFormState.update {
                     it.copy(errorMessage = localized("يرجى إدخال الاسم بالكامل.", "Please enter your full name."))
@@ -371,7 +373,7 @@ class AccountViewModel @Inject constructor(
                         authFormState.update {
                             it.copy(
                                 isSubmitting = false,
-                                errorMessage = mapAuthError(err.message.orEmpty().lowercase()),
+                                errorMessage = mapAuthError(authErrorDetail(err)),
                             )
                         }
                     }
@@ -390,7 +392,7 @@ class AccountViewModel @Inject constructor(
                     authFormState.update {
                         it.copy(
                             isSubmitting = false,
-                            errorMessage = mapAuthError(err.message.orEmpty().lowercase()),
+                            errorMessage = mapAuthError(authErrorDetail(err)),
                         )
                     }
                 }
@@ -404,7 +406,7 @@ class AccountViewModel @Inject constructor(
     }
 
     fun onProfilePhoneChange(value: String) {
-        val normalized = PhoneNormalizer.normalize(value)
+        val normalized = PhoneNormalizer.normalizeForEgyptCheckout(value)
         profileFormState.update {
             it.copy(phone = normalized, phoneError = null, saveSuccess = false, saveError = null)
         }
@@ -426,7 +428,7 @@ class AccountViewModel @Inject constructor(
         val form = profileFormState.value
         if (form.isSaving) return
 
-        val cleanPhone = PhoneNormalizer.normalize(form.phone)
+        val cleanPhone = PhoneNormalizer.normalizeForEgyptCheckout(form.phone)
         if (cleanPhone.isNotEmpty() && !EGYPT_MOBILE_REGEX.matches(cleanPhone)) {
             profileFormState.update {
                 it.copy(
@@ -481,7 +483,8 @@ class AccountViewModel @Inject constructor(
         viewModelScope.launch {
             loadingOrdersState.value = true
             orderRepository.getMyOrders()
-                .onSuccess { list -> ordersState.value = list }
+                .onSuccess { list -> ordersState.value = list; accountError.value = null }
+                .onFailure { accountError.value = localized("تعذر تحميل الطلبات.", "Could not load your orders.") }
             loadingOrdersState.value = false
         }
     }
@@ -505,34 +508,41 @@ class AccountViewModel @Inject constructor(
         }
     }
 
-    private fun mapAuthError(raw: String): String = when {
-        "expired" in raw -> localized(
-            "انتهت صلاحية رمز التحقق. يرجى طلب رمز جديد.",
-            "This verification code has expired. Please request a new code.",
-        )
-        "otp" in raw || "token" in raw -> localized(
-            "رمز التحقق غير صحيح. يرجى مراجعة الأرقام الـ 6 وإعادة المحاولة.",
-            "Invalid verification code. Please check the 6 digits and try again.",
-        )
-        "not confirmed" in raw -> localized(
-            "يرجى تأكيد بريدك الإلكتروني أولاً، أو الدخول فوراً عبر رمز التحقق (6 أرقام).",
-            "Please confirm your email first, or sign in instantly via the 6-digit Email OTP tab.",
-        )
-        "rate limit" in raw || "security purposes" in raw || "429" in raw -> localized(
-            "تم إرسال محاولات كثيرة. يرجى الانتظار 60 ثانية ثم المحاولة مجدداً.",
-            "Too many attempts. Please wait 60 seconds and try again.",
-        )
-        "already registered" in raw || "user already exists" in raw -> localized(
-            "هذا البريد الإلكتروني مسجل بالفعل. يمكنك تسجيل الدخول مباشرة.",
-            "This email is already registered. Please sign in instead.",
-        )
-        "invalid login" in raw || "invalid_credentials" in raw -> localized(
-            "البريد الإلكتروني أو كلمة المرور غير صحيحة.",
-            "Incorrect email or password.",
-        )
-        else -> localized(
-            "تعذر إكمال العملية حالياً. تحقق من اتصالك بالإنترنت وحاول مرة أخرى.",
-            "Unable to complete authentication right now. Check your connection and try again.",
-        )
-    }
+}
+
+private fun authErrorDetail(error: Throwable): String {
+    val code = (error as? io.github.jan.supabase.auth.exception.AuthRestException)?.errorCode?.value
+    return listOfNotNull(code, error.message).joinToString(" ").lowercase()
+}
+
+internal fun mapAuthError(raw: String): String = when {
+    "email_not_confirmed" in raw || "not confirmed" in raw -> localized(
+        "يرجى تأكيد بريدك الإلكتروني أولاً، أو الدخول فوراً عبر رمز التحقق (6 أرقام).",
+        "Please confirm your email first, or sign in instantly via the 6-digit Email OTP tab.",
+    )
+    "rate_limit" in raw || "rate limit" in raw || "security purposes" in raw || "429" in raw -> localized(
+        "تم إرسال محاولات كثيرة. يرجى الانتظار 60 ثانية ثم المحاولة مجدداً.",
+        "Too many attempts. Please wait 60 seconds and try again.",
+    )
+    "weak_password" in raw || "weak password" in raw || "password should be" in raw -> localized("اختر كلمة مرور قوية من 6 أحرف على الأقل.", "Choose a stronger password of at least 6 characters.")
+    "email_exists" in raw || "user_already_exists" in raw || "already registered" in raw || "user already exists" in raw -> localized(
+        "هذا البريد الإلكتروني مسجل بالفعل. يمكنك تسجيل الدخول مباشرة.",
+        "This email is already registered. Please sign in instead.",
+    )
+    "invalid login" in raw || "invalid_credentials" in raw -> localized(
+        "البريد الإلكتروني أو كلمة المرور غير صحيحة.",
+        "Incorrect email or password.",
+    )
+    "expired" in raw -> localized(
+        "انتهت صلاحية رمز التحقق. يرجى طلب رمز جديد.",
+        "This verification code has expired. Please request a new code.",
+    )
+    "otp" in raw || "token" in raw -> localized(
+        "رمز التحقق غير صحيح. يرجى مراجعة الأرقام الـ 6 وإعادة المحاولة.",
+        "Invalid verification code. Please check the 6 digits and try again.",
+    )
+    else -> localized(
+        "تعذر إكمال العملية حالياً. حاول مرة أخرى.",
+        "Unable to complete authentication right now. Please try again.",
+    )
 }

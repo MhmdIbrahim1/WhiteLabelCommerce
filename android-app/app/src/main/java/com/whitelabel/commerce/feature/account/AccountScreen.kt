@@ -58,6 +58,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -194,6 +195,12 @@ fun AccountScreen(
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
+                    state.errorMessage?.let {
+                        Text(it, color = MaterialTheme.colorScheme.error)
+                        androidx.compose.material3.TextButton(onClick = viewModel::loadAccountOrders) {
+                            Text(localized("إعادة المحاولة", "Retry"))
+                        }
+                    }
                     // 1. Account Identity Header Card
                     Card(
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -307,6 +314,7 @@ fun AccountScreen(
                             }
                             Icon(
                                 imageVector = Icons.Rounded.ChevronRight,
+                                modifier = Modifier.graphicsLayer { scaleX = if (state.storeSettings.isRtl) -1f else 1f },
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )

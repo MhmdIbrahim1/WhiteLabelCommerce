@@ -83,6 +83,10 @@ object ApkVerifier {
             )
         }
 
+        if (androidx.core.content.pm.PackageInfoCompat.getLongVersionCode(archiveInfo) <= com.whitelabel.commerce.BuildConfig.VERSION_CODE) {
+            return ApkVerificationResult.Failed("يلزم إصدار أحدث.", "The update must have a newer version code.")
+        }
+
         val installedInfo = readInstalledPackageInfo(pm, context.packageName)
             ?: return ApkVerificationResult.Failed(
                 messageAr = "تعذر التحقق من شهادة التطبيق المثبّت حالياً.",

@@ -92,6 +92,7 @@ data class CheckoutUiState(
 
 @HiltViewModel
 class CheckoutViewModel @Inject constructor(
+    val network: com.whitelabel.commerce.core.data.remote.NetworkState,
     private val cartRepository: CartRepository,
     private val orderRepository: OrderRepository,
     private val authRepository: AuthRepository,
@@ -386,8 +387,6 @@ class CheckoutViewModel @Inject constructor(
                     },
                 )
                 orderRepository.saveLocalOrderReceipt(receipt)
-                // Mark omnichannel abandoned cart recovered on order placement
-                cartRepository.markAbandonedCartRecoveredAsync(result.orderNumber)
                 // COD & full Store Wallet clear cart immediately; Paymob online methods keep cart intact until paid!
                 if (effectiveMethod == PaymentMethod.COD || isPaidViaWallet) {
                     cartRepository.settleReceipt(receipt)

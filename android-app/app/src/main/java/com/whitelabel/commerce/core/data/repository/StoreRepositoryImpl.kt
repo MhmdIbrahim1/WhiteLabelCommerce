@@ -10,6 +10,7 @@ import com.whitelabel.commerce.core.data.remote.runSuspendCatching
 import com.whitelabel.commerce.core.domain.model.StoreSettings
 import com.whitelabel.commerce.core.domain.repository.StoreRepository
 import io.github.jan.supabase.SupabaseClient
+import io.github.jan.supabase.postgrest.query.Columns
 import io.github.jan.supabase.postgrest.from
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,12 +23,15 @@ import javax.inject.Singleton
 @Singleton
 class StoreRepositoryImpl @Inject constructor(
     private val supabase: SupabaseClient,
+    @dagger.hilt.android.qualifiers.ApplicationContext context: android.content.Context,
     private val assetLoader: BrandConfigAssetLoader,
     private val dataStore: DataStore<Preferences>,
 ) : StoreRepository {
 
+    private val languagePrefs = context.getSharedPreferences("language_" + com.whitelabel.commerce.BuildConfig.STORE_ID, android.content.Context.MODE_PRIVATE)
+    private fun StoreSettings.withLanguage() = copy(locale = languagePrefs.getString("language", null) ?: locale)
     private val offlineFallback: StoreSettings = assetLoader.loadOfflineFallback()
-    private val _storeSettings = MutableStateFlow(offlineFallback)
+    private val _storeSettings = MutableStateFlow(offlineFallback.withLanguage())
     override val storeSettings: StateFlow<StoreSettings> = _storeSettings.asStateFlow()
 
     override val darkThemePreference: Flow<Boolean?> = dataStore.data.map { prefs ->
@@ -41,7 +45,7 @@ class StoreRepositoryImpl @Inject constructor(
     override suspend fun refreshStoreSettings(): Result<StoreSettings> = runSuspendCatching {
         val remoteDto = supabase
             .from("store_settings")
-            .select {
+            .select(Columns.raw(SETTINGS_COLUMNS)) {
                 filter {
                     eq("store_id", com.whitelabel.commerce.BuildConfig.STORE_ID)
                 }
@@ -52,11 +56,16 @@ class StoreRepositoryImpl @Inject constructor(
 
         if (remoteDto != null) {
             val merged = remoteDto.toDomain(presetsFallback = offlineFallback.presets)
-            _storeSettings.value = merged
-            merged
+            _storeSettings.value = merged.withLanguage()
+            _storeSettings.value
         } else {
             _storeSettings.value
         }
+    }
+
+    override fun setLanguage(locale: String) {
+        languagePrefs.edit().putString("language", locale).apply()
+        _storeSettings.value = _storeSettings.value.copy(locale = locale)
     }
 
     override suspend fun setDarkThemePreference(isDark: Boolean?) {

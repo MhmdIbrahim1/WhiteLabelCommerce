@@ -487,6 +487,7 @@ fun CatalogScreen(
 
     if (showFilterSheet) {
         CatalogFilterBottomSheet(
+            loadCategory = viewModel::loadCategory,
             state = state,
             currency = storeSettings.currency,
             locale = storeSettings.locale,
@@ -514,6 +515,7 @@ fun CatalogScreen(
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun CatalogFilterBottomSheet(
+    loadCategory: suspend (String, String?) -> Result<com.whitelabel.commerce.core.domain.repository.CatalogSearchResult>,
     state: CatalogUiState,
     currency: String,
     locale: String,
@@ -556,7 +558,14 @@ private fun CatalogFilterBottomSheet(
         null
     }
 
-    val previewCount = state.filterAndSort(
+    val previewProducts by androidx.compose.runtime.produceState(
+        initialValue = state.rawProducts,
+        draftCategoryId, state.selectedCategoryId, state.searchQuery, state.rawProducts,
+    ) {
+        value = if (draftCategoryId == state.selectedCategoryId) state.rawProducts else
+            loadCategory(state.searchQuery, draftCategoryId).getOrNull()?.products.orEmpty()
+    }
+    val previewCount = state.copy(rawProducts = previewProducts).filterAndSort(
         inStock = draftInStock,
         flashOnly = draftFlashOnly,
         ratingFloor = draftMinRating,

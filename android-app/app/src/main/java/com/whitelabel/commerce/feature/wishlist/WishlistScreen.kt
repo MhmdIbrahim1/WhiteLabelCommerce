@@ -111,6 +111,18 @@ fun WishlistScreen(
                 }
             }
 
+            state.errorMessage != null -> {
+                Box(Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) {
+                    BrandEmptyState(
+                        icon = Icons.Outlined.FavoriteBorder,
+                        title = localized("تعذر تحميل المفضلة", "Could not load wishlist"),
+                        subtitle = state.errorMessage.orEmpty(),
+                        actionLabel = localized("إعادة المحاولة", "Retry"),
+                        onAction = { viewModel.loadWishlist(isPullRefresh = true) },
+                    )
+                }
+            }
+
             state.items.isEmpty() -> {
                 Box(
                     modifier = Modifier

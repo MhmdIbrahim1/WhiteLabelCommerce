@@ -39,8 +39,36 @@ class GitHubReleaseUpdater @Inject constructor(
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .followRedirects(true)
-        .followSslRedirects(true)
+        .followSslRedirects(false)
+        .addNetworkInterceptor { chain ->
+            val url = chain.request().url
+            val allowed = setOf("github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com")
+            if (!url.isHttps || (url.host !in allowed && !(url.host == "api.github.com" && url.encodedPath.startsWith("/repos/")))) {
+                throw java.io.IOException("Unexpected GitHub update host")
+            }
+            chain.proceed(chain.request())
+        }
         .build()
+
+    suspend fun checkTenantVersion(): String? = withContext(Dispatchers.IO) {
+        runCatching {
+            val base = java.net.URL(BuildConfig.WEB_STORE_BASE_URL)
+            require(com.whitelabel.commerce.feature.checkout.isAllowedWebStoreBase(base))
+            val url = java.net.URL(base, "/api/mobile/update?store_id=" + BuildConfig.STORE_ID +
+                "&version_code=" + BuildConfig.VERSION_CODE)
+            val connection = url.openConnection() as java.net.HttpURLConnection
+            try {
+                connection.instanceFollowRedirects = false
+                connection.connectTimeout = 5000
+                connection.readTimeout = 5000
+                if (connection.responseCode != 200) return@runCatching null
+                val body = connection.inputStream.bufferedReader().use { it.readText() }
+                org.json.JSONObject(body).optJSONObject("update")?.getString("version_name")
+            } finally {
+                connection.disconnect()
+            }
+        }.getOrNull()
+    }
 
     private fun updatesDirectory(): File = File(context.cacheDir, "updates")
 

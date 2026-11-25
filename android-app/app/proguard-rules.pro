@@ -36,3 +36,10 @@
 -keepclasseswithmembers class com.whitelabel.commerce.core.notifications.** {
     kotlinx.serialization.KSerializer serializer(...);
 }
+
+-keep class com.whitelabel.commerce.core.domain.model.HeroConfig { *; }
+-keep class com.whitelabel.commerce.core.domain.model.HeroConfig$$serializer { *; }
+-keep class com.whitelabel.commerce.core.domain.model.HeroConfig$Companion { *; }
+-keep class com.whitelabel.commerce.core.domain.model.PromoBannerCampaign { *; }
+-keep class com.whitelabel.commerce.core.domain.model.PromoBannerCampaign$$serializer { *; }
+-keep class com.whitelabel.commerce.core.domain.model.PromoBannerCampaign$Companion { *; }

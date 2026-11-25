@@ -97,6 +97,11 @@ class MainViewModel @Inject constructor(
         }
     }
 
+    fun setLanguage(locale: String) {
+        storeRepository.setLanguage(locale)
+        syncPushToken(locale)
+    }
+
     fun syncPushToken(locale: String) {
         viewModelScope.launch {
             fcmTokenManager.syncCurrentToken(locale = locale)

@@ -67,7 +67,7 @@ class WishlistRepositoryImpl @Inject constructor(
 
         val rows = supabase
             .from("wishlists")
-            .select(Columns.raw("id,product_id,created_at,products(*)")) {
+            .select(Columns.raw("id,product_id,created_at,products($PRODUCT_COLUMNS)")) {
                 filter {
                     eq("store_id", BuildConfig.STORE_ID)
                     eq("user_id", userId)

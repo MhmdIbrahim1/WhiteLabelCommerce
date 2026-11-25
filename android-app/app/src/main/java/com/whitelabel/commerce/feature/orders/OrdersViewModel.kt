@@ -25,6 +25,10 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import io.github.jan.supabase.realtime.channel
+import io.github.jan.supabase.realtime.postgresChangeFlow
+import io.github.jan.supabase.realtime.realtime
+import io.github.jan.supabase.realtime.PostgresAction
 import javax.inject.Inject
 
 data class OrderTrackingFormState(
@@ -67,6 +71,7 @@ data class OrdersUiState(
 
 @HiltViewModel
 class OrdersViewModel @Inject constructor(
+    private val supabase: io.github.jan.supabase.SupabaseClient,
     private val orderRepository: OrderRepository,
     private val authRepository: AuthRepository,
     private val walletRepository: WalletRepository,
@@ -193,6 +198,23 @@ class OrdersViewModel @Inject constructor(
                 }
             }
             trackingState.update { it.copy(refreshingOrderNumber = null) }
+        }
+    }
+
+    suspend fun observePayments(receipts: List<SavedOrderReceipt>) {
+        val channel = supabase.realtime.channel("receipt-updates-" + com.whitelabel.commerce.BuildConfig.STORE_ID)
+        try {
+            val changes = channel.postgresChangeFlow<PostgresAction.Update>("public") {
+                table = "orders"
+                filter("store_id", io.github.jan.supabase.postgrest.query.filter.FilterOperator.EQ, com.whitelabel.commerce.BuildConfig.STORE_ID)
+            }
+            channel.subscribe()
+            changes.collect { change ->
+                val id = (change.record["id"] as? kotlinx.serialization.json.JsonPrimitive)?.content
+                if (receipts.any { it.orderNumber == id }) refreshPayments(receipts)
+            }
+        } finally {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { supabase.realtime.removeChannel(channel) }
         }
     }
 

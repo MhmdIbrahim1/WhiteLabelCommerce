@@ -86,6 +86,7 @@ fun CheckoutScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val brandColors = LocalBrandColors.current
+    val online by viewModel.network.online.collectAsStateWithLifecycle(initialValue = true)
     val confirmedReceipt = state.form.confirmedReceipt
 
     // Online payment flow (Paymob Card / Wallet): opens in-app WebView while preserving local cart
@@ -183,7 +184,7 @@ fun CheckoutScreen(
 
                         Button(
                             onClick = viewModel::submitOrder,
-                            enabled = !state.form.isSubmitting &&
+                            enabled = online && !state.form.isSubmitting &&
                                 state.cartItems.isNotEmpty() &&
                                 state.storeSettings.isSyncedFromRemote &&
                                 (state.fullyPaidByWallet || state.form.paymentMethod in state.storeSettings.paymentMethods) &&
@@ -232,6 +233,9 @@ fun CheckoutScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            if (!online || !state.storeSettings.isSyncedFromRemote) {
+                Text(localized("تعذر تحميل إعدادات الدفع. تحقق من اتصالك بالإنترنت.", "Checkout settings are unavailable. Check your connection."), color = MaterialTheme.colorScheme.error)
+            }
             if (state.storeSettings.cartIncentiveEnabled && state.storeSettings.freeShippingThreshold > 0.0) {
                 FreeShippingProgressBar(
                     enabled = state.storeSettings.cartIncentiveEnabled,
@@ -629,7 +633,7 @@ fun CheckoutScreen(
                             value = state.form.coupon,
                             onValueChange = viewModel::coupon,
                             singleLine = true,
-                            placeholder = { Text(localized("أدخل كود الخصم (مثال: NOVA10)", "Enter promo code (e.g. NOVA10)")) },
+                            placeholder = { Text(localized("أدخل كود الخصم", "Enter promo code")) },
                             shape = MaterialTheme.shapes.small,
                             modifier = Modifier.weight(1f),
                         )
@@ -999,7 +1003,7 @@ private fun OrderConfirmationScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text(
-                        text = localized("الإجمالي عند الاستلام", "Total on delivery"),
+                        text = if (receipt.method == "wallet") localized("محفظة المتجر", "Store Wallet") else localized("الإجمالي عند الاستلام", "Total on delivery"),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                     )

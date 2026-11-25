@@ -26,7 +26,7 @@ data class StoreSettings(
     val paymobEnabled: Boolean = false,
     val paymobCardEnabled: Boolean = false,
     val paymobWalletEnabled: Boolean = false,
-    val storeName: String = "Nova Store",
+    val storeName: String = "Store",
     val currency: String = "EGP",
     val locale: String = "ar-EG",
     val colors: BrandColors = BrandColors(),

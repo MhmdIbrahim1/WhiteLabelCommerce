@@ -11,7 +11,6 @@ import com.whitelabel.commerce.core.domain.repository.CatalogRepository
 import com.whitelabel.commerce.core.domain.repository.WishlistRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -62,6 +61,13 @@ data class CatalogUiState(
     val isRefreshing: Boolean = false,
     val errorMessage: String? = null,
 ) {
+    fun selectCategory(id: String?) = copy(
+        selectedCategoryId = id,
+        flashDealsOnly = id != null && flashDealsOnly,
+        priceMin = null,
+        priceMax = null,
+    )
+
     val catalogMinPrice: Double
         get() = rawProducts.minOfOrNull { it.effectivePrice() }?.let { floor(it) } ?: 0.0
 
@@ -95,7 +101,7 @@ data class CatalogUiState(
         nowMillis: Long = System.currentTimeMillis(),
     ): List<Product> {
         val filtered = rawProducts.filter { product ->
-            if (categoryOverride != null && selectedCategoryId == null && product.categoryId != categoryOverride) {
+            if (categoryOverride != null && product.categoryId != categoryOverride) {
                 return@filter false
             }
             if (inStock && !product.isInStock) return@filter false
@@ -151,6 +157,8 @@ class CatalogViewModel @Inject constructor(
         }
     }
 
+    private var fetchJob: Job? = null
+    private var pendingCategory: String? = null
     private var searchJob: Job? = null
 
     init {
@@ -158,6 +166,8 @@ class CatalogViewModel @Inject constructor(
     }
 
     fun applyExternalCategory(categoryIdOrSlug: String?) {
+        pendingCategory = categoryIdOrSlug?.takeIf { _uiState.value.categories.isEmpty() }
+        if (pendingCategory != null) return
         val resolvedId = if (categoryIdOrSlug.isNullOrBlank()) {
             null
         } else {
@@ -179,6 +189,7 @@ class CatalogViewModel @Inject constructor(
     }
 
     fun applyExternalFlashDealsOnly() {
+        pendingCategory = null
         val categoryChanged = _uiState.value.selectedCategoryId != null
         _uiState.update {
             it.copy(
@@ -194,35 +205,13 @@ class CatalogViewModel @Inject constructor(
     fun loadInitial() {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
-            val categoriesDeferred = async { catalogRepository.getCategories() }
-            val current = _uiState.value
-            val productsDeferred = async {
-                if (current.searchQuery.isNotBlank()) {
-                    catalogRepository.searchProducts(
-                        query = current.searchQuery,
-                        categoryId = current.selectedCategoryId,
-                    )
-                } else {
-                    catalogRepository.getActiveProducts(
-                        categoryId = current.selectedCategoryId,
-                    ).map { com.whitelabel.commerce.core.domain.repository.CatalogSearchResult(it, false) }
-                }
-            }
-
-            val categoriesResult = categoriesDeferred.await()
-            val productsResult = productsDeferred.await()
-            val error = categoriesResult.exceptionOrNull() ?: productsResult.exceptionOrNull()
-
-            _uiState.update { prev ->
-                val searchRes = productsResult.getOrNull()
-                prev.copy(
-                    categories = categoriesResult.getOrElse { prev.categories },
-                    rawProducts = searchRes?.products ?: prev.rawProducts,
-                    isClosestSmartMatch = searchRes?.isClosestSmartMatch ?: false,
-                    isLoading = false,
-                    isRefreshing = false,
-                    errorMessage = error?.localizedMessage,
-                )
+            val categories = catalogRepository.getCategories()
+            _uiState.update { it.copy(categories = categories.getOrElse { _ -> it.categories }, errorMessage = categories.exceptionOrNull()?.localizedMessage) }
+            val requested = pendingCategory
+            if (requested != null && categories.isSuccess && _uiState.value.categories.isNotEmpty()) {
+                applyExternalCategory(requested)
+            } else {
+                fetchProducts(isPullRefresh = false)
             }
         }
     }
@@ -249,13 +238,10 @@ class CatalogViewModel @Inject constructor(
     }
 
     fun onCategorySelect(categoryId: String?) {
-        if (_uiState.value.selectedCategoryId == categoryId) return
+        pendingCategory = null
+        if (_uiState.value.selectedCategoryId == categoryId && !(categoryId == null && _uiState.value.flashDealsOnly)) return
         _uiState.update {
-            it.copy(
-                selectedCategoryId = categoryId,
-                priceMin = null,
-                priceMax = null,
-            )
+            it.selectCategory(categoryId)
         }
         fetchProducts(isPullRefresh = false)
     }
@@ -331,8 +317,21 @@ class CatalogViewModel @Inject constructor(
         }
     }
 
+    suspend fun loadCategory(query: String, categoryId: String?) =
+        if (query.isNotBlank()) {
+            catalogRepository.searchProducts(
+                query = query,
+                categoryId = categoryId,
+            )
+        } else {
+            catalogRepository.getActiveProducts(
+                categoryId = categoryId,
+            ).map { com.whitelabel.commerce.core.domain.repository.CatalogSearchResult(it, false) }
+        }
+
     private fun fetchProducts(isPullRefresh: Boolean) {
-        viewModelScope.launch {
+        fetchJob?.cancel()
+        fetchJob = viewModelScope.launch {
             _uiState.update {
                 it.copy(
                     isLoading = !isPullRefresh,
@@ -341,16 +340,7 @@ class CatalogViewModel @Inject constructor(
                 )
             }
             val current = _uiState.value
-            val result = if (current.searchQuery.isNotBlank()) {
-                catalogRepository.searchProducts(
-                    query = current.searchQuery,
-                    categoryId = current.selectedCategoryId,
-                )
-            } else {
-                catalogRepository.getActiveProducts(
-                    categoryId = current.selectedCategoryId,
-                ).map { com.whitelabel.commerce.core.domain.repository.CatalogSearchResult(it, false) }
-            }
+            val result = loadCategory(current.searchQuery, current.selectedCategoryId)
 
             result.onSuccess { searchResult ->
                 _uiState.update {

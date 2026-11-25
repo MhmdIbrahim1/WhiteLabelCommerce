@@ -37,13 +37,14 @@ class CartRepositoryImpl @Inject constructor(
     private val dataStore: DataStore<Preferences>,
     private val json: Json,
     private val supabase: SupabaseClient,
+    private val storeRepository: com.whitelabel.commerce.core.domain.repository.StoreRepository,
 ) : CartRepository {
 
     private val syncScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var pendingSyncJob: Job? = null
 
     @Volatile
-    private var lastKnownCurrency: String = "EGP"
+    private var lastKnownCurrency: String? = null
 
     override val cartItems: Flow<List<CartItem>> = dataStore.data.map { prefs ->
         decodeItems(prefs[KEY_CART_ITEMS]).map { it.toDomain() }
@@ -134,6 +135,7 @@ class CartRepositoryImpl @Inject constructor(
         val marker = androidx.datastore.preferences.core.booleanPreferencesKey(
             "${BuildConfig.STORE_ID}_settled_${receipt.orderNumber}",
         )
+        var newlySettled = false
         dataStore.edit { prefs ->
             if (prefs[marker] == true) return@edit
             val remaining = decodeItems(prefs[KEY_CART_ITEMS]).mapNotNull { line ->
@@ -146,15 +148,16 @@ class CartRepositoryImpl @Inject constructor(
                 prefs[KEY_CART_ITEMS] = json.encodeToString(remaining)
             }
             prefs[marker] = true
+            newlySettled = true
         }
-        markAbandonedCartRecoveredAsync(receipt.orderNumber)
+        if (newlySettled) markAbandonedCartRecoveredAsync(receipt.orderNumber)
     }
 
     override suspend fun clearCart() {
         dataStore.edit { prefs ->
             prefs.remove(KEY_CART_ITEMS)
         }
-        syncAbandonedCartAsync(lastKnownCurrency)
+        syncAbandonedCartAsync(lastKnownCurrency ?: storeRepository.storeSettings.value.currency)
     }
 
     override fun syncAbandonedCartAsync(currency: String) {
@@ -222,7 +225,7 @@ class CartRepositoryImpl @Inject constructor(
                 prefs[KEY_CART_ITEMS] = json.encodeToString(mutable)
             }
         }
-        syncAbandonedCartAsync(lastKnownCurrency)
+        syncAbandonedCartAsync(lastKnownCurrency ?: storeRepository.storeSettings.value.currency)
     }
 
     private fun decodeItems(raw: String?): List<CartItemEntity> {

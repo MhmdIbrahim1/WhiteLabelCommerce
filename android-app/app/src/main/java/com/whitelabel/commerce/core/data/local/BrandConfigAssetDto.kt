@@ -20,7 +20,7 @@ data class BrandPresetsAssetDto(
 
 @Serializable
 data class BrandConfigAssetDto(
-    val storeName: String = "Nova Store",
+    val storeName: String = "Store",
     val currency: String = "EGP",
     val locale: String = "ar-EG",
     val colors: BrandColorsAssetDto = BrandColorsAssetDto(),

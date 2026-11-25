@@ -85,29 +85,35 @@ if (isCiEnvironment && isReleaseBuildRequested && !hasReleaseSigning) {
 
 // Single source of truth for Android release versioning (read by .github/workflows/android-release.yml).
 // Must be strictly greater than all previously published GitHub Releases (v1.2.0 = 40, v1.3.0 = 42, v1.3.1 = 43, v1.4.0 = 44).
-val defaultVersionCode = 45
-val defaultVersionName = "1.4.1"
+val defaultVersionCode = 46
+val defaultVersionName = "1.4.2"
 
-val resolvedVersionCode = (project.findProperty("VERSION_CODE") as? String)
+val resolvedVersionCode = ((project.findProperty("versionCode") ?: project.findProperty("VERSION_CODE")) as? String)
     ?.trim()
     ?.toIntOrNull()
     ?.takeIf { it > 0 }
     ?: defaultVersionCode
 
-val resolvedVersionName = (project.findProperty("VERSION_NAME") as? String)
+val resolvedVersionName = ((project.findProperty("versionName") ?: project.findProperty("VERSION_NAME")) as? String)
     ?.trim()
     ?.takeIf { it.isNotEmpty() }
     ?: defaultVersionName
 
+val NOVA_STORE_ID = "00000000-0000-0000-0000-000000000001"
 val resolvedStoreId = resolveConfigValue(
     "storeId",
-    resolveConfigValue("STORE_ID", "00000000-0000-0000-0000-000000000001"),
+    resolveConfigValue("STORE_ID", NOVA_STORE_ID),
 )
+
+require(Regex("[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}").matches(resolvedStoreId)) { "Invalid storeId UUID" }
+require(resolvedStoreId.equals(NOVA_STORE_ID, ignoreCase = true) || resolvedAppIdSuffix != null) { "Custom storeId requires appIdSuffix" }
+require(resolvedAppIdSuffix?.matches(Regex("([.][a-zA-Z][a-zA-Z0-9_]*)+")) != false) { "Invalid appIdSuffix" }
+val isWhiteLabelTenant = resolvedAppIdSuffix != null || !resolvedStoreId.equals(NOVA_STORE_ID, ignoreCase = true)
 
 val resolvedStoreName = (
     (project.findProperty("storeName") as? String)
         ?: (project.findProperty("STORE_NAME") as? String)
-)?.trim()?.trim('"')?.takeIf { it.isNotEmpty() } ?: "Nova Store"
+)?.trim()?.trim('"')?.takeIf { it.isNotEmpty() } ?: if (isWhiteLabelTenant) "Store" else "Nova Store"
 
 android {
     namespace = "com.whitelabel.commerce"
@@ -123,6 +129,7 @@ android {
         versionCode = resolvedVersionCode
         versionName = resolvedVersionName
 
+        // The manifest merger XML-escapes the placeholder when serializing the attribute.
         manifestPlaceholders["appName"] = resolvedStoreName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -132,7 +139,7 @@ android {
         }
 
         buildConfigField("String", "STORE_ID", "\"$resolvedStoreId\"")
-        buildConfigField("Boolean", "IS_WHITE_LABEL_TENANT", if (resolvedAppIdSuffix != null) "true" else "false")
+        buildConfigField("Boolean", "IS_WHITE_LABEL_TENANT", isWhiteLabelTenant.toString())
         buildConfigField("String", "WEB_STORE_BASE_URL", "\"${resolveConfigValue("WEB_STORE_BASE_URL", "http://10.0.2.2:3000")}\"")
         buildConfigField(
             type = "String",

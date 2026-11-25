@@ -18,5 +18,7 @@ interface StoreRepository {
 
     suspend fun refreshStoreSettings(): Result<StoreSettings>
 
+    fun setLanguage(locale: String)
+
     suspend fun setDarkThemePreference(isDark: Boolean?)
 }

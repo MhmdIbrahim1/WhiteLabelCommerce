@@ -9,6 +9,7 @@ import com.whitelabel.commerce.core.domain.model.ReviewEligibility
 import com.whitelabel.commerce.core.domain.repository.ReviewRepository
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
+import io.github.jan.supabase.postgrest.query.Columns
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Order as SortOrder
@@ -26,7 +27,7 @@ class ReviewRepositoryImpl @Inject constructor(
         runSuspendCatching {
             supabase
                 .from("product_reviews")
-                .select {
+                .select(Columns.raw(REVIEW_COLUMNS)) {
                     filter {
                         eq("store_id", BuildConfig.STORE_ID)
                         eq("product_id", productId)

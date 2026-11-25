@@ -95,18 +95,26 @@ enum class PaymentFlowOutcome {
 }
 
 private val EGYPT_WALLET_REGEX = Regex("^01[0125][0-9]{8}$")
-private val PRIVATE_172_REGEX = Regex("^172\\.(1[6-9]|2[0-9]|3[0-1])\\.\\d{1,3}\\.\\d{1,3}$")
 private const val PAYMENT_TIMEOUT_MS = 15_000L
+
+internal fun isPaymentConfirmed(dbStatus: String?) = dbStatus == "paid"
 
 internal fun isLocalOrLanHost(host: String?): Boolean {
     val clean = host?.trim()?.lowercase().orEmpty()
     if (clean.isEmpty()) return false
-    return clean == "localhost" ||
-        clean == "127.0.0.1" ||
-        clean.startsWith("10.") ||
-        clean.startsWith("192.168.") ||
-        PRIVATE_172_REGEX.matches(clean)
+    if (clean == "localhost" || clean == "127.0.0.1") return true
+    val parts = clean.split('.')
+    if (parts.size != 4 || parts.any { !it.matches(Regex("0|[1-9][0-9]{0,2}")) || it.toInt() > 255 }) return false
+    return parts[0] == "10" || (parts[0] == "192" && parts[1] == "168") ||
+        (parts[0] == "172" && parts[1].toInt() in 16..31)
 }
+
+internal fun isPaymobUrl(raw: String): Boolean = runCatching {
+    val uri = java.net.URI(raw)
+    val host = uri.host?.lowercase().orEmpty()
+    uri.scheme.equals("https", true) && uri.rawUserInfo == null && uri.port in setOf(-1, 443) &&
+        (host.endsWith(".paymob.com") || host == "accept.paymobsolutions.com" || host == "paymob.com")
+}.getOrDefault(false)
 
 internal fun isPendingPaymobUrl(rawUrl: String): Boolean {
     val query = rawUrl.substringAfter('?', "")
@@ -125,12 +133,12 @@ internal fun isPendingPaymobUrl(rawUrl: String): Boolean {
  */
 internal fun extractStrictPostPayQuery(rawUrl: String): String? {
     val trimmed = rawUrl.trim()
-    if (!trimmed.startsWith("https://", ignoreCase = true)) return null
+    if (!isPaymobUrl(trimmed)) return null
     val pathAndQuery = trimmed.substringAfter("://").substringAfter('/', "")
     val path = "/" + pathAndQuery.substringBefore('?')
     val query = pathAndQuery.substringAfter('?', "")
     if (query.isEmpty()) return null
-    if (!path.contains("/acceptance/post_pay", ignoreCase = true)) return null
+    if (path.trimEnd('/') !in setOf("/api/acceptance/post_pay", "/acceptance/post_pay")) return null
 
     var successValue: String? = null
     for (pair in query.split('&')) {
@@ -149,7 +157,7 @@ internal fun extractStrictPostPayQuery(rawUrl: String): String? {
 
 internal fun isAllowedWebStoreBase(
     base: URL,
-    allowLocalLanHttp: Boolean = BuildConfig.ENABLE_GITHUB_UPDATER || BuildConfig.DEBUG,
+    allowLocalLanHttp: Boolean = BuildConfig.DEBUG,
 ): Boolean =
     base.protocol.equals("https", ignoreCase = true) ||
         (allowLocalLanHttp && base.protocol.equals("http", ignoreCase = true) && isLocalOrLanHost(base.host))
@@ -201,7 +209,7 @@ class PaymentViewModel @Inject constructor(
             }
             val raw = response.body?.string().orEmpty()
             val redirectUrl = JSONObject(raw).getString("redirect_url")
-            require(URL(redirectUrl).protocol.equals("https", ignoreCase = true))
+            require(isPaymobUrl(redirectUrl))
             redirectUrl
         }
     }
@@ -305,7 +313,7 @@ fun PaymentFlow(
         val redirectedOutcome = vm.bridgePostPayCallback(query)
         val dbStatus = vm.status(id, phone)
         when {
-            dbStatus == "paid" || redirectedOutcome == "success" -> {
+            isPaymentConfirmed(dbStatus) -> {
                 vm.confirmPaid(id)
                 latestExit(PaymentFlowOutcome.SUCCESS)
             }
@@ -323,17 +331,11 @@ fun PaymentFlow(
         if (url == null && callbackOutcome == null) return@LaunchedEffect
 
         when (callbackOutcome) {
-            "success" -> {
-                vm.status(id, phone)
-                vm.confirmPaid(id)
-                latestExit(PaymentFlowOutcome.SUCCESS)
-                return@LaunchedEffect
-            }
             "failed" -> {
                 latestExit(PaymentFlowOutcome.FAILED)
                 return@LaunchedEffect
             }
-            "pending" -> {
+            "success", "pending" -> {
                 repeat(4) {
                     val status = vm.status(id, phone)
                     if (status == "paid") {
@@ -672,7 +674,7 @@ fun PaymentFlow(
                                             }
 
                                             // 0. Never intercept or treat as failed when `pending=true` (Paymob Wallet pre-PIN redirects)
-                                            if (isPendingPaymobUrl(rawTarget)) {
+                                            if (isPaymobUrl(rawTarget) && isPendingPaymobUrl(rawTarget)) {
                                                 return false
                                             }
 
@@ -688,7 +690,8 @@ fun PaymentFlow(
                                             }
 
                                             val base = Uri.parse(BuildConfig.WEB_STORE_BASE_URL)
-                                            val isLocalLanHost = (BuildConfig.ENABLE_GITHUB_UPDATER || BuildConfig.DEBUG) &&
+                                            val isLocalLanHost = BuildConfig.DEBUG && base.scheme == "http" && target.scheme == "http" &&
+                                                target.port == base.port &&
                                                 isLocalOrLanHost(base.host) &&
                                                 isLocalOrLanHost(target.host)
                                             val matchesAppOrigin =
@@ -710,7 +713,7 @@ fun PaymentFlow(
 
                                             // 3. Rewrite mismatched loopback host on local LAN/dev testing
                                             if (isLocalLanHost && target.host != base.host) {
-                                                val port = if (target.port > 0) target.port else base.port
+                                                val port = base.port
                                                 val authority = if (port > 0) "${base.host}:$port" else base.host.orEmpty()
                                                 val rewritten = target.buildUpon()
                                                     .authority(authority)
@@ -722,7 +725,7 @@ fun PaymentFlow(
 
                                             // 4. Never block Paymob HTTPS pages or allowed local origin
                                             if (matchesAppOrigin) return false
-                                            return !target.scheme.equals("https", ignoreCase = true)
+                                            return !isPaymobUrl(rawTarget)
                                         }
                                     }
                                     loadUrl(requireNotNull(url))

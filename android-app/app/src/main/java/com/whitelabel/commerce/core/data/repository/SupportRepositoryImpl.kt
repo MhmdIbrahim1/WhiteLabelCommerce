@@ -67,6 +67,7 @@ class SupportRepositoryImpl @Inject constructor(
             put("p_message", payloadMessage)
         })
 
+        if (supabase.auth.currentUserOrNull() != null) return@runSuspendCatching
         saveLocalTicket(
             LocalSupportTicketEntity(
                 id = UUID.randomUUID().toString(),

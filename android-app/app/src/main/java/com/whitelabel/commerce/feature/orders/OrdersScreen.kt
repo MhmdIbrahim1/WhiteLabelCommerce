@@ -88,6 +88,7 @@ import com.whitelabel.commerce.core.domain.model.SavedOrderReceipt
 import com.whitelabel.commerce.core.domain.model.StoreSettings
 import com.whitelabel.commerce.feature.checkout.PaymentFlow
 import com.whitelabel.commerce.feature.checkout.PaymentFlowOutcome
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 
 private val RETRY_WALLET_REGEX = Regex("^01[0125][0-9]{8}$")
@@ -165,9 +166,11 @@ fun OrdersScreen(
 
     val onlineReceipts = state.localReceipts.filter { it.method != "cod" && it.paymentStatus == "pending" }
     LaunchedEffect(onlineReceipts.map { it.orderNumber }) {
-        while (onlineReceipts.isNotEmpty()) {
+        if (onlineReceipts.isEmpty()) return@LaunchedEffect
+        launch { com.whitelabel.commerce.core.data.remote.runSuspendCatching { viewModel.observePayments(onlineReceipts) } }
+        for (waitMs in listOf(0L, 2500L, 5000L, 10000L, 20000L, 40000L)) {
+            delay(waitMs)
             viewModel.refreshPayments(onlineReceipts)
-            delay(10_000)
         }
     }
 
@@ -894,11 +897,7 @@ private fun PaymentAndShippingSummary(
     val brandColors = LocalBrandColors.current
     val context = LocalContext.current
 
-    val methodLabel = when (method.lowercase()) {
-        "paymob_card" -> localized("بطاقة بنكية", "Card")
-        "paymob_wallet" -> localized("محفظة إلكترونية", "Wallet")
-        else -> localized("الدفع عند الاستلام", "COD")
-    }
+    val methodLabel = orderMethodLabel(method)
     val statusLabel = when (paymentStatus.lowercase()) {
         "paid" -> localized("مدفوع", "Paid")
         "failed" -> localized("فشل الدفع", "Payment failed")
@@ -1339,3 +1338,10 @@ private fun AccountOrderCard(
         }
     }
 }
+
+internal fun orderMethodLabel(method: String): String = when (method.lowercase()) {
+        "paymob_card" -> localized("بطاقة بنكية", "Card")
+        "wallet" -> localized("محفظة المتجر", "Store Wallet")
+        "paymob_wallet" -> localized("محفظة إلكترونية", "Wallet")
+        else -> localized("الدفع عند الاستلام", "COD")
+    }

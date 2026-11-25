@@ -12,6 +12,7 @@ import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
 private val Context.commerceDataStore: DataStore<Preferences> by preferencesDataStore(
+    produceMigrations = { listOf(PrivatePreferences) },
     name = if (com.whitelabel.commerce.BuildConfig.STORE_ID == "00000000-0000-0000-0000-000000000001") "whitelabel_commerce_prefs" else "commerce_" + com.whitelabel.commerce.BuildConfig.STORE_ID,
 )
 

@@ -10,7 +10,6 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
-import com.whitelabel.commerce.BuildConfig
 import com.whitelabel.commerce.MainActivity
 import com.whitelabel.commerce.R
 import dagger.hilt.android.AndroidEntryPoint
@@ -26,14 +25,15 @@ class CommerceFirebaseMessagingService : FirebaseMessagingService() {
     @Inject
     lateinit var tokenManager: FcmTokenManager
 
+    @Inject
+    lateinit var stores: com.whitelabel.commerce.core.domain.repository.StoreRepository
+
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    override fun onNewToken(token: String) {
-        super.onNewToken(token)
-        val prefs = getSharedPreferences("language_" + BuildConfig.STORE_ID, MODE_PRIVATE)
-        val locale = prefs.getString("language", "ar") ?: "ar"
+    override fun onRegistered(token: String) {
+        super.onRegistered(token)
         serviceScope.launch {
-            tokenManager.syncExplicitToken(token = token, locale = locale)
+            tokenManager.syncExplicitToken(token = token, locale = stores.storeSettings.value.locale)
         }
     }
 

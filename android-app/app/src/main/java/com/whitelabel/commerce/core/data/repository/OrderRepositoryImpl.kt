@@ -39,6 +39,7 @@ import io.github.jan.supabase.postgrest.query.Columns
 import io.github.jan.supabase.postgrest.query.Order as SortOrder
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import com.whitelabel.commerce.core.data.di.PrivatePreferences
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 import kotlinx.serialization.json.encodeToJsonElement
@@ -148,7 +149,7 @@ class OrderRepositoryImpl @Inject constructor(
             val old = current.find { it.orderNumber == id } ?: return@edit
             val next = old.copy(status = status.rawValue, paymentStatus = payment, method = method,
                 carrier = carrier, trackingNumber = tracking, createdAt = created)
-            if (next != old) prefs[KEY_SAVED_ORDERS] = json.encodeToString(current.map { if (it.orderNumber == id) next else it })
+            if (next != old) prefs[KEY_SAVED_ORDERS] = encodeSavedOrders(current.map { if (it.orderNumber == id) next else it })
             if (payment == "paid") paid = next.toDomain()
         }
         paid?.let { cart.settleReceipt(it) }
@@ -190,7 +191,7 @@ class OrderRepositoryImpl @Inject constructor(
             current.removeAll { it.orderNumber == receipt.orderNumber }
             current.add(0, SavedOrderReceiptEntity.fromDomain(receipt))
             val trimmed = current.take(MAX_LOCAL_ORDERS)
-            prefs[KEY_SAVED_ORDERS] = json.encodeToString(trimmed)
+            prefs[KEY_SAVED_ORDERS] = encodeSavedOrders(trimmed)
         }
     }
 
@@ -208,7 +209,7 @@ class OrderRepositoryImpl @Inject constructor(
                     status = status.rawValue,
                     createdAt = createdAt ?: existing.createdAt,
                 )
-                prefs[KEY_SAVED_ORDERS] = json.encodeToString(current)
+                prefs[KEY_SAVED_ORDERS] = encodeSavedOrders(current)
             }
         }
     }
@@ -221,12 +222,11 @@ class OrderRepositoryImpl @Inject constructor(
             if (idx >= 0) {
                 val updated = current[idx].copy(paymentStatus = "paid")
                 current[idx] = updated
-                prefs[KEY_SAVED_ORDERS] = json.encodeToString(current)
+                prefs[KEY_SAVED_ORDERS] = encodeSavedOrders(current)
                 settledReceipt = updated.toDomain()
             }
         }
         settledReceipt?.let { cart.settleReceipt(it) }
-        cart.clearCart()
     }
 
     override suspend fun updateLocalOrderPaymentMethod(orderNumber: String, method: String) {
@@ -235,7 +235,7 @@ class OrderRepositoryImpl @Inject constructor(
             val idx = current.indexOfFirst { it.orderNumber.equals(orderNumber, ignoreCase = true) }
             if (idx >= 0) {
                 current[idx] = current[idx].copy(method = method, paymentStatus = "pending")
-                prefs[KEY_SAVED_ORDERS] = json.encodeToString(current)
+                prefs[KEY_SAVED_ORDERS] = encodeSavedOrders(current)
             }
         }
     }
@@ -261,12 +261,11 @@ class OrderRepositoryImpl @Inject constructor(
                     status = OrderStatus.CONFIRMED.rawValue,
                 )
                 current[idx] = updated
-                prefs[KEY_SAVED_ORDERS] = json.encodeToString(current)
+                prefs[KEY_SAVED_ORDERS] = encodeSavedOrders(current)
                 settledReceipt = updated.toDomain()
             }
         }
         settledReceipt?.let { cart.settleReceipt(it) }
-        cart.clearCart()
     }
 
     override suspend fun getReturnRequestForOrder(orderId: String): Result<ReturnRequest?> = runSuspendCatching {
@@ -342,10 +341,13 @@ class OrderRepositoryImpl @Inject constructor(
             .toDomain()
     }
 
+    private fun encodeSavedOrders(rows: List<SavedOrderReceiptEntity>): String =
+        PrivatePreferences.encrypt(KEY_SAVED_ORDERS.name, json.encodeToString(rows))
+
     private fun decodeSavedOrders(raw: String?): List<SavedOrderReceiptEntity> {
         if (raw.isNullOrBlank()) return emptyList()
         return runCatching {
-            json.decodeFromString<List<SavedOrderReceiptEntity>>(raw)
+            json.decodeFromString<List<SavedOrderReceiptEntity>>(PrivatePreferences.decrypt(KEY_SAVED_ORDERS.name, raw))
         }.getOrDefault(emptyList())
     }
 

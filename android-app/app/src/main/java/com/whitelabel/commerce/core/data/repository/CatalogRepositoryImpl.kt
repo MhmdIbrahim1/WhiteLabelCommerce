@@ -42,7 +42,7 @@ class CatalogRepositoryImpl @Inject constructor(
     override suspend fun getCategories(): Result<List<Category>> = runSuspendCatching {
         supabase
             .from("categories")
-            .select(Columns.raw("*,products!inner(store_id,is_active)")) {
+            .select(Columns.raw(CATEGORY_COLUMNS)) {
                 filter {
                     eq("products.store_id", BuildConfig.STORE_ID)
                     eq("products.is_active", true)
@@ -173,7 +173,7 @@ class CatalogRepositoryImpl @Inject constructor(
         orderByCreatedAt: Boolean,
     ): List<ProductDto> = supabase
         .from("products")
-        .select {
+        .select(Columns.raw(PRODUCT_COLUMNS)) {
             filter {
                 eq("store_id", BuildConfig.STORE_ID)
                 eq("is_active", true)
@@ -195,7 +195,7 @@ class CatalogRepositoryImpl @Inject constructor(
     override suspend fun getProductById(productId: String): Result<Product?> = runSuspendCatching {
         supabase
             .from("products")
-            .select {
+            .select(Columns.raw(PRODUCT_COLUMNS)) {
                 filter {
                     eq("id", productId)
                     eq("store_id", BuildConfig.STORE_ID)
@@ -211,7 +211,7 @@ class CatalogRepositoryImpl @Inject constructor(
     override suspend fun getProductBySlug(slug: String): Result<Product?> = runSuspendCatching {
         supabase
             .from("products")
-            .select {
+            .select(Columns.raw(PRODUCT_COLUMNS)) {
                 filter {
                     eq("slug", slug)
                     eq("store_id", BuildConfig.STORE_ID)

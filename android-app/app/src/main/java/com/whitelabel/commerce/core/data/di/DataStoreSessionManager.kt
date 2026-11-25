@@ -24,14 +24,14 @@ class DataStoreSessionManager(
     override suspend fun saveSession(session: UserSession) {
         val encoded = json.encodeToString(UserSession.serializer(), session)
         dataStore.edit { prefs ->
-            prefs[sessionKey] = encoded
+            prefs[sessionKey] = PrivatePreferences.encrypt(sessionKey.name, encoded)
         }
     }
 
     override suspend fun loadSession(): UserSession? {
         val raw = dataStore.data.first()[sessionKey] ?: return null
         return runCatching {
-            json.decodeFromString(UserSession.serializer(), raw)
+            json.decodeFromString(UserSession.serializer(), PrivatePreferences.decrypt(sessionKey.name, raw))
         }.getOrNull()
     }
 

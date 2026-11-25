@@ -211,9 +211,11 @@ class AuthRepositoryImpl @Inject constructor(
         city: String,
         address: String,
     ) {
+        if (supabase.auth.currentSessionOrNull() == null) return
         supabase.postgrest.rpc(
             function = "sync_customer_profile",
             parameters = buildJsonObject {
+                put("p_store_id", BuildConfig.STORE_ID)
                 put("p_full_name", fullName)
                 put("p_phone", phone)
                 put("p_city", city)

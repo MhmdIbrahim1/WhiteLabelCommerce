@@ -15,8 +15,10 @@ class FcmTokenManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val notificationRepository: NotificationRepository,
 ) {
+    private val registration = context.getSharedPreferences("fcm_registration", Context.MODE_PRIVATE)
+
     @Volatile
-    var lastKnownToken: String? = null
+    var lastKnownToken: String? = registration.getString("token", null)
         private set
 
     private fun deviceSessionId(): String = runCatching {
@@ -27,11 +29,8 @@ class FcmTokenManager @Inject constructor(
         if (FirebaseApp.getApps(context).isEmpty()) return null
         return suspendCancellableCoroutine { cont ->
             runCatching {
-                FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
-                    val token = if (task.isSuccessful) task.result else null
-                    if (!token.isNullOrBlank()) {
-                        lastKnownToken = token
-                    }
+                FirebaseMessaging.getInstance().register().addOnCompleteListener { task ->
+                    val token = if (task.isSuccessful) lastKnownToken else null
                     if (cont.isActive) cont.resume(token)
                 }
             }.onFailure {
@@ -52,6 +51,7 @@ class FcmTokenManager @Inject constructor(
 
     suspend fun syncExplicitToken(token: String, locale: String) {
         lastKnownToken = token
+        registration.edit().putString("token", token).apply()
         notificationRepository.registerPushToken(
             token = token,
             locale = locale,
