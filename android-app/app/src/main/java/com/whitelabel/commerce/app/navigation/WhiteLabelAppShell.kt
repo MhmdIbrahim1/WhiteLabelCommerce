@@ -432,6 +432,9 @@ fun WhiteLabelAppShell(
                 ProductDetailScreen(
                     onBack = { navController.popBackStack() },
                     onAddedToCart = { msg -> showSnackbar(msg, showCartAction = true) },
+                    onProductClick = { nextId ->
+                        navController.navigate(AppRoutes.productDetail(nextId))
+                    },
                     onOpenAccount = { navController.navigate(AppRoutes.ACCOUNT) },
                     onShowMessage = { msg -> showSnackbar(msg) },
                     onWishlistSignInPrompt = ::promptSignInForWishlist,

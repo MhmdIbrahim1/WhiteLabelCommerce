@@ -1,7 +1,125 @@
 package com.whitelabel.commerce.core.domain.model
 
 import com.whitelabel.commerce.core.designsystem.localized
+import java.util.Calendar
+import java.util.GregorianCalendar
+import java.util.Locale
+import java.util.TimeZone
 import kotlin.math.roundToInt
+
+object FlashSalePricing {
+    private val ISO_REGEX = Regex(
+        """^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|[+-]\d{2}(?::?\d{2})?)?$""",
+    )
+
+    /**
+     * API-24-safe ISO-8601 timestamp parser supporting PostgreSQL / Supabase timestamptz strings.
+     */
+    fun parseIsoTimestampMillis(raw: String?): Long? {
+        val text = raw?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        val match = ISO_REGEX.matchEntire(text) ?: return null
+        val year = match.groupValues[1].toIntOrNull() ?: return null
+        val month = match.groupValues[2].toIntOrNull() ?: return null
+        val day = match.groupValues[3].toIntOrNull() ?: return null
+        val hour = match.groupValues[4].toIntOrNull() ?: return null
+        val minute = match.groupValues[5].toIntOrNull() ?: return null
+        val second = match.groupValues[6].toIntOrNull() ?: return null
+        val fracRaw = match.groupValues[7]
+        val millis = if (fracRaw.isEmpty()) {
+            0
+        } else {
+            fracRaw.padEnd(3, '0').take(3).toIntOrNull() ?: 0
+        }
+        val tzRaw = match.groupValues[8]
+        val offsetMillis = when {
+            tzRaw.isEmpty() || tzRaw.equals("Z", ignoreCase = true) -> 0L
+            else -> {
+                val sign = if (tzRaw.startsWith("-")) -1L else 1L
+                val digits = tzRaw.substring(1).replace(":", "")
+                val tzHour = digits.take(2).toIntOrNull() ?: return null
+                val tzMin = if (digits.length >= 4) digits.substring(2, 4).toIntOrNull() ?: 0 else 0
+                sign * ((tzHour * 60L) + tzMin) * 60_000L
+            }
+        }
+
+        val cal = GregorianCalendar(TimeZone.getTimeZone("UTC"), Locale.US).apply {
+            isLenient = false
+            clear()
+            set(Calendar.YEAR, year)
+            set(Calendar.MONTH, month - 1)
+            set(Calendar.DAY_OF_MONTH, day)
+            set(Calendar.HOUR_OF_DAY, hour)
+            set(Calendar.MINUTE, minute)
+            set(Calendar.SECOND, second)
+            set(Calendar.MILLISECOND, millis)
+        }
+        return runCatching { cal.timeInMillis - offsetMillis }.getOrNull()
+    }
+
+    fun isActive(
+        regularPrice: Double,
+        flashSalePrice: Double?,
+        flashSaleStartsAt: String?,
+        flashSaleEndsAt: String?,
+        nowMillis: Long = System.currentTimeMillis(),
+    ): Boolean {
+        val flash = flashSalePrice ?: return false
+        if (!regularPrice.isFinite() || !flash.isFinite()) return false
+        if (flash <= 0.0 || flash >= regularPrice) return false
+        val endsMs = parseIsoTimestampMillis(flashSaleEndsAt) ?: return false
+        if (endsMs <= nowMillis) return false
+        val startsMs = parseIsoTimestampMillis(flashSaleStartsAt)
+        if (startsMs != null && nowMillis < startsMs) return false
+        return true
+    }
+
+    fun effectivePrice(
+        regularPrice: Double,
+        flashSalePrice: Double?,
+        flashSaleStartsAt: String?,
+        flashSaleEndsAt: String?,
+        nowMillis: Long = System.currentTimeMillis(),
+    ): Double = if (isActive(regularPrice, flashSalePrice, flashSaleStartsAt, flashSaleEndsAt, nowMillis)) {
+        flashSalePrice!!
+    } else {
+        regularPrice
+    }
+
+    fun savingsPercent(
+        regularPrice: Double,
+        flashSalePrice: Double?,
+        flashSaleStartsAt: String?,
+        flashSaleEndsAt: String?,
+        nowMillis: Long = System.currentTimeMillis(),
+    ): Int? {
+        if (!isActive(regularPrice, flashSalePrice, flashSaleStartsAt, flashSaleEndsAt, nowMillis)) return null
+        val flash = flashSalePrice ?: return null
+        if (regularPrice <= 0.0 || flash >= regularPrice) return null
+        return (((regularPrice - flash) / regularPrice) * 100.0).roundToInt().coerceIn(1, 99)
+    }
+
+    fun remainingMillis(
+        flashSaleEndsAt: String?,
+        nowMillis: Long = System.currentTimeMillis(),
+    ): Long {
+        val endsMs = parseIsoTimestampMillis(flashSaleEndsAt) ?: return 0L
+        return (endsMs - nowMillis).coerceAtLeast(0L)
+    }
+
+    fun formatCountdown(remainingMillis: Long, isRtl: Boolean): String {
+        val totalSec = (remainingMillis.coerceAtLeast(0L)) / 1000L
+        val days = totalSec / 86_400L
+        val hours = (totalSec % 86_400L) / 3_600L
+        val minutes = (totalSec % 3_600L) / 60L
+        val seconds = totalSec % 60L
+        val hms = String.format(Locale.US, "%02d:%02d:%02d", hours, minutes, seconds)
+        return if (days > 0L) {
+            if (isRtl) "${days}ي $hms" else "${days}d $hms"
+        } else {
+            hms
+        }
+    }
+}
 
 data class ProductSpecification(
     val keyAr: String = "",
@@ -35,6 +153,9 @@ data class Product(
     val description: String = "",
     val price: Double,
     val oldPrice: Double? = null,
+    val flashSalePrice: Double? = null,
+    val flashSaleStartsAt: String? = null,
+    val flashSaleEndsAt: String? = null,
     val stock: Int = 0,
     val isActive: Boolean = true,
     val sizes: List<String> = emptyList(),
@@ -52,6 +173,7 @@ data class Product(
 
     val formattedRating: String
         get() = ReviewFormatting.formatScore(avgRating)
+
     val displayDescription: String
         get() = localized(description, descriptionEn?.takeIf { it.isNotBlank() } ?: description)
 
@@ -64,11 +186,30 @@ data class Product(
     val isLowStock: Boolean
         get() = stock in 1..5
 
+    fun isFlashSaleActive(nowMillis: Long = System.currentTimeMillis()): Boolean =
+        FlashSalePricing.isActive(price, flashSalePrice, flashSaleStartsAt, flashSaleEndsAt, nowMillis)
+
+    fun effectivePrice(nowMillis: Long = System.currentTimeMillis()): Double =
+        FlashSalePricing.effectivePrice(price, flashSalePrice, flashSaleStartsAt, flashSaleEndsAt, nowMillis)
+
+    fun flashSavingsPercent(nowMillis: Long = System.currentTimeMillis()): Int? =
+        FlashSalePricing.savingsPercent(price, flashSalePrice, flashSaleStartsAt, flashSaleEndsAt, nowMillis)
+
+    fun flashRemainingMillis(nowMillis: Long = System.currentTimeMillis()): Long =
+        FlashSalePricing.remainingMillis(flashSaleEndsAt, nowMillis)
+
+    fun displayStrikePrice(nowMillis: Long = System.currentTimeMillis()): Double? = when {
+        isFlashSaleActive(nowMillis) -> price
+        oldPrice != null && oldPrice > price -> oldPrice
+        else -> null
+    }
+
     val hasDiscount: Boolean
-        get() = oldPrice != null && oldPrice > price
+        get() = isFlashSaleActive() || (oldPrice != null && oldPrice > price)
 
     val discountPercent: Int?
         get() {
+            flashSavingsPercent()?.let { return it }
             val previous = oldPrice ?: return null
             if (previous <= 0.0 || previous <= price) return null
             return (((previous - price) / previous) * 100.0).roundToInt().coerceIn(1, 99)

@@ -17,12 +17,17 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.ShoppingBag
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.ShoppingCartCheckout
 import androidx.compose.material3.Button
@@ -40,8 +45,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -49,11 +56,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.SubcomposeAsyncImage
 import com.whitelabel.commerce.core.designsystem.LocalBrandColors
 import com.whitelabel.commerce.core.designsystem.components.BrandEmptyState
+import com.whitelabel.commerce.core.designsystem.components.FlashRoseColor
 import com.whitelabel.commerce.core.designsystem.components.FreeShippingProgressBar
 import com.whitelabel.commerce.core.designsystem.components.ProductImageFallback
 import com.whitelabel.commerce.core.designsystem.components.rememberShimmerBrush
 import com.whitelabel.commerce.core.designsystem.formatPrice
 import com.whitelabel.commerce.core.domain.model.CartItem
+import com.whitelabel.commerce.core.domain.model.Product
 
 @Composable
 fun CartScreen(
@@ -116,6 +125,19 @@ fun CartScreen(
                         subtotal = state.subtotal,
                         currency = state.currency,
                         locale = state.locale,
+                    )
+                }
+            }
+
+            if (state.remainingForFreeShipping > 0.0 && state.upsellProducts.isNotEmpty()) {
+                item {
+                    CartUpsellStrip(
+                        products = state.upsellProducts,
+                        remainingAmount = state.remainingForFreeShipping,
+                        currency = state.currency,
+                        locale = state.locale,
+                        onProductClick = onProductClick,
+                        onAddClick = viewModel::addUpsellProduct,
                     )
                 }
             }
@@ -402,6 +424,198 @@ private fun VariantTag(text: String) {
             style = MaterialTheme.typography.labelSmall,
             modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
         )
+    }
+}
+
+@Composable
+private fun CartUpsellStrip(
+    products: List<Product>,
+    remainingAmount: Double,
+    currency: String,
+    locale: String,
+    onProductClick: (String) -> Unit,
+    onAddClick: (Product) -> Unit,
+) {
+    val brandColors = LocalBrandColors.current
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, brandColors.hairline),
+        shape = MaterialTheme.shapes.medium,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.AutoAwesome,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Text(
+                        text = localized(
+                            "أكمل طلبك للشحن المجاني",
+                            "Add to unlock free shipping",
+                        ),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f),
+                    contentColor = MaterialTheme.colorScheme.primary,
+                    shape = CircleShape,
+                ) {
+                    Text(
+                        text = localized(
+                            "متبقي ${formatPrice(remainingAmount, currency, locale)}",
+                            "${formatPrice(remainingAmount, currency, locale)} away",
+                        ),
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontFeatureSettings = "tnum",
+                        ),
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                    )
+                }
+            }
+
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(products, key = { "upsell_${it.id}" }) { product ->
+                    val flashActive = product.isFlashSaleActive()
+                    val effective = product.effectivePrice()
+                    Surface(
+                        onClick = { onProductClick(product.id) },
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                        shape = MaterialTheme.shapes.medium,
+                        border = BorderStroke(1.dp, brandColors.hairline),
+                        modifier = Modifier.width(236.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(50.dp)
+                                    .clip(MaterialTheme.shapes.small)
+                                    .background(MaterialTheme.colorScheme.surface),
+                            ) {
+                                if (!product.imageUrl.isNullOrBlank()) {
+                                    SubcomposeAsyncImage(
+                                        model = product.imageUrl,
+                                        contentDescription = product.displayName,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize(),
+                                        error = { ProductImageFallback() },
+                                    )
+                                } else {
+                                    ProductImageFallback()
+                                }
+                                if (flashActive) {
+                                    Surface(
+                                        color = FlashRoseColor,
+                                        shape = CircleShape,
+                                        modifier = Modifier
+                                            .align(Alignment.TopStart)
+                                            .padding(3.dp)
+                                            .size(16.dp),
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Bolt,
+                                                contentDescription = null,
+                                                tint = Color.White,
+                                                modifier = Modifier.size(10.dp),
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(2.dp),
+                            ) {
+                                Text(
+                                    text = product.displayName,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                ) {
+                                    Text(
+                                        text = formatPrice(effective, currency, locale),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (flashActive) FlashRoseColor else MaterialTheme.colorScheme.primary,
+                                        maxLines = 1,
+                                    )
+                                    if (flashActive) {
+                                        Text(
+                                            text = formatPrice(product.price, currency, locale),
+                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                textDecoration = TextDecoration.LineThrough,
+                                            ),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                }
+                            }
+
+                            Surface(
+                                onClick = { onAddClick(product) },
+                                color = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary,
+                                shape = CircleShape,
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Add,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(14.dp),
+                                    )
+                                    Text(
+                                        text = localized("أضف", "Add"),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

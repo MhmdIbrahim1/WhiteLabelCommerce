@@ -13,6 +13,8 @@ import { localizedText, t, translateHomeCopy } from "@/lib/i18n";
 import { getServerLang } from "@/lib/i18n-server";
 import { Hero } from "@/components/shop/hero";
 import { Grid } from "@/components/shop/cards";
+import { FlashDealsSection } from "@/components/shop/flash-deals-section";
+import { filterActiveFlashDeals } from "@/lib/flash-sale";
 
 export default async function Home() {
   const [db, s, c] = await Promise.all([serverDb(), settings(), categories()]);
@@ -46,15 +48,34 @@ export default async function Home() {
   const firstFeaturedId = visibleSections.find(
     (sec) => sec.type === "featured_products",
   )?.id;
+  const hasVisibleHero =
+    s.uiConfig.pages.home.hero_visible &&
+    visibleSections.some((sec) => sec.type === "hero_banner");
+  const activeFlashDeals = filterActiveFlashDeals(allProducts);
+  const flashDealsNode =
+    activeFlashDeals.length > 0 ? (
+      <FlashDealsSection
+        key="flash-deals-strip"
+        products={activeFlashDeals}
+        currency={s.currency}
+        lang={lang}
+        basePath={s.basePath}
+      />
+    ) : null;
 
   return (
     <div className="home-sections-stack flex flex-col gap-6">
+      {!hasVisibleHero && flashDealsNode}
       {visibleSections.map((sec) => {
         switch (sec.type) {
           case "hero_banner":
             if (!s.uiConfig.pages.home.hero_visible) return null;
             return (
-              <div key={sec.id} data-home-section="hero_banner">
+              <div
+                key={sec.id}
+                className="flex flex-col gap-6"
+                data-home-section="hero_banner"
+              >
                 <Hero
                   name={displayName}
                   banners={s.banners}
@@ -63,6 +84,7 @@ export default async function Home() {
                   autoSlideMs={s.uiConfig.pages.home.bannerSpeedMs}
                   cms={s.uiConfig.pages.home}
                 />
+                {flashDealsNode}
               </div>
             );
 

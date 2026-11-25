@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.rounded.AddShoppingCart
+import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.Button
@@ -74,7 +75,27 @@ fun ProductCard(
 ) {
     val brandColors = LocalBrandColors.current
     val settings = LocalStoreSettings.current
-    val discount = product.discountPercent
+    var flashExpired by remember(product.id, product.flashSaleEndsAt, product.flashSalePrice) {
+        mutableStateOf(false)
+    }
+    val activeFlash = !flashExpired && product.isFlashSaleActive()
+    val effectivePrice = if (activeFlash) product.effectivePrice() else product.price
+    val strikePrice = if (activeFlash) {
+        product.price
+    } else {
+        product.oldPrice?.takeIf { it > product.price }
+    }
+    val flashPct = if (activeFlash) product.flashSavingsPercent() else null
+    val regularDiscount = if (!activeFlash) {
+        val prev = product.oldPrice
+        if (prev != null && prev > product.price && prev > 0.0) {
+            kotlin.math.round(((prev - product.price) / prev) * 100.0).toInt().coerceIn(1, 99)
+        } else {
+            null
+        }
+    } else {
+        null
+    }
 
     Card(
         modifier = modifier
@@ -114,8 +135,37 @@ fun ProductCard(
                     ProductImageFallback()
                 }
 
-                // Discount badge (10% secondary accent)
-                if (discount != null) {
+                // Flash sale discount badge OR regular discount badge
+                if (flashPct != null) {
+                    Surface(
+                        color = FlashRoseColor,
+                        contentColor = Color.White,
+                        shape = MaterialTheme.shapes.extraSmall,
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(8.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Bolt,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(12.dp),
+                            )
+                            Text(
+                                text = "-$flashPct%",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontFeatureSettings = "tnum",
+                                ),
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                    }
+                } else if (regularDiscount != null) {
                     Surface(
                         color = MaterialTheme.colorScheme.secondary,
                         contentColor = MaterialTheme.colorScheme.onSecondary,
@@ -125,7 +175,7 @@ fun ProductCard(
                             .padding(8.dp),
                     ) {
                         Text(
-                            text = "-$discount%",
+                            text = "-$regularDiscount%",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
@@ -217,15 +267,15 @@ fun ProductCard(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Text(
-                        text = formatPrice(product.price, settings.currency, settings.locale),
+                        text = formatPrice(effectivePrice, settings.currency, settings.locale),
                         style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.primary,
+                        color = if (activeFlash) FlashRoseColor else MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
                     )
-                    if (product.hasDiscount && product.oldPrice != null) {
+                    if (strikePrice != null) {
                         Text(
-                            text = formatPrice(product.oldPrice, settings.currency, settings.locale),
+                            text = formatPrice(strikePrice, settings.currency, settings.locale),
                             style = MaterialTheme.typography.bodySmall.copy(
                                 textDecoration = TextDecoration.LineThrough,
                             ),
@@ -234,6 +284,15 @@ fun ProductCard(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
+                }
+
+                if (activeFlash && !product.flashSaleEndsAt.isNullOrBlank()) {
+                    FlashSaleCountdownPill(
+                        endsAt = product.flashSaleEndsAt,
+                        startsAt = product.flashSaleStartsAt,
+                        compact = true,
+                        onExpired = { flashExpired = true },
+                    )
                 }
 
                 Text(

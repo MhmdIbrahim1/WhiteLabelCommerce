@@ -14,6 +14,8 @@ import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
 import io.github.jan.supabase.postgrest.query.Order as SortOrder
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.util.LinkedHashMap
@@ -220,6 +222,43 @@ class CatalogRepositoryImpl @Inject constructor(
             .decodeList<ProductDto>()
             .firstOrNull()
             ?.toDomain()
+    }
+
+    override suspend fun getRelatedProducts(
+        productId: String,
+        limit: Int,
+    ): Result<List<Product>> = runSuspendCatching {
+        val params = buildJsonObject {
+            put("p_store_id", BuildConfig.STORE_ID)
+            put("p_product_id", productId)
+            put("p_limit", limit.coerceIn(1, 24))
+        }
+        supabase.postgrest
+            .rpc(function = "get_related_products", parameters = params)
+            .decodeList<ProductDto>()
+            .map { it.toDomain() }
+    }
+
+    override suspend fun getCartUpsellProducts(
+        cartProductIds: List<String>,
+        gapAmount: Double,
+        limit: Int,
+    ): Result<List<Product>> = runSuspendCatching {
+        val params = buildJsonObject {
+            put("p_store_id", BuildConfig.STORE_ID)
+            put(
+                "p_cart_product_ids",
+                buildJsonArray {
+                    cartProductIds.distinct().forEach { add(JsonPrimitive(it)) }
+                },
+            )
+            put("p_gap_amount", gapAmount.coerceAtLeast(0.0))
+            put("p_limit", limit.coerceIn(1, 12))
+        }
+        supabase.postgrest
+            .rpc(function = "get_cart_upsell_products", parameters = params)
+            .decodeList<ProductDto>()
+            .map { it.toDomain() }
     }
 
     private fun buildCacheKey(query: String, categoryId: String?, limit: Int, offset: Int): String =

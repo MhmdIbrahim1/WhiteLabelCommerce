@@ -1,13 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { Sparkles, Plus, Trash2, Check } from "lucide-react";
+import { Sparkles, Plus, Trash2, Check, Zap, X } from "lucide-react";
 import {
   ADMIN_CATEGORY_PRESETS,
   normalizeSpecs,
   type AdminCategoryPreset,
   type ProductSpec,
 } from "@/lib/specs";
+import { toDateTimeLocalValue } from "@/lib/flash-sale";
 import { localizedText } from "@/lib/i18n";
 import { useLanguage } from "@/components/language-provider";
 import { saveProduct } from "../mutations";
@@ -30,6 +31,9 @@ export type AdminProductItem = {
   price: number;
   cost_price: number | null;
   old_price: number | null;
+  flash_sale_price?: number | null;
+  flash_sale_starts_at?: string | null;
+  flash_sale_ends_at?: string | null;
   stock: number;
   sizes: string[];
   colors: string[];
@@ -72,6 +76,21 @@ export function AdminProductForm({
   const { lang } = useLanguage();
   const isEn = lang === "en";
 
+  const [priceValue, setPriceValue] = useState(
+    p?.price !== undefined && p?.price !== null ? String(p.price) : "",
+  );
+  const [flashPriceValue, setFlashPriceValue] = useState(
+    p?.flash_sale_price !== undefined && p?.flash_sale_price !== null
+      ? String(p.flash_sale_price)
+      : "",
+  );
+  const [flashStartsValue, setFlashStartsValue] = useState(() =>
+    toDateTimeLocalValue(p?.flash_sale_starts_at),
+  );
+  const [flashEndsValue, setFlashEndsValue] = useState(() =>
+    toDateTimeLocalValue(p?.flash_sale_ends_at),
+  );
+
   const [sizesValue, setSizesValue] = useState(
     (p?.sizes ?? []).join(isEn ? ", " : "، "),
   );
@@ -82,6 +101,52 @@ export function AdminProductForm({
     normalizeSpecs(p?.specifications),
   );
   const [activePreset, setActivePreset] = useState<string | null>(null);
+
+  const regularNum = Number(priceValue);
+  const flashNum = flashPriceValue.trim() ? Number(flashPriceValue) : NaN;
+  const hasFlashInput =
+    Boolean(flashPriceValue.trim()) ||
+    Boolean(flashStartsValue.trim()) ||
+    Boolean(flashEndsValue.trim());
+  const flashPriceInvalid =
+    Boolean(flashPriceValue.trim()) &&
+    (!Number.isFinite(flashNum) ||
+      flashNum <= 0 ||
+      (Number.isFinite(regularNum) && regularNum > 0 && flashNum >= regularNum));
+  const flashPreviewPct =
+    !flashPriceInvalid &&
+    Number.isFinite(regularNum) &&
+    regularNum > 0 &&
+    Number.isFinite(flashNum) &&
+    flashNum > 0 &&
+    flashNum < regularNum
+      ? Math.max(1, Math.min(99, Math.round(((regularNum - flashNum) / regularNum) * 100)))
+      : null;
+
+  const flashStartsIso = flashStartsValue.trim()
+    ? new Date(flashStartsValue).toISOString()
+    : "";
+  const flashEndsIso = flashEndsValue.trim()
+    ? new Date(flashEndsValue).toISOString()
+    : "";
+  const flashWindowInvalid =
+    Boolean(flashStartsIso && flashEndsIso) &&
+    Date.parse(flashEndsIso) <= Date.parse(flashStartsIso);
+  const flashMissingEnd =
+    Boolean(flashPriceValue.trim()) && !flashEndsValue.trim();
+
+  const applyFlashDurationHours = (hours: number) => {
+    const now = new Date();
+    const end = new Date(now.getTime() + hours * 60 * 60 * 1000);
+    setFlashStartsValue(toDateTimeLocalValue(now.toISOString()));
+    setFlashEndsValue(toDateTimeLocalValue(end.toISOString()));
+  };
+
+  const clearFlashSale = () => {
+    setFlashPriceValue("");
+    setFlashStartsValue("");
+    setFlashEndsValue("");
+  };
 
   const selectedColors = parseList(colorsValue);
 
@@ -218,7 +283,8 @@ export function AdminProductForm({
           name="price"
           min="0"
           step=".01"
-          defaultValue={p?.price}
+          value={priceValue}
+          onChange={(e) => setPriceValue(e.target.value)}
           required
         />
       </label>
@@ -244,6 +310,137 @@ export function AdminProductForm({
           defaultValue={p?.old_price ?? ""}
         />
       </label>
+
+      {/* Collapsible Flash Sale Card */}
+      <details
+        className="wide admin-flash-card"
+        open={Boolean(p?.flash_sale_price || p?.flash_sale_ends_at)}
+      >
+        <summary className="admin-flash-summary">
+          <span className="with-icon">
+            <Zap size={15} />
+            <strong>{isEn ? "Flash Sale" : "عرض مؤقت"}</strong>
+          </span>
+          {flashPreviewPct !== null ? (
+            <span className="admin-flash-pill">
+              <Zap size={11} aria-hidden="true" />
+              <span dir="ltr">
+                -{flashPreviewPct}
+                {isEn ? "%" : "٪"}
+              </span>
+            </span>
+          ) : (
+            <small>
+              {isEn
+                ? "Optional timed discount with live countdown"
+                : "خصم مؤقت اختياري مع عدّاد تنازلي حي"}
+            </small>
+          )}
+        </summary>
+        <div className="admin-flash-body">
+          <input
+            type="hidden"
+            name="flash_sale_starts_at"
+            value={flashStartsIso}
+          />
+          <input
+            type="hidden"
+            name="flash_sale_ends_at"
+            value={flashEndsIso}
+          />
+          <div className="admin-flash-grid">
+            <label>
+              <span>
+                {isEn ? "Flash Sale Price" : "سعر العرض المؤقت"}
+                {flashPreviewPct !== null && (
+                  <strong className="admin-flash-pct-inline" dir="ltr">
+                    {" "}
+                    (-{flashPreviewPct}
+                    {isEn ? "%" : "٪"})
+                  </strong>
+                )}
+              </span>
+              <input
+                type="number"
+                name="flash_sale_price"
+                min="0"
+                step=".01"
+                value={flashPriceValue}
+                onChange={(e) => setFlashPriceValue(e.target.value)}
+                placeholder={
+                  isEn ? "Lower than regular price" : "أقل من السعر الأساسي"
+                }
+              />
+            </label>
+            <label>
+              {isEn ? "Start Date & Time" : "تاريخ ووقت البدء"}
+              <input
+                type="datetime-local"
+                dir="ltr"
+                value={flashStartsValue}
+                onChange={(e) => setFlashStartsValue(e.target.value)}
+              />
+            </label>
+            <label>
+              {isEn ? "End Date & Time" : "تاريخ ووقت الانتهاء"}
+              <input
+                type="datetime-local"
+                dir="ltr"
+                value={flashEndsValue}
+                onChange={(e) => setFlashEndsValue(e.target.value)}
+              />
+            </label>
+          </div>
+
+          <div className="admin-flash-actions">
+            <div className="admin-flash-presets">
+              <small>{isEn ? "Quick duration:" : "مدة سريعة:"}</small>
+              {[24, 48, 72].map((hrs) => (
+                <button
+                  key={hrs}
+                  type="button"
+                  className="btn-outline-admin btn-compact-admin"
+                  onClick={() => applyFlashDurationHours(hrs)}
+                >
+                  {isEn ? `${hrs}h` : `${hrs} ساعة`}
+                </button>
+              ))}
+            </div>
+            {hasFlashInput && (
+              <button
+                type="button"
+                className="btn-outline-admin btn-compact-admin admin-flash-clear-btn"
+                onClick={clearFlashSale}
+              >
+                <X size={13} aria-hidden="true" />
+                <span>{isEn ? "Clear Flash Sale" : "إنهاء العرض"}</span>
+              </button>
+            )}
+          </div>
+
+          {flashPriceInvalid && (
+            <small role="alert" className="admin-flash-error">
+              {isEn
+                ? "Flash sale price must be greater than 0 and lower than the regular selling price."
+                : "يجب أن يكون سعر العرض المؤقت أكبر من 0 وأقل من السعر الأساسي."}
+            </small>
+          )}
+          {flashMissingEnd && (
+            <small role="alert" className="admin-flash-error">
+              {isEn
+                ? "Please set an End Date & Time for the flash sale."
+                : "يرجى تحديد تاريخ ووقت انتهاء العرض المؤقت."}
+            </small>
+          )}
+          {flashWindowInvalid && (
+            <small role="alert" className="admin-flash-error">
+              {isEn
+                ? "End Date & Time must be after Start Date & Time."
+                : "يجب أن يكون وقت الانتهاء بعد وقت البدء."}
+            </small>
+          )}
+        </div>
+      </details>
 
       <label>
         {isEn ? "Sizes (comma-separated)" : "المقاسات (بفواصل)"}
@@ -391,7 +588,9 @@ export function AdminProductForm({
         <input type="checkbox" name="is_active" defaultChecked={p?.is_active} />{" "}
         {isEn ? "Publish product" : "نشر المنتج"}
       </label>
-      <button>{isEn ? "Save Product" : "حفظ المنتج"}</button>
+      <button disabled={flashPriceInvalid || flashWindowInvalid || flashMissingEnd}>
+        {isEn ? "Save Product" : "حفظ المنتج"}
+      </button>
     </form>
   );
 }

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -16,6 +17,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -24,6 +28,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AddShoppingCart
+import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material.icons.rounded.NotificationsActive
@@ -58,6 +63,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
@@ -69,6 +75,9 @@ import com.whitelabel.commerce.core.designsystem.LocalBrandColors
 import com.whitelabel.commerce.core.designsystem.LocalStoreSettings
 import com.whitelabel.commerce.core.designsystem.components.BrandEmptyState
 import com.whitelabel.commerce.core.designsystem.components.ColorSwatchMapper
+import com.whitelabel.commerce.core.designsystem.components.FlashRoseColor
+import com.whitelabel.commerce.core.designsystem.components.FlashSaleCountdownPill
+import com.whitelabel.commerce.core.designsystem.components.ProductCard
 import com.whitelabel.commerce.core.designsystem.components.ProductImageFallback
 import com.whitelabel.commerce.core.designsystem.components.RatingAmberColor
 import com.whitelabel.commerce.core.designsystem.components.RatingAmberTextColor
@@ -83,6 +92,7 @@ import com.whitelabel.commerce.core.domain.model.WishlistToggleOutcome
 fun ProductDetailScreen(
     onBack: () -> Unit,
     onAddedToCart: (String) -> Unit,
+    onProductClick: (String) -> Unit = {},
     onOpenAccount: () -> Unit = {},
     onShowMessage: (String) -> Unit = {},
     onWishlistSignInPrompt: () -> Unit = {},
@@ -96,6 +106,9 @@ fun ProductDetailScreen(
     var showWriteReview by remember { mutableStateOf(false) }
     var showRestockInput by remember { mutableStateOf(false) }
     var restockPhone by remember { mutableStateOf("") }
+    var flashExpired by remember(state.product?.id, state.product?.flashSaleEndsAt) {
+        mutableStateOf(false)
+    }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -168,14 +181,19 @@ fun ProductDetailScreen(
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
+                                val unitEffective = if (!flashExpired) product.effectivePrice() else product.price
                                 Text(
                                     text = formatPrice(
-                                        amount = product.price * state.quantity.coerceAtLeast(1),
+                                        amount = unitEffective * state.quantity.coerceAtLeast(1),
                                         currencyCode = settings.currency,
                                         localeTag = settings.locale,
                                     ),
                                     style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.primary,
+                                    color = if (!flashExpired && product.isFlashSaleActive()) {
+                                        FlashRoseColor
+                                    } else {
+                                        MaterialTheme.colorScheme.primary
+                                    },
                                     fontWeight = FontWeight.Bold,
                                 )
                             }
@@ -275,21 +293,52 @@ fun ProductDetailScreen(
                             ProductImageFallback()
                         }
 
-                        product.discountPercent?.let { discount ->
+                        val activeFlash = !flashExpired && product.isFlashSaleActive()
+                        val flashPct = if (activeFlash) product.flashSavingsPercent() else null
+                        if (flashPct != null) {
                             Surface(
-                                color = MaterialTheme.colorScheme.secondary,
-                                contentColor = MaterialTheme.colorScheme.onSecondary,
+                                color = FlashRoseColor,
+                                contentColor = Color.White,
                                 shape = MaterialTheme.shapes.small,
                                 modifier = Modifier
                                     .align(Alignment.TopStart)
                                     .padding(12.dp),
                             ) {
-                                Text(
-                                    text = localized("خصم $discount%", "Save $discount%"),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Bold,
+                                Row(
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                                )
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Bolt,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(15.dp),
+                                    )
+                                    Text(
+                                        text = localized("عرض مؤقت -$flashPct%", "Flash -$flashPct%"),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                }
+                            }
+                        } else {
+                            product.discountPercent?.let { discount ->
+                                Surface(
+                                    color = MaterialTheme.colorScheme.secondary,
+                                    contentColor = MaterialTheme.colorScheme.onSecondary,
+                                    shape = MaterialTheme.shapes.small,
+                                    modifier = Modifier
+                                        .align(Alignment.TopStart)
+                                        .padding(12.dp),
+                                ) {
+                                    Text(
+                                        text = localized("خصم $discount%", "Save $discount%"),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                    )
+                                }
                             }
                         }
                     }
@@ -336,25 +385,43 @@ fun ProductDetailScreen(
                             }
                         }
 
+                        val detailFlashActive = !flashExpired && product.isFlashSaleActive()
+                        val detailEffectivePrice = if (detailFlashActive) product.effectivePrice() else product.price
+                        val detailStrikePrice = if (detailFlashActive) {
+                            product.price
+                        } else {
+                            product.oldPrice?.takeIf { it > product.price }
+                        }
+
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
                             Text(
-                                text = formatPrice(product.price, settings.currency, settings.locale),
+                                text = formatPrice(detailEffectivePrice, settings.currency, settings.locale),
                                 style = MaterialTheme.typography.headlineMedium,
-                                color = MaterialTheme.colorScheme.primary,
+                                color = if (detailFlashActive) FlashRoseColor else MaterialTheme.colorScheme.primary,
                                 fontWeight = FontWeight.Bold,
                             )
-                            if (product.hasDiscount && product.oldPrice != null) {
+                            if (detailStrikePrice != null) {
                                 Text(
-                                    text = formatPrice(product.oldPrice, settings.currency, settings.locale),
+                                    text = formatPrice(detailStrikePrice, settings.currency, settings.locale),
                                     style = MaterialTheme.typography.titleMedium.copy(
                                         textDecoration = TextDecoration.LineThrough,
                                     ),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
+                        }
+
+                        if (detailFlashActive && !product.flashSaleEndsAt.isNullOrBlank()) {
+                            FlashSaleCountdownPill(
+                                endsAt = product.flashSaleEndsAt,
+                                startsAt = product.flashSaleStartsAt,
+                                compact = false,
+                                showLabel = true,
+                                onExpired = { flashExpired = true },
+                            )
                         }
 
                         Row(
@@ -757,6 +824,51 @@ fun ProductDetailScreen(
                         onOpenWriteReview = { showWriteReview = true },
                         onOpenAccount = onOpenAccount,
                     )
+
+                    // 9. Related Products ("Customers Also Bought") Horizontal Row
+                    if (state.relatedProducts.isNotEmpty()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(
+                                text = localized("عملاء اشتروا أيضاً", "Customers Also Bought"),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onBackground,
+                            )
+                            LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                contentPadding = PaddingValues(end = 4.dp),
+                            ) {
+                                items(state.relatedProducts, key = { "rel_${it.id}" }) { relProduct ->
+                                    ProductCard(
+                                        product = relProduct,
+                                        isWishlisted = relProduct.id in state.wishlistedProductIds,
+                                        onToggleWishlist = {
+                                            viewModel.toggleWishlistFor(relProduct.id) { outcome ->
+                                                if (outcome is WishlistToggleOutcome.RequiresSignIn) {
+                                                    onWishlistSignInPrompt()
+                                                }
+                                            }
+                                        },
+                                        onClick = { onProductClick(relProduct.id) },
+                                        onQuickAdd = {
+                                            if (relProduct.sizes.isNotEmpty() || relProduct.colors.isNotEmpty()) {
+                                                onProductClick(relProduct.id)
+                                            } else {
+                                                viewModel.quickAddRelated(relProduct)
+                                                onAddedToCart(
+                                                    localized(
+                                                        "تمت إضافة \"${relProduct.displayName}\" إلى السلة",
+                                                        "Added \"${relProduct.displayName}\" to cart",
+                                                    ),
+                                                )
+                                            }
+                                        },
+                                        modifier = Modifier.width(184.dp),
+                                    )
+                                }
+                            }
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(12.dp))
                 }

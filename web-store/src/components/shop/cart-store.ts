@@ -1,5 +1,6 @@
 "use client";
 import { useMemo, useSyncExternalStore } from "react";
+import { resolveEffectivePrice } from "@/lib/flash-sale";
 export type Line = {
   id: string;
   name: string;
@@ -7,9 +8,35 @@ export type Line = {
   size: string;
   color: string;
   price: number;
+  regular_price?: number | null;
+  flash_sale_price?: number | null;
+  flash_sale_starts_at?: string | null;
+  flash_sale_ends_at?: string | null;
   quantity: number;
   stock: number;
 };
+
+export function lineEffectivePrice(line: Line, nowMs: number = Date.now()): number {
+  const basePrice =
+    typeof line.regular_price === "number" && Number.isFinite(line.regular_price)
+      ? line.regular_price
+      : line.price;
+  if (
+    line.flash_sale_price !== undefined ||
+    line.flash_sale_ends_at !== undefined
+  ) {
+    return resolveEffectivePrice(
+      {
+        price: basePrice,
+        flash_sale_price: line.flash_sale_price ?? null,
+        flash_sale_starts_at: line.flash_sale_starts_at ?? null,
+        flash_sale_ends_at: line.flash_sale_ends_at ?? null,
+      },
+      nowMs,
+    );
+  }
+  return line.price;
+}
 const key = "nova.cart.v2";
 const guestSessionKey = "nova.guest_session_id";
 let memory: string | null = null;
@@ -36,7 +63,10 @@ function scheduleCartHeartbeat(rows: Line[]) {
   if (heartbeatTimer) clearTimeout(heartbeatTimer);
   heartbeatTimer = setTimeout(() => {
     const itemCount = rows.reduce((sum, l) => sum + l.quantity, 0);
-    const subtotal = rows.reduce((sum, l) => sum + l.price * l.quantity, 0);
+    const subtotal = rows.reduce(
+      (sum, l) => sum + lineEffectivePrice(l) * l.quantity,
+      0,
+    );
     const locale = document.documentElement.lang === "en" ? "en" : "ar";
     void fetch("/api/notifications/cart-heartbeat", {
       method: "POST",

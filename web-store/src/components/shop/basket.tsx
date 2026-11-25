@@ -22,6 +22,7 @@ import {
   change,
   purchased,
   setPendingOnlineOrder,
+  lineEffectivePrice,
 } from "./cart-store";
 import {
   checkout,
@@ -31,9 +32,11 @@ import {
 import { money } from "@/lib/brand";
 import { localizedText, translateColor } from "@/lib/i18n";
 import type { StoreIncentives } from "@/lib/shop";
+import { storeHref } from "@/lib/tenant-shared";
 import { useLanguage } from "@/components/language-provider";
 import { EgyptAddressFields } from "./egypt-address-fields";
 import { CartIncentiveBar } from "./cart-incentive-bar";
+import { CartUpsellStrip } from "./cart-upsell-strip";
 
 const EGYPT_WALLET_RE = /^01[0125][0-9]{8}$/;
 
@@ -69,6 +72,7 @@ export function Basket({
     cashbackPercentage: 5,
   },
   walletBalance = 0,
+  basePath = "",
 }: {
   order?: boolean;
   fee: number;
@@ -82,6 +86,7 @@ export function Basket({
   paymentOptions?: StorePaymentOptions;
   incentives?: StoreIncentives;
   walletBalance?: number;
+  basePath?: string;
 }) {
   const router = useRouter();
   const { lang, t } = useLanguage();
@@ -129,7 +134,10 @@ export function Basket({
     ? selectedPayment
     : defaultMethod;
 
-  const subtotal = lines.reduce((s, l) => s + l.price * l.quantity, 0);
+  const subtotal = lines.reduce(
+    (s, l) => s + lineEffectivePrice(l) * l.quantity,
+    0,
+  );
   const discount = appliedCoupon
     ? Math.min(subtotal, appliedCoupon.discount)
     : 0;
@@ -212,7 +220,7 @@ export function Basket({
     return (
       <div className="panel">
         <h1>{t("cartEmpty")}</h1>
-        <Link className="cta" href="/products">
+        <Link className="cta" href={storeHref(basePath, "/products")}>
           {t("heroShopProducts")}
         </Link>
       </div>
@@ -242,72 +250,95 @@ export function Basket({
         subtotal={subtotal}
         currency={currency}
       />
+      {!order && (
+        <CartUpsellStrip
+          enabled={incentives.cartIncentiveEnabled}
+          threshold={incentives.freeShippingThreshold}
+          subtotal={subtotal}
+          currency={currency}
+          cartLines={lines}
+          basePath={basePath}
+        />
+      )}
       <div className="details-grid">
         <section className="panel">
           <h2>{t("cartItemsTitle")}</h2>
-          {lines.map((l) => (
-            <div
-              className="basket-line"
-              key={JSON.stringify([l.id, l.color, l.size])}
-            >
-              <div className="basket-line-info">
-                <Link href={"/products/" + l.id}>
-                  {localizedText(lang, l.name, l.name_en)}
-                </Link>
-                {(l.size || l.color) && (
-                  <div className="variant-badges-row">
-                    {l.size && (
-                      <span className="variant-pill-badge">
-                        {t("sizeLabel")}: <b>{l.size}</b>
-                      </span>
+          {lines.map((l) => {
+            const unitPrice = lineEffectivePrice(l);
+            const regularPrice =
+              typeof l.regular_price === "number" && l.regular_price > unitPrice
+                ? l.regular_price
+                : null;
+            return (
+              <div
+                className="basket-line"
+                key={JSON.stringify([l.id, l.color, l.size])}
+              >
+                <div className="basket-line-info">
+                  <Link href={storeHref(basePath, "/products/" + l.id)}>
+                    {localizedText(lang, l.name, l.name_en)}
+                  </Link>
+                  {(l.size || l.color) && (
+                    <div className="variant-badges-row">
+                      {l.size && (
+                        <span className="variant-pill-badge">
+                          {t("sizeLabel")}: <b>{l.size}</b>
+                        </span>
+                      )}
+                      {l.color && (
+                        <span className="variant-pill-badge">
+                          {t("colorLabel")}:{" "}
+                          <b>{translateColor(l.color, lang)}</b>
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  <p className="basket-line-price">
+                    <span>{money(unitPrice, currency, lang)}</span>
+                    {regularPrice !== null && (
+                      <del className="basket-line-old-price">
+                        {money(regularPrice, currency, lang)}
+                      </del>
                     )}
-                    {l.color && (
-                      <span className="variant-pill-badge">
-                        {t("colorLabel")}: <b>{translateColor(l.color, lang)}</b>
-                      </span>
-                    )}
-                  </div>
-                )}
-                <p className="basket-line-price">
-                  {money(l.price, currency, lang)}
-                </p>
-              </div>
-              <div className="actions">
-                {!order && (
-                  <button
-                    aria-label={isEn ? "Decrease quantity" : "إنقاص الكمية"}
-                    onClick={() => change(l, -1)}
-                  >
-                    <Minus size={15} />
-                  </button>
-                )}
-                <b>
-                  {order ? `${t("qtyLabel")}: ${l.quantity}` : l.quantity}
-                </b>
-                {!order && (
-                  <>
+                  </p>
+                </div>
+                <div className="actions">
+                  {!order && (
                     <button
-                      aria-label={isEn ? "Increase quantity" : "زيادة الكمية"}
-                      disabled={
-                        lines
-                          .filter((x) => x.id === l.id)
-                          .reduce((n, x) => n + x.quantity, 0) >= l.stock
-                      }
-                      onClick={() => change(l, 1)}
+                      aria-label={isEn ? "Decrease quantity" : "إنقاص الكمية"}
+                      onClick={() => change(l, -1)}
                     >
-                      <Plus size={15} />
+                      <Minus size={15} />
                     </button>
-                    <button
-                      aria-label={isEn ? "Remove item" : "حذف المنتج"}
-                      onClick={() => change(l, -l.quantity)}
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                  </>
-                )}
+                  )}
+                  <b>
+                    {order ? `${t("qtyLabel")}: ${l.quantity}` : l.quantity}
+                  </b>
+                  {!order && (
+                    <>
+                      <button
+                        aria-label={isEn ? "Increase quantity" : "زيادة الكمية"}
+                        disabled={
+                          lines
+                            .filter((x) => x.id === l.id)
+                            .reduce((n, x) => n + x.quantity, 0) >= l.stock
+                        }
+                        onClick={() => change(l, 1)}
+                      >
+                        <Plus size={15} />
+                      </button>
+                      <button
+                        aria-label={isEn ? "Remove item" : "حذف المنتج"}
+                        onClick={() => change(l, -l.quantity)}
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </section>
         <section className="panel cart-summary-panel">
           <h2>{t("orderSummaryTitle")}</h2>
@@ -751,7 +782,7 @@ export function Basket({
             </form>
           ) : (
             <p>
-              <Link className="cta checkout-cta" href="/checkout">
+              <Link className="cta checkout-cta" href={storeHref(basePath, "/checkout")}>
                 {t("proceedCheckoutBtn")}
               </Link>
             </p>

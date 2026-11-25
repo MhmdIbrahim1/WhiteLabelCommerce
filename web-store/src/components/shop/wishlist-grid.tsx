@@ -13,13 +13,16 @@ import {
   Package,
 } from "lucide-react";
 import type { Product } from "@/lib/shop";
-import { money } from "@/lib/brand";
 import { localizedText, t } from "@/lib/i18n";
 import { storeHref } from "@/lib/tenant-shared";
 import { formatRatingScore } from "@/lib/reviews-wishlist";
 import { useLanguage } from "@/components/language-provider";
 import { Buy } from "./buy";
 import { useWishlist } from "./wishlist-provider";
+import {
+  ProductDiscountBadge,
+  ProductPriceDisplay,
+} from "./flash-countdown";
 
 export type WishlistCardProduct = Product & {
   image_url: string | null;
@@ -103,12 +106,7 @@ export function WishlistGrid({
                 </div>
               </Link>
 
-              {p.old_price && p.old_price > p.price ? (
-                <span className="discount">
-                  -{Math.round(100 * (1 - p.price / p.old_price))}
-                  {isEn ? "%" : "٪"}
-                </span>
-              ) : null}
+              <ProductDiscountBadge product={p} lang={lang} />
 
               <button
                 type="button"
@@ -141,14 +139,11 @@ export function WishlistGrid({
                   <span>({reviewCount})</span>
                 </span>
               )}
-              <div className="price">
-                <strong className="price-badge">
-                  {money(p.price, currency, lang)}
-                </strong>
-                {p.old_price !== null && p.old_price > p.price && (
-                  <del>{money(p.old_price, currency, lang)}</del>
-                )}
-              </div>
+              <ProductPriceDisplay
+                product={p}
+                currency={currency}
+                lang={lang}
+              />
               <div className="wishlist-card-cta">
                 <Buy p={p} basePath={basePath} />
               </div>

@@ -31,4 +31,15 @@ interface CatalogRepository {
     suspend fun getProductById(productId: String): Result<Product?>
 
     suspend fun getProductBySlug(slug: String): Result<Product?>
+
+    suspend fun getRelatedProducts(
+        productId: String,
+        limit: Int = 6,
+    ): Result<List<Product>>
+
+    suspend fun getCartUpsellProducts(
+        cartProductIds: List<String>,
+        gapAmount: Double = 0.0,
+        limit: Int = 4,
+    ): Result<List<Product>>
 }

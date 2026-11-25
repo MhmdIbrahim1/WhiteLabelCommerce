@@ -1,8 +1,13 @@
 import Image from "next/image";
-import { Package, Plus } from "lucide-react";
+import { Package, Plus, Zap } from "lucide-react";
 import { checked, requireAdmin } from "@/lib/db";
 import { money } from "@/lib/brand";
 import { photo } from "@/lib/shop";
+import {
+  getFlashSavingsPercent,
+  isFlashSaleActive,
+  resolveEffectivePrice,
+} from "@/lib/flash-sale";
 import { localizedText, t } from "@/lib/i18n";
 import { getServerLang } from "@/lib/i18n-server";
 import { pagination } from "@/lib/workflow";
@@ -26,7 +31,7 @@ export default async function Products({
   const productResult = await db
     .from("products")
     .select(
-      "id,name,name_en,slug,description,description_en,price,cost_price,old_price,stock,category_id,sizes,colors,image_path,specifications,is_active",
+      "id,name,name_en,slug,description,description_en,price,cost_price,old_price,flash_sale_price,flash_sale_starts_at,flash_sale_ends_at,stock,category_id,sizes,colors,image_path,specifications,is_active",
       { count: "exact" },
     )
     .eq("store_id", storeId)
@@ -146,45 +151,71 @@ export default async function Products({
             {lang === "en" ? "No products yet." : "لا توجد منتجات."}
           </Empty>
         )}
-        {products.map((p) => (
-          <details key={p.id}>
-            <summary>
-              <span className="with-icon">
-                {p.image_path ? (
-                  <Image
-                    unoptimized
-                    width={48}
-                    height={48}
-                    className="thumb"
-                    alt=""
-                    src={photo(p.image_path) ?? ""}
-                  />
-                ) : (
-                  <Package size={24} />
-                )}{" "}
-                {localizedText(lang, p.name, p.name_en)}
-              </span>
-              <small>
-                {money(p.price, undefined, lang)}
-                {Number(p.cost_price ?? 0) > 0
-                  ? ` · ${t(lang, "adminCost")} ${money(Number(p.cost_price), undefined, lang)}`
-                  : ""}{" "}
-                · {t(lang, "adminStock")} {p.stock} ·{" "}
-                {p.is_active ? t(lang, "adminPublished") : t(lang, "adminDraft")}
-              </small>
-            </summary>
-            <AdminProductForm p={p} categories={categories} />
-            <details>
-              <summary>{t(lang, "adminDeleteProduct")}</summary>
-              <form action={deleteProduct}>
-                <input type="hidden" name="id" value={p.id} />
-                <button className="danger">
-                  {t(lang, "adminConfirmDelete")}
-                </button>
-              </form>
+        {products.map((p) => {
+          const flashActive = isFlashSaleActive(p);
+          const flashPct = getFlashSavingsPercent(p);
+          const effPrice = resolveEffectivePrice(p);
+          return (
+            <details key={p.id}>
+              <summary>
+                <span className="with-icon">
+                  {p.image_path ? (
+                    <Image
+                      unoptimized
+                      width={48}
+                      height={48}
+                      className="thumb"
+                      alt=""
+                      src={photo(p.image_path) ?? ""}
+                    />
+                  ) : (
+                    <Package size={24} />
+                  )}{" "}
+                  <span>{localizedText(lang, p.name, p.name_en)}</span>
+                  {flashActive && (
+                    <span className="admin-flash-pill">
+                      <Zap size={12} aria-hidden="true" />
+                      <span>
+                        {lang === "en"
+                          ? `Flash${flashPct ? ` -${flashPct}%` : ""}`
+                          : `عرض مؤقت${flashPct ? ` -${flashPct}٪` : ""}`}
+                      </span>
+                    </span>
+                  )}
+                </span>
+                <small>
+                  {flashActive ? (
+                    <>
+                      <strong className="admin-flash-price-text">
+                        {money(effPrice, undefined, lang)}
+                      </strong>{" "}
+                      <del>{money(p.price, undefined, lang)}</del>
+                    </>
+                  ) : (
+                    money(p.price, undefined, lang)
+                  )}
+                  {Number(p.cost_price ?? 0) > 0
+                    ? ` · ${t(lang, "adminCost")} ${money(Number(p.cost_price), undefined, lang)}`
+                    : ""}{" "}
+                  · {t(lang, "adminStock")} {p.stock} ·{" "}
+                  {p.is_active
+                    ? t(lang, "adminPublished")
+                    : t(lang, "adminDraft")}
+                </small>
+              </summary>
+              <AdminProductForm p={p} categories={categories} />
+              <details>
+                <summary>{t(lang, "adminDeleteProduct")}</summary>
+                <form action={deleteProduct}>
+                  <input type="hidden" name="id" value={p.id} />
+                  <button className="danger">
+                    {t(lang, "adminConfirmDelete")}
+                  </button>
+                </form>
+              </details>
             </details>
-          </details>
-        ))}
+          );
+        })}
         <Pager
           page={page}
           base="/admin/products"

@@ -4091,3 +4091,335 @@
     border-bottom: 1px solid var(--line);
   }
 }
+
+/* =========================================================
+   Phase 11A: Flash Sale Countdowns, Flash Deals, Related Carousel & Smart Cart Upsells
+   ========================================================= */
+.shop .discount--flash {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  background: linear-gradient(135deg, #9f1239, #be123c);
+  color: #ffffff;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 6px 16px -6px rgba(159, 18, 57, 0.55);
+}
+
+.shop .price-block {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.shop .price-block--detail {
+  margin-block: 0.35rem 0.65rem;
+  gap: 0.5rem;
+}
+
+.shop .price-badge--flash {
+  color: #be123c !important;
+}
+
+[data-shop-theme="dark"] .shop .price-badge--flash {
+  color: #fb7185 !important;
+}
+
+.shop .detail-flash-save-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.18rem 0.56rem;
+  border-radius: 999px;
+  background: rgba(190, 18, 60, 0.1);
+  color: #be123c;
+  font-size: 0.78rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+[data-shop-theme="dark"] .shop .detail-flash-save-pill {
+  background: rgba(251, 113, 133, 0.16);
+  color: #fda4af;
+}
+
+.shop .price-countdown-row {
+  display: flex;
+  align-items: center;
+}
+
+.shop .flash-countdown-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  width: fit-content;
+  border-radius: 999px;
+  background: #1e293b;
+  color: #f8fafc;
+  border: 1px solid rgba(244, 63, 94, 0.28);
+  font-weight: 650;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+[data-shop-theme="dark"] .shop .flash-countdown-pill {
+  background: rgba(159, 18, 57, 0.24);
+  color: #ffe4e6;
+  border-color: rgba(251, 113, 133, 0.35);
+}
+
+.shop .flash-countdown-pill--sm {
+  padding: 0.2rem 0.55rem;
+  font-size: 0.72rem;
+}
+
+.shop .flash-countdown-pill--md {
+  padding: 0.34rem 0.82rem;
+  font-size: 0.84rem;
+}
+
+.shop .flash-countdown-label {
+  opacity: 0.86;
+  font-weight: 550;
+}
+
+.shop .flash-countdown-digits {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  letter-spacing: 0.02em;
+}
+
+/* Homepage Flash Deals Section */
+.shop .flash-deals-section {
+  padding: clamp(1rem, 2.2vw, 1.5rem);
+  border-radius: calc(var(--radius, 12px) + 6px);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, #be123c 4.5%, var(--surface)),
+    var(--surface)
+  );
+  border: 1px solid color-mix(in srgb, #be123c 15%, var(--glass-border));
+}
+
+.shop .flash-deals-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: #be123c;
+}
+
+[data-shop-theme="dark"] .shop .flash-deals-kicker {
+  color: #fb7185;
+}
+
+/* Scannable Related Products Horizontal Snap Carousel */
+.shop .product-grid--carousel {
+  display: flex;
+  overflow-x: auto;
+  gap: 1rem;
+  padding-bottom: 0.5rem;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+.shop .product-grid--carousel > .tile {
+  flex: 0 0 clamp(210px, 24vw, 265px);
+  scroll-snap-align: start;
+}
+
+@media (max-width: 650px) {
+  .shop .product-grid--carousel {
+    gap: 0.75rem;
+  }
+
+  .shop .product-grid--carousel > .tile {
+    flex: 0 0 68vw;
+    max-width: 240px;
+  }
+}
+
+/* Frictionless Cart Upsell Strip */
+.shop .cart-upsell-strip {
+  margin-block: 0.25rem 1.25rem;
+  padding: 1rem 1.1rem;
+  border-radius: calc(var(--radius, 12px) + 4px);
+  background: var(--surface);
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 4px 18px rgba(15, 23, 42, 0.04);
+  display: grid;
+  gap: 0.8rem;
+}
+
+.shop .cart-upsell-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.shop .cart-upsell-title-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+}
+
+.shop .cart-upsell-sparkle {
+  color: var(--primary);
+  flex-shrink: 0;
+}
+
+.shop .cart-upsell-head h2 {
+  margin: 0;
+  font-size: 0.96rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.shop .cart-upsell-gap-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.68rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 10%, var(--wash));
+  color: var(--primary);
+  font-size: 0.76rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.shop .cart-upsell-rail {
+  display: flex;
+  gap: 0.75rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+.shop .cart-upsell-card {
+  flex: 0 0 250px;
+  scroll-snap-align: start;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: calc(var(--radius, 12px));
+  background: color-mix(in srgb, var(--wash) 65%, var(--surface));
+  border: 1px solid var(--line);
+  transition: border-color 180ms ease, transform 180ms var(--ease-editorial);
+}
+
+.shop .cart-upsell-card:hover {
+  border-color: color-mix(in srgb, var(--primary) 42%, var(--line));
+}
+
+.shop .cart-upsell-thumb {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface);
+  color: var(--muted);
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.shop .cart-upsell-thumb img {
+  object-fit: cover;
+}
+
+.shop .cart-upsell-flash-dot {
+  position: absolute;
+  top: 4px;
+  inset-inline-start: 4px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #be123c;
+  color: #ffffff;
+  display: inline-grid;
+  place-items: center;
+}
+
+.shop .cart-upsell-meta {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.shop .cart-upsell-name {
+  font-size: 0.84rem;
+  font-weight: 650;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shop .cart-upsell-price-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  font-size: 0.8rem;
+}
+
+.shop .cart-upsell-price-row strong {
+  color: var(--primary);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.shop .cart-upsell-price-row strong.is-flash {
+  color: #be123c;
+}
+
+[data-shop-theme="dark"] .shop .cart-upsell-price-row strong.is-flash {
+  color: #fb7185;
+}
+
+.shop .cart-upsell-price-row del {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.shop button.cart-upsell-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.22rem;
+  padding: 0.4rem 0.75rem;
+  border-radius: 999px;
+  background: var(--primary);
+  color: var(--primary-ink, #fff);
+  font-size: 0.78rem;
+  font-weight: 650;
+  white-space: nowrap;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.shop button.cart-upsell-add-btn.is-added {
+  background: #059669;
+  color: #ffffff;
+}
+
+.shop .basket-line-price {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+}
+
+.shop .basket-line-old-price {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+@media (max-width: 650px) {
+  .shop .cart-upsell-card {
+    flex: 0 0 232px;
+  }
+}

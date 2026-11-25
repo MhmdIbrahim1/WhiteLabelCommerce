@@ -23,6 +23,9 @@ export type Product = {
   description_en?: string | null;
   price: number;
   old_price: number | null;
+  flash_sale_price?: number | null;
+  flash_sale_starts_at?: string | null;
+  flash_sale_ends_at?: string | null;
   stock: number;
   sizes: string[];
   colors: string[];
@@ -33,7 +36,7 @@ export type Product = {
 };
 
 export const productFields =
-  "id,name,name_en,category_id,description,description_en,price,old_price,stock,sizes,colors,image_path,specifications,avg_rating,review_count";
+  "id,name,name_en,category_id,description,description_en,price,old_price,flash_sale_price,flash_sale_starts_at,flash_sale_ends_at,stock,sizes,colors,image_path,specifications,avg_rating,review_count";
 
 type SettingsRow = {
   store_id?: string | null;

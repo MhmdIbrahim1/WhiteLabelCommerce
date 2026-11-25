@@ -1298,6 +1298,97 @@ details details,
   gap: 0.5rem;
 }
 
+/* Phase 11A: Admin Flash Sale Pill & Collapsible Form Card */
+.admin-flash-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.22rem;
+  padding: 0.16rem 0.58rem;
+  border-radius: 999px;
+  background: rgba(190, 18, 60, 0.1);
+  color: #be123c;
+  font-size: 0.74rem;
+  font-weight: 700;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-flash-price-text {
+  color: #be123c;
+}
+
+.admin-flash-card {
+  border: 1px solid color-mix(in srgb, #be123c 22%, var(--line));
+  border-radius: var(--radius);
+  background: color-mix(in srgb, #be123c 3%, var(--wash));
+  padding: 0.75rem 0.95rem;
+}
+
+.admin-flash-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  cursor: pointer;
+  list-style: none;
+}
+
+.admin-flash-summary .with-icon svg {
+  color: #be123c;
+}
+
+.admin-flash-body {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.85rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--line);
+}
+
+.admin-flash-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+@media (max-width: 780px) {
+  .admin-flash-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.admin-flash-pct-inline {
+  color: #be123c;
+  font-size: 0.82rem;
+}
+
+.admin-flash-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.admin-flash-presets {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.admin-flash-clear-btn {
+  color: #b91c1c;
+  border-color: rgba(185, 28, 28, 0.3);
+}
+
+.admin-flash-error {
+  color: #dc2626;
+  font-weight: 600;
+  font-size: 0.82rem;
+}
+
 .donut-legend i {
   width: 10px;
   height: 10px;

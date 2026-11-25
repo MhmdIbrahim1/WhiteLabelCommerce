@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { ShoppingBag, Check, SlidersHorizontal, Ruler, BellRing } from "lucide-react";
 import type { Product } from "@/lib/shop";
+import { resolveEffectivePrice } from "@/lib/flash-sale";
 import { translateColor } from "@/lib/i18n";
 import { storeHref } from "@/lib/tenant-shared";
 import { useLanguage } from "@/components/language-provider";
@@ -90,7 +91,23 @@ export function Buy({
           }
           setError("");
           setMessage(
-            change({ ...p, size, color, quantity: 1 }, 1)
+            change(
+              {
+                id: p.id,
+                name: p.name,
+                name_en: p.name_en ?? null,
+                size,
+                color,
+                price: resolveEffectivePrice(p),
+                regular_price: p.price,
+                flash_sale_price: p.flash_sale_price ?? null,
+                flash_sale_starts_at: p.flash_sale_starts_at ?? null,
+                flash_sale_ends_at: p.flash_sale_ends_at ?? null,
+                stock: p.stock,
+                quantity: 1,
+              },
+              1,
+            )
               ? t("addedToCart")
               : t("stockLimitReached"),
           );

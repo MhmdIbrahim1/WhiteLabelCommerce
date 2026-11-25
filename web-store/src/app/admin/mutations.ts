@@ -27,6 +27,7 @@ import {
   runRecoveryAutomations,
 } from "@/lib/notifications/events";
 import type { ProductReview } from "@/lib/reviews-wishlist";
+import { resolveEffectivePrice } from "@/lib/flash-sale";
 import { normalizeSpecs } from "@/lib/specs";
 import { nextOrder, nextTicket } from "@/lib/workflow";
 
@@ -107,10 +108,57 @@ export async function saveProduct(f: FormData) {
   const { db, storeId, activeStore } = await requireAdmin(),
     id = text(f, "id"),
     oldPrice = text(f, "old_price"),
-    costPriceRaw = text(f, "cost_price");
+    costPriceRaw = text(f, "cost_price"),
+    flashPriceRaw = text(f, "flash_sale_price"),
+    flashStartsRaw = text(f, "flash_sale_starts_at"),
+    flashEndsRaw = text(f, "flash_sale_ends_at");
   const price = numberField(text(f, "price")),
     stock = numberField(text(f, "stock"), true),
     costPrice = costPriceRaw ? numberField(costPriceRaw) : 0;
+
+  let flashSalePrice: number | null = null;
+  let flashSaleStartsAt: string | null = null;
+  let flashSaleEndsAt: string | null = null;
+
+  if (flashPriceRaw) {
+    const parsedFlash = numberField(flashPriceRaw);
+    if (
+      parsedFlash === null ||
+      parsedFlash <= 0 ||
+      (price !== null && parsedFlash >= price)
+    ) {
+      finish(catalog, false);
+    }
+    flashSalePrice = parsedFlash;
+  }
+
+  if (flashStartsRaw) {
+    const ms = Date.parse(flashStartsRaw);
+    if (!Number.isFinite(ms)) finish(catalog, false);
+    flashSaleStartsAt = new Date(ms).toISOString();
+  }
+
+  if (flashEndsRaw) {
+    const ms = Date.parse(flashEndsRaw);
+    if (!Number.isFinite(ms)) finish(catalog, false);
+    flashSaleEndsAt = new Date(ms).toISOString();
+  }
+
+  if (flashSalePrice !== null && !flashSaleEndsAt) {
+    finish(catalog, false);
+  }
+  if (
+    flashSaleStartsAt &&
+    flashSaleEndsAt &&
+    Date.parse(flashSaleEndsAt) <= Date.parse(flashSaleStartsAt)
+  ) {
+    finish(catalog, false);
+  }
+  if (flashSalePrice === null) {
+    flashSaleStartsAt = null;
+    flashSaleEndsAt = null;
+  }
+
   let parsedSpecs: ReturnType<typeof normalizeSpecs> = [];
   const rawSpecs = text(f, "specifications");
   if (rawSpecs) {
@@ -131,6 +179,9 @@ export async function saveProduct(f: FormData) {
     cost_price: costPrice ?? 0,
     stock,
     old_price: oldPrice ? numberField(oldPrice) : null,
+    flash_sale_price: flashSalePrice,
+    flash_sale_starts_at: flashSaleStartsAt,
+    flash_sale_ends_at: flashSaleEndsAt,
     sizes: list(text(f, "sizes")),
     colors: list(text(f, "colors")),
     specifications: parsedSpecs,
@@ -178,17 +229,30 @@ export async function saveProduct(f: FormData) {
   }
   const previous = text(f, "previous_image");
   let previousStock: number | null = null;
-  let previousPrice: number | null = null;
+  let previousEffectivePrice: number | null = null;
   if (id) {
     const { data: existingProd } = await db
       .from("products")
-      .select("stock,price")
+      .select(
+        "stock,price,flash_sale_price,flash_sale_starts_at,flash_sale_ends_at",
+      )
       .eq("id", id)
       .eq("store_id", storeId)
-      .maybeSingle<{ stock: number; price: number }>();
+      .maybeSingle<{
+        stock: number;
+        price: number;
+        flash_sale_price: number | null;
+        flash_sale_starts_at: string | null;
+        flash_sale_ends_at: string | null;
+      }>();
     if (existingProd) {
       previousStock = Number(existingProd.stock ?? 0);
-      previousPrice = Number(existingProd.price ?? 0);
+      previousEffectivePrice = resolveEffectivePrice({
+        price: Number(existingProd.price ?? 0),
+        flash_sale_price: existingProd.flash_sale_price,
+        flash_sale_starts_at: existingProd.flash_sale_starts_at,
+        flash_sale_ends_at: existingProd.flash_sale_ends_at,
+      });
     }
   }
   const values = image ? { ...row, image_path: image } : row;
@@ -219,13 +283,22 @@ export async function saveProduct(f: FormData) {
         kind: "restock",
       });
     }
-    if (previousPrice !== null && price < previousPrice) {
+    const nextEffectivePrice = resolveEffectivePrice({
+      price,
+      flash_sale_price: flashSalePrice,
+      flash_sale_starts_at: flashSaleStartsAt,
+      flash_sale_ends_at: flashSaleEndsAt,
+    });
+    if (
+      previousEffectivePrice !== null &&
+      nextEffectivePrice < previousEffectivePrice
+    ) {
       void notifyWishlistProductAlert({
         storeId,
         productId: id,
         kind: "price_drop",
-        oldPrice: previousPrice,
-        newPrice: price,
+        oldPrice: previousEffectivePrice,
+        newPrice: nextEffectivePrice,
       });
     }
   }

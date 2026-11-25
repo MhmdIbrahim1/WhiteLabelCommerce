@@ -48,13 +48,18 @@ class CartRepositoryImpl @Inject constructor(
             val targetKey = "${product.id}|${normalizedSize.orEmpty()}|${normalizedColor.orEmpty()}"
             val existingIndex = current.indexOfFirst { it.toDomain().lineKey == targetKey }
 
+            val effectiveUnit = product.effectivePrice()
             if (existingIndex >= 0) {
                 val existing = current[existingIndex]
                 val clampedQty = (existing.quantity + quantity).coerceIn(1, product.stock)
                 current[existingIndex] = existing.copy(
                     productName = product.name,
                     productNameEn = product.nameEn,
-                    unitPrice = product.price,
+                    unitPrice = effectiveUnit,
+                    regularPrice = product.price,
+                    flashSalePrice = product.flashSalePrice,
+                    flashSaleStartsAt = product.flashSaleStartsAt,
+                    flashSaleEndsAt = product.flashSaleEndsAt,
                     oldPrice = product.oldPrice,
                     imageUrl = product.imageUrl,
                     quantity = clampedQty,
@@ -65,7 +70,11 @@ class CartRepositoryImpl @Inject constructor(
                     productId = product.id,
                     productName = product.name,
                     productNameEn = product.nameEn,
-                    unitPrice = product.price,
+                    unitPrice = effectiveUnit,
+                    regularPrice = product.price,
+                    flashSalePrice = product.flashSalePrice,
+                    flashSaleStartsAt = product.flashSaleStartsAt,
+                    flashSaleEndsAt = product.flashSaleEndsAt,
                     oldPrice = product.oldPrice,
                     imageUrl = product.imageUrl,
                     quantity = quantity.coerceIn(1, product.stock),

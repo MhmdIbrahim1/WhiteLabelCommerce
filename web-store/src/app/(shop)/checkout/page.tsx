@@ -65,6 +65,7 @@ export default async function Checkout() {
       paymentOptions={s.payment}
       incentives={s.incentives}
       walletBalance={walletBalance}
+      basePath={s.basePath}
     />
   );
 }

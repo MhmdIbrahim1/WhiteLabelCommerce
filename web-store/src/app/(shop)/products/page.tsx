@@ -78,7 +78,9 @@ export default async function Catalog({
     if (rows.length > 0) {
       const { data: ratingRows } = await db
         .from("products")
-        .select("id,avg_rating,review_count")
+        .select(
+          "id,avg_rating,review_count,flash_sale_price,flash_sale_starts_at,flash_sale_ends_at",
+        )
         .eq("store_id", s.storeId)
         .in(
           "id",
@@ -91,6 +93,9 @@ export default async function Catalog({
               id: string;
               avg_rating: number | null;
               review_count: number | null;
+              flash_sale_price: number | null;
+              flash_sale_starts_at: string | null;
+              flash_sale_ends_at: string | null;
             }[]
           ).map((r) => [r.id, r]),
         );
@@ -101,6 +106,9 @@ export default async function Catalog({
                 ...r,
                 avg_rating: stats.avg_rating,
                 review_count: stats.review_count,
+                flash_sale_price: stats.flash_sale_price,
+                flash_sale_starts_at: stats.flash_sale_starts_at,
+                flash_sale_ends_at: stats.flash_sale_ends_at,
               }
             : r;
         });

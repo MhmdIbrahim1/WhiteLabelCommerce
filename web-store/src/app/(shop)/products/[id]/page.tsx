@@ -35,16 +35,13 @@ export default async function Details({ params }: PageProps<"/products/[id]">) {
     notFound();
   const p = checked(result);
 
-  const [lang, related, authRes, reviewsRes] = await Promise.all([
+  const [lang, relatedRpc, authRes, reviewsRes] = await Promise.all([
     getServerLang(s.uiConfig.defaultLanguage),
-    db
-      .from("products")
-      .select(productFields)
-      .eq("store_id", s.storeId)
-      .eq("category_id", p.category_id)
-      .eq("is_active", true)
-      .neq("id", p.id)
-      .limit(4),
+    db.rpc("get_related_products", {
+      p_store_id: s.storeId,
+      p_product_id: p.id,
+      p_limit: 6,
+    }),
     db.auth.getUser(),
     db
       .from("product_reviews")
@@ -57,6 +54,24 @@ export default async function Details({ params }: PageProps<"/products/[id]">) {
       .order("created_at", { ascending: false })
       .limit(100),
   ]);
+
+  let relatedProducts: Product[] = [];
+  if (!relatedRpc.error && Array.isArray(relatedRpc.data)) {
+    relatedProducts = relatedRpc.data as Product[];
+  } else {
+    const fallbackRelated = await db
+      .from("products")
+      .select(productFields)
+      .eq("store_id", s.storeId)
+      .eq("category_id", p.category_id)
+      .eq("is_active", true)
+      .gt("stock", 0)
+      .neq("id", p.id)
+      .limit(6);
+    relatedProducts = fallbackRelated.error
+      ? []
+      : ((fallbackRelated.data ?? []) as Product[]);
+  }
 
   const user = authRes.data.user;
   let eligibility: ReviewEligibility = {
@@ -115,7 +130,7 @@ export default async function Details({ params }: PageProps<"/products/[id]">) {
             <WishlistHeartButton productId={p.id} variant="pill" />
           </div>
 
-          <Price p={p} currency={s.currency} lang={lang} />
+          <Price p={p} currency={s.currency} lang={lang} variant="detail" />
           <p>{desc}</p>
           <p className="detail-stock-line">
             {t(lang, "inStockLabel")} · <strong>{p.stock}</strong>
@@ -135,20 +150,32 @@ export default async function Details({ params }: PageProps<"/products/[id]">) {
         storeName={displayStoreName}
       />
 
-      <section className="shop-section">
-        <div className="split section-head">
-          <div>
-            <span className="section-kicker">{t(lang, "kickerFeatured")}</span>
-            <h2>{t(lang, "relatedProducts")}</h2>
+      {relatedProducts.length > 0 && (
+        <section
+          className="shop-section related-products-section shop-animate"
+          data-section="related-products"
+        >
+          <div className="split section-head">
+            <div>
+              <span className="section-kicker">
+                {lang === "en" ? "Picked For You" : "مختارات قد تهمك"}
+              </span>
+              <h2>
+                {lang === "en"
+                  ? "Customers Also Bought"
+                  : "عملاء اشتروا أيضاً"}
+              </h2>
+            </div>
           </div>
-        </div>
-        <Grid
-          rows={checked(related)}
-          currency={s.currency}
-          lang={lang}
-          basePath={s.basePath}
-        />
-      </section>
+          <Grid
+            rows={relatedProducts}
+            currency={s.currency}
+            lang={lang}
+            basePath={s.basePath}
+            layout="carousel"
+          />
+        </section>
+      )}
     </>
   );
 }

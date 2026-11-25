@@ -32,6 +32,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.outlined.Storefront
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.Checkroom
 import androidx.compose.material.icons.rounded.Close
@@ -81,12 +82,14 @@ import com.whitelabel.commerce.core.designsystem.LocalStoreSettings
 import com.whitelabel.commerce.core.designsystem.components.BannerSkeleton
 import com.whitelabel.commerce.core.designsystem.components.BrandEmptyState
 import com.whitelabel.commerce.core.designsystem.components.CategoryChipsSkeletonRow
+import com.whitelabel.commerce.core.designsystem.components.FlashRoseColor
 import com.whitelabel.commerce.core.designsystem.components.ProductCard
 import com.whitelabel.commerce.core.designsystem.components.ProductCardSkeleton
 import com.whitelabel.commerce.core.designsystem.components.rememberShimmerBrush
 import com.whitelabel.commerce.core.designsystem.localized
 import com.whitelabel.commerce.core.designsystem.parseHexColorOrDefault
 import com.whitelabel.commerce.core.domain.model.Category
+import com.whitelabel.commerce.core.domain.model.FlashSalePricing
 import com.whitelabel.commerce.core.domain.model.Product
 import com.whitelabel.commerce.core.domain.model.PromoBannerCampaign
 import com.whitelabel.commerce.core.domain.model.StoreSettings
@@ -248,6 +251,104 @@ fun HomeScreen(
                                 settings = settings,
                                 onCtaNavigate = onHeroRoute,
                             )
+                        }
+                    }
+                }
+
+                // 1b. Flash Deals Horizontal Strip (rendered ONLY when active flash deals exist)
+                val activeFlashDeals = state.featuredProducts
+                    .filter { it.isInStock && it.isFlashSaleActive() }
+                    .sortedBy { FlashSalePricing.parseIsoTimestampMillis(it.flashSaleEndsAt) ?: Long.MAX_VALUE }
+                if (activeFlashDeals.isNotEmpty()) {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        Surface(
+                            color = FlashRoseColor.copy(alpha = 0.05f),
+                            shape = MaterialTheme.shapes.large,
+                            border = BorderStroke(1.dp, FlashRoseColor.copy(alpha = 0.16f)),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(vertical = 12.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    ) {
+                                        Surface(
+                                            color = FlashRoseColor.copy(alpha = 0.12f),
+                                            shape = CircleShape,
+                                            modifier = Modifier.size(28.dp),
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.Bolt,
+                                                    contentDescription = null,
+                                                    tint = FlashRoseColor,
+                                                    modifier = Modifier.size(16.dp),
+                                                )
+                                            }
+                                        }
+                                        Column {
+                                            Text(
+                                                text = localized("عروض مؤقتة", "Flash Deals"),
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                            )
+                                            Text(
+                                                text = localized("عروض لفترة محدودة", "Limited-time offers"),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = FlashRoseColor,
+                                            )
+                                        }
+                                    }
+                                    TextButton(onClick = { onCategoryClick(null) }) {
+                                        Text(localized("عرض الكل", "View all"))
+                                    }
+                                }
+
+                                LazyRow(
+                                    contentPadding = PaddingValues(horizontal = 12.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                ) {
+                                    items(activeFlashDeals, key = { "flash_${it.id}" }) { deal ->
+                                        ProductCard(
+                                            product = deal,
+                                            isWishlisted = deal.id in state.wishlistedProductIds,
+                                            onToggleWishlist = {
+                                                viewModel.toggleWishlist(deal.id) { outcome ->
+                                                    if (outcome is WishlistToggleOutcome.RequiresSignIn) {
+                                                        onWishlistSignInPrompt()
+                                                    }
+                                                }
+                                            },
+                                            onClick = { onProductClick(deal.id) },
+                                            onQuickAdd = {
+                                                if (deal.sizes.isNotEmpty() || deal.colors.isNotEmpty()) {
+                                                    onProductClick(deal.id)
+                                                } else {
+                                                    viewModel.quickAddToCart(deal)
+                                                    onShowMessage(
+                                                        localized(
+                                                            "تمت إضافة \"${deal.displayName}\" إلى السلة",
+                                                            "Added \"${deal.displayName}\" to cart",
+                                                        ),
+                                                    )
+                                                }
+                                            },
+                                            modifier = Modifier.width(184.dp),
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }

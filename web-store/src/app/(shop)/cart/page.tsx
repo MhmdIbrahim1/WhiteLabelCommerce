@@ -7,6 +7,7 @@ export default async function Cart() {
       fee={s.fee}
       currency={s.currency}
       incentives={s.incentives}
+      basePath={s.basePath}
     />
   );
 }

@@ -39,11 +39,13 @@ data class ProductDetailUiState(
     val restockSubscribed: Boolean = false,
     val restockError: String? = null,
     val isWishlisted: Boolean = false,
+    val wishlistedProductIds: Set<String> = emptySet(),
     val isSignedIn: Boolean = false,
     val reviews: List<ProductReview> = emptyList(),
     val eligibility: ReviewEligibility = ReviewEligibility(),
     val isSubmittingReview: Boolean = false,
     val reviewSubmitError: String? = null,
+    val relatedProducts: List<Product> = emptyList(),
 ) {
     val canAddToCart: Boolean
         get() {
@@ -77,6 +79,7 @@ class ProductDetailViewModel @Inject constructor(
     ) { state, wishIds, session ->
         state.copy(
             isWishlisted = productId in wishIds,
+            wishlistedProductIds = wishIds,
             isSignedIn = session is AuthSessionState.SignedIn,
         )
     }.stateIn(
@@ -84,6 +87,7 @@ class ProductDetailViewModel @Inject constructor(
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = ProductDetailUiState(
             isWishlisted = productId in wishlistRepository.wishlistedProductIds.value,
+            wishlistedProductIds = wishlistRepository.wishlistedProductIds.value,
             isSignedIn = authRepository.sessionState.value is AuthSessionState.SignedIn,
         ),
     )
@@ -98,10 +102,12 @@ class ProductDetailViewModel @Inject constructor(
             val productDeferred = async { catalogRepository.getProductById(productId) }
             val reviewsDeferred = async { reviewRepository.getPublishedReviews(productId) }
             val eligibilityDeferred = async { reviewRepository.checkEligibility(productId) }
+            val relatedDeferred = async { catalogRepository.getRelatedProducts(productId, limit = 6) }
 
             val productResult = productDeferred.await()
             val reviewsResult = reviewsDeferred.await()
             val eligibilityResult = eligibilityDeferred.await()
+            val relatedResult = relatedDeferred.await()
 
             productResult
                 .onSuccess { product ->
@@ -121,6 +127,7 @@ class ProductDetailViewModel @Inject constructor(
                                 quantity = if (product.stock > 0) 1 else 0,
                                 reviews = reviewsResult.getOrDefault(it.reviews),
                                 eligibility = eligibilityResult.getOrDefault(it.eligibility),
+                                relatedProducts = relatedResult.getOrDefault(emptyList()),
                                 isLoading = false,
                             )
                         }
@@ -182,6 +189,26 @@ class ProductDetailViewModel @Inject constructor(
     fun toggleWishlist(onOutcome: (WishlistToggleOutcome) -> Unit) {
         viewModelScope.launch {
             onOutcome(wishlistRepository.toggleWishlist(productId))
+        }
+    }
+
+    fun toggleWishlistFor(
+        targetProductId: String,
+        onOutcome: (WishlistToggleOutcome) -> Unit,
+    ) {
+        viewModelScope.launch {
+            onOutcome(wishlistRepository.toggleWishlist(targetProductId))
+        }
+    }
+
+    fun quickAddRelated(product: Product) {
+        viewModelScope.launch {
+            cartRepository.addProduct(
+                product = product,
+                quantity = 1,
+                selectedSize = product.sizes.firstOrNull(),
+                selectedColor = product.colors.firstOrNull(),
+            )
         }
     }
 
