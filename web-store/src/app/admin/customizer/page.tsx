@@ -33,14 +33,14 @@ type RawProductRow = {
 };
 
 export default async function CustomizerPage() {
-  const { db } = await requireAdmin();
+  const { db, storeId } = await requireAdmin();
 
   const settingsQuery = await db
     .from("store_settings")
     .select(
       "store_name,currency,shipping_fee,banners,theme_template,primary_color,secondary_color,surface_color,border_radius,ui_config",
     )
-    .eq("id", true)
+    .eq("store_id", storeId)
     .single<CustomizerSettingsRow>();
 
   let settingsRow = settingsQuery.data;
@@ -53,7 +53,7 @@ export default async function CustomizerPage() {
       .select(
         "store_name,currency,shipping_fee,banners,theme_template,primary_color,secondary_color,surface_color,border_radius",
       )
-      .eq("id", true)
+      .eq("store_id", storeId)
       .single<CustomizerSettingsRow>();
     settingsRow = checked(fallback);
   } else {
@@ -64,10 +64,16 @@ export default async function CustomizerPage() {
     db
       .from("products")
       .select("id,category_id,name,name_en,description,description_en,price,old_price,stock,sizes,colors,image_path")
+      .eq("store_id", storeId)
       .eq("is_active", true)
       .order("name")
       .limit(12),
-    db.from("categories").select("id,name,name_en").order("name").limit(12),
+    db
+      .from("categories")
+      .select("id,name,name_en")
+      .eq("store_id", storeId)
+      .order("name")
+      .limit(12),
   ]);
 
   const products = ((productsRes.data ?? []) as RawProductRow[]).map((p) => ({

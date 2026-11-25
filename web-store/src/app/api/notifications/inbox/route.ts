@@ -1,6 +1,8 @@
+import { cookies } from "next/headers";
 import { serverDb } from "@/lib/db";
 import { adminUser } from "@/lib/access";
 import { settings } from "@/lib/shop";
+import { ADMIN_STORE_COOKIE, getManagedStores } from "@/lib/tenant";
 import { UUID_RE } from "@/lib/paymob";
 
 export type InboxNotificationRow = {
@@ -35,10 +37,17 @@ export async function GET(req: Request) {
     if (!admin) {
       return Response.json({ items: [], unreadCount: 0 }, { status: 401 });
     }
+    const [jar, managed] = await Promise.all([cookies(), getManagedStores(db)]);
+    const cookieStoreId = jar.get(ADMIN_STORE_COOKIE)?.value?.trim() || "";
+    const activeAdminStoreId =
+      managed.find((m) => m.store_id === cookieStoreId)?.store_id ??
+      managed[0]?.store_id ??
+      store.storeId;
+
     const { data, error } = await db
       .from("notifications")
       .select(SELECT_FIELDS)
-      .eq("store_id", store.storeId)
+      .eq("store_id", activeAdminStoreId)
       .eq("target_role", "admin")
       .order("created_at", { ascending: false })
       .limit(30);

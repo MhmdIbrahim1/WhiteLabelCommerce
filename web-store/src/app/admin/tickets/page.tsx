@@ -10,7 +10,7 @@ import { Status, Notice, Empty, Pager } from "../ui";
 export default async function TicketsPage({
   searchParams,
 }: PageProps<"/admin/tickets">) {
-  const [params, lang, { db }] = await Promise.all([
+  const [params, lang, { db, storeId }] = await Promise.all([
     searchParams,
     getServerLang(),
     requireAdmin(),
@@ -22,6 +22,7 @@ export default async function TicketsPage({
     .select("id,subject,message,status,admin_reply,order_id,created_at", {
       count: "exact",
     })
+    .eq("store_id", storeId)
     .order("created_at", { ascending: false })
     .order("id")
     .range(from, to);

@@ -49,7 +49,7 @@ function itemsSummary(items: AdminOrderRow["order_items"], lang: Lang): string {
 export default async function OrdersPage({
   searchParams,
 }: PageProps<"/admin/orders">) {
-  const [params, lang, { db }] = await Promise.all([
+  const [params, lang, { db, storeId }] = await Promise.all([
     searchParams,
     getServerLang(),
     requireAdmin(),
@@ -66,7 +66,8 @@ export default async function OrdersPage({
     .select(
       "id,created_at,status,currency,total,subtotal,shipping_address,phone,user_id,shipping_carrier,tracking_number,delivery_token,order_items(product_name,quantity,size,color)",
       { count: "exact" },
-    );
+    )
+    .eq("store_id", storeId);
   if (status) query = query.eq("status", status);
   const result = await query
     .order("created_at", { ascending: false })

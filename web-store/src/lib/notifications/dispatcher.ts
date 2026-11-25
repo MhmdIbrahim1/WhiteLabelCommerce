@@ -555,13 +555,25 @@ export async function notifyStoreAdmins(params: {
   data?: Record<string, string | number | boolean | null>;
 }): Promise<void> {
   const db = adminDb();
-  const { data: admins } = await db
-    .from("profiles")
-    .select("id")
-    .eq("store_id", params.storeId)
-    .eq("role", "admin");
+  const [memberRes, profileRes] = await Promise.all([
+    db
+      .from("store_members")
+      .select("user_id")
+      .eq("store_id", params.storeId)
+      .in("role", ["owner", "admin"]),
+    db
+      .from("profiles")
+      .select("id")
+      .eq("store_id", params.storeId)
+      .eq("role", "admin"),
+  ]);
 
-  const adminIds = ((admins ?? []) as { id: string }[]).map((a) => a.id);
+  const adminIds = Array.from(
+    new Set([
+      ...((memberRes.data ?? []) as { user_id: string }[]).map((m) => m.user_id),
+      ...((profileRes.data ?? []) as { id: string }[]).map((a) => a.id),
+    ]),
+  );
   if (adminIds.length === 0) {
     await dispatchNotification({
       storeId: params.storeId,

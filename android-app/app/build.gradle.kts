@@ -87,16 +87,38 @@ val resolvedVersionName = (project.findProperty("VERSION_NAME") as? String)
     ?.takeIf { it.isNotEmpty() }
     ?: "1.1.2"
 
+val resolvedStoreId = resolveConfigValue(
+    "storeId",
+    resolveConfigValue("STORE_ID", "00000000-0000-0000-0000-000000000001"),
+)
+
+val resolvedStoreName = (
+    (project.findProperty("storeName") as? String)
+        ?: (project.findProperty("STORE_NAME") as? String)
+)?.trim()?.trim('"')?.takeIf { it.isNotEmpty() } ?: "Nova Store"
+
+val resolvedAppIdSuffix = (
+    (project.findProperty("appIdSuffix") as? String)
+        ?: (project.findProperty("APP_ID_SUFFIX") as? String)
+)?.trim()?.trim('"')?.takeIf { it.isNotEmpty() }?.let { raw ->
+    if (raw.startsWith(".")) raw else ".$raw"
+}
+
 android {
     namespace = "com.whitelabel.commerce"
     compileSdk = 35
 
     defaultConfig {
         applicationId = "com.whitelabel.commerce"
+        if (resolvedAppIdSuffix != null) {
+            applicationIdSuffix = resolvedAppIdSuffix
+        }
         minSdk = 24
         targetSdk = 35
         versionCode = resolvedVersionCode
         versionName = resolvedVersionName
+
+        manifestPlaceholders["appName"] = resolvedStoreName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -104,7 +126,7 @@ android {
             useSupportLibrary = true
         }
 
-        buildConfigField("String", "STORE_ID", "\"${resolveConfigValue("STORE_ID", "00000000-0000-0000-0000-000000000001")}\"")
+        buildConfigField("String", "STORE_ID", "\"$resolvedStoreId\"")
         buildConfigField("String", "WEB_STORE_BASE_URL", "\"${resolveConfigValue("WEB_STORE_BASE_URL", "http://10.0.2.2:3000")}\"")
         buildConfigField(
             type = "String",

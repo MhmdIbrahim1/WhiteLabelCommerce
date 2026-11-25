@@ -9,23 +9,23 @@ import { Buy } from "@/components/shop/buy";
 import { ProductSpecsTable } from "@/components/shop/product-specs";
 
 export default async function Details({ params }: PageProps<"/products/[id]">) {
-  const { id } = await params;
-  const db = await serverDb();
+  const [{ id }, db, s] = await Promise.all([params, serverDb(), settings()]);
   const result = await db
     .from("products")
     .select(productFields)
     .eq("id", id)
+    .eq("store_id", s.storeId)
     .eq("is_active", true)
     .maybeSingle<Product>();
   if (result.error?.code === "22P02" || (!result.error && !result.data))
     notFound();
   const p = checked(result);
-  const [s, lang, related] = await Promise.all([
-    settings(),
-    getServerLang(),
+  const [lang, related] = await Promise.all([
+    getServerLang(s.uiConfig.defaultLanguage),
     db
       .from("products")
       .select(productFields)
+      .eq("store_id", s.storeId)
       .eq("category_id", p.category_id)
       .eq("is_active", true)
       .neq("id", id)
@@ -59,7 +59,12 @@ export default async function Details({ params }: PageProps<"/products/[id]">) {
             <h2>{t(lang, "relatedProducts")}</h2>
           </div>
         </div>
-        <Grid rows={checked(related)} currency={s.currency} lang={lang} />
+        <Grid
+          rows={checked(related)}
+          currency={s.currency}
+          lang={lang}
+          basePath={s.basePath}
+        />
       </section>
     </>
   );

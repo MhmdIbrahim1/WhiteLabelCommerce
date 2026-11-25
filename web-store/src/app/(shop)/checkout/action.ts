@@ -3,6 +3,7 @@ import { serverDb } from "@/lib/db";
 import { getServerLang } from "@/lib/i18n-server";
 import { notifyOrderCreated } from "@/lib/notifications/events";
 import { normalizePhone } from "@/lib/phone";
+import { resolveActiveStoreOrDefault } from "@/lib/tenant";
 
 export type CheckoutResult = {
   id?: string;
@@ -30,9 +31,16 @@ export async function previewCoupon(
       message: isEn ? "Enter a valid promo code." : "أدخل كود خصم صالحاً.",
     };
   }
-  const db = await serverDb();
+  const [db, store] = await Promise.all([
+    serverDb(),
+    resolveActiveStoreOrDefault(),
+  ]);
   const { data, error } = await db
-    .rpc("validate_coupon", { p_code: clean, p_subtotal: subtotal })
+    .rpc("validate_coupon", {
+      p_code: clean,
+      p_subtotal: subtotal,
+      p_store_id: store.id,
+    })
     .maybeSingle<{
       valid: boolean;
       reason: string;
@@ -147,7 +155,10 @@ export async function checkout(
       ? customerName.trim().slice(0, 100)
       : null;
 
-  const db = await serverDb();
+  const [db, store] = await Promise.all([
+    serverDb(),
+    resolveActiveStoreOrDefault(),
+  ]);
   const { data, error } = await db
     .rpc("store_checkout", {
       request_key: request,
@@ -158,11 +169,18 @@ export async function checkout(
       p_coupon_code: cleanCoupon,
       p_customer_name: cleanName,
       p_use_wallet: Boolean(useWallet) || normalizedPayment === "wallet",
+      p_store_id: store.id,
     })
     .single<{ order_number: string; amount: number; order_currency: string }>();
 
   if (error || !data) {
     switch (error?.message) {
+      case "store_suspended":
+        return {
+          error: isEn
+            ? "This store is temporarily unavailable and not accepting orders."
+            : "هذا المتجر متوقف مؤقتاً ولا يستقبل طلبات حالياً.",
+        };
       case "insufficient_wallet_balance":
         return {
           error: isEn

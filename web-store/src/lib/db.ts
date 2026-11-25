@@ -2,7 +2,13 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
-import { adminUser } from "./access";
+import {
+  ADMIN_STORE_COOKIE,
+  DEFAULT_STORE_ID,
+  getManagedStores,
+  isPlatformSuperAdmin,
+  type ManagedStoreSummary,
+} from "./tenant";
 
 export async function serverDb() {
   const jar = await cookies();
@@ -24,12 +30,54 @@ export async function serverDb() {
     },
   );
 }
+
 export const requireAdmin = cache(async () => {
+  const [db, jar] = await Promise.all([serverDb(), cookies()]);
+  const {
+    data: { user },
+    error,
+  } = await db.auth.getUser();
+  if (error || !user) redirect("/login?next=/admin");
+
+  const [managedStores, isSuperAdmin] = await Promise.all([
+    getManagedStores(db),
+    isPlatformSuperAdmin(db),
+  ]);
+
+  if (managedStores.length === 0) {
+    redirect("/account?notice=customer_only");
+  }
+
+  const requestedStoreId = jar.get(ADMIN_STORE_COOKIE)?.value?.trim() || "";
+  const activeStore: ManagedStoreSummary =
+    managedStores.find((s) => s.store_id === requestedStoreId) ??
+    managedStores.find((s) => s.store_id === DEFAULT_STORE_ID) ??
+    managedStores[0];
+
+  return {
+    db,
+    user,
+    storeId: activeStore.store_id,
+    activeStore,
+    managedStores,
+    isSuperAdmin,
+  };
+});
+
+export const requireSuperAdmin = cache(async () => {
   const db = await serverDb();
-  const user = await adminUser(db);
-  if (!user) redirect("/login");
+  const {
+    data: { user },
+    error,
+  } = await db.auth.getUser();
+  if (error || !user) redirect("/login?next=/super-admin");
+
+  const ok = await isPlatformSuperAdmin(db);
+  if (!ok) redirect("/");
+
   return { db, user };
 });
+
 export function checked<T>(result: {
   data: T | null;
   error: { message: string } | null;

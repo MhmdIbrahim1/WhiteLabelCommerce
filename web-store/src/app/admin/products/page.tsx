@@ -17,7 +17,7 @@ import {
 export default async function Products({
   searchParams,
 }: PageProps<"/admin/products">) {
-  const [params, lang, { db }] = await Promise.all([
+  const [params, lang, { db, storeId, activeStore }] = await Promise.all([
     searchParams,
     getServerLang(),
     requireAdmin(),
@@ -29,16 +29,20 @@ export default async function Products({
       "id,name,name_en,slug,description,description_en,price,cost_price,old_price,stock,category_id,sizes,colors,image_path,specifications,is_active",
       { count: "exact" },
     )
+    .eq("store_id", storeId)
     .order("name")
     .order("id")
     .range(from, to);
   const products: AdminProductItem[] = checked(productResult);
+  const totalProductsCount = productResult.count ?? products.length;
+  const atLimit = totalProductsCount >= activeStore.max_products;
   const categories: AdminCategoryItem[] = [];
   for (let offset = 0; ; offset += 200) {
     const batch = checked(
       await db
         .from("categories")
         .select("id,name,name_en,slug")
+        .eq("store_id", storeId)
         .order("name")
         .order("id")
         .range(offset, offset + 199),
@@ -49,7 +53,25 @@ export default async function Products({
 
   return (
     <>
-      <h1>{t(lang, "adminCatalogHeading")}</h1>
+      <div className="row" style={{ flexWrap: "wrap", gap: "0.75rem", marginBottom: "0.75rem" }}>
+        <h1 style={{ marginBottom: 0 }}>{t(lang, "adminCatalogHeading")}</h1>
+        <span
+          style={{
+            fontSize: "0.84rem",
+            fontWeight: 700,
+            padding: "0.3rem 0.75rem",
+            borderRadius: "999px",
+            background: atLimit
+              ? "rgba(220, 38, 38, 0.1)"
+              : "color-mix(in srgb, var(--primary) 10%, transparent)",
+            color: atLimit ? "#b91c1c" : "var(--primary)",
+          }}
+        >
+          {lang === "en"
+            ? `Products: ${totalProductsCount} / ${activeStore.max_products}`
+            : `المنتجات: ${totalProductsCount} / ${activeStore.max_products}`}
+        </span>
+      </div>
       <Notice result={params.result} />
       <details className="card">
         <summary>

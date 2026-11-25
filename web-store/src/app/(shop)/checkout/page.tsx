@@ -18,6 +18,7 @@ export default async function Checkout() {
       db
         .from("store_customers")
         .select("full_name,phone,governorate,city,address")
+        .eq("store_id", s.storeId)
         .eq("user_id", user.id)
         .maybeSingle<{
           full_name: string;

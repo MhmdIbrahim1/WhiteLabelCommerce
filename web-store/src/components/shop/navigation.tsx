@@ -24,9 +24,12 @@ import {
   ChevronDown,
   Sparkles,
   Tag,
+  ShieldCheck,
+  PlusCircle,
 } from "lucide-react";
 import { money } from "@/lib/brand";
 import { localizedText } from "@/lib/i18n";
+import { storeHref } from "@/lib/tenant-shared";
 import {
   getCachedSearchHits,
   searchCatalogCached,
@@ -41,16 +44,22 @@ import { useCart } from "./cart-store";
 export function Navigation({
   name,
   storeId,
+  basePath = "",
   admin = false,
+  superAdmin = false,
   user = null,
 }: {
   name: string;
   storeId: string;
+  basePath?: string;
   admin?: boolean;
+  superAdmin?: boolean;
   user?: { id?: string; email: string; name: string } | null;
 }) {
   const pathname = usePathname();
   const { lang, t } = useLanguage();
+  const isEn = lang === "en";
+  const href = (path: string) => storeHref(basePath, path);
   const ArrowIcon = lang === "en" ? ArrowRight : ArrowLeft;
   const count = useCart().reduce((a, l) => a + l.quantity, 0);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -167,21 +176,36 @@ export function Navigation({
   const showSmartBanner = hits.length > 0 && !hasDirectHit;
 
   const desktopLinks = [
-    { href: "/", label: t("navHome"), match: pathname === "/" },
     {
-      href: "/products",
-      label: t("navCategories"),
-      match: pathname === "/products" || pathname.startsWith("/products/"),
+      href: href("/"),
+      label: t("navHome"),
+      match: pathname === "/" || (Boolean(basePath) && pathname === basePath),
     },
-    { href: "/#latest", label: t("navLatest"), match: false },
-    { href: "/orders", label: t("navOrders"), match: pathname === "/orders" },
+    {
+      href: href("/products"),
+      label: t("navCategories"),
+      match:
+        pathname === "/products" ||
+        pathname.startsWith("/products/") ||
+        (Boolean(basePath) &&
+          (pathname === `${basePath}/products` ||
+            pathname.startsWith(`${basePath}/products/`))),
+    },
+    { href: href("/#latest"), label: t("navLatest"), match: false },
+    {
+      href: href("/orders"),
+      label: t("navOrders"),
+      match:
+        pathname === "/orders" ||
+        (Boolean(basePath) && pathname === `${basePath}/orders`),
+    },
   ];
 
   const mobileNav = [
-    { href: "/", label: t("navHome"), Icon: House },
-    { href: "/products", label: t("navCategories"), Icon: Grid2X2 },
-    { href: "/cart", label: t("navCart"), Icon: ShoppingBag },
-    { href: "/orders", label: t("navOrders"), Icon: ClipboardList },
+    { href: href("/"), label: t("navHome"), Icon: House },
+    { href: href("/products"), label: t("navCategories"), Icon: Grid2X2 },
+    { href: href("/cart"), label: t("navCart"), Icon: ShoppingBag },
+    { href: href("/orders"), label: t("navOrders"), Icon: ClipboardList },
   ];
 
   return (
@@ -189,7 +213,7 @@ export function Navigation({
       <header className="shop-head">
         <div className="bar">
           <div className="bar-start">
-            <Link href="/" className="wordmark">
+            <Link href={href("/")} className="wordmark">
               <span className="wordmark-badge" aria-hidden="true">
                 <Store size={17} />
               </span>
@@ -198,10 +222,10 @@ export function Navigation({
           </div>
 
           <nav className="desk" aria-label={t("navHome")}>
-            {desktopLinks.map(({ href, label, match }) => (
+            {desktopLinks.map(({ href: linkHref, label, match }) => (
               <Link
-                key={href}
-                href={href}
+                key={linkHref}
+                href={linkHref}
                 className="nav-link"
                 aria-current={match ? "page" : undefined}
               >
@@ -216,7 +240,7 @@ export function Navigation({
               className={`search-pill-wrap ${searchOpen ? "is-open" : ""}`}
             >
               {searchOpen ? (
-                <form action="/products" className="search-pill-form">
+                <form action={href("/products")} className="search-pill-form">
                   <Search size={16} className="search-pill-icon" />
                   <input
                     ref={searchInputRef}
@@ -291,9 +315,9 @@ export function Navigation({
                         {instantHints.map((hint) => (
                           <Link
                             key={hint.tag}
-                            href={
-                              "/products?q=" + encodeURIComponent(hint.query)
-                            }
+                            href={href(
+                              "/products?q=" + encodeURIComponent(hint.query),
+                            )}
                             className="suggest-hint-chip"
                             onClick={() => {
                               setSearchOpen(false);
@@ -327,7 +351,7 @@ export function Navigation({
                         return (
                           <Link
                             key={h.id}
-                            href={"/products/" + h.id}
+                            href={href("/products/" + h.id)}
                             className="suggest-item"
                             onClick={() => {
                               setQ("");
@@ -379,7 +403,7 @@ export function Navigation({
                         );
                       })}
                       <Link
-                        href={"/products?q=" + encodeURIComponent(trimmedQuery)}
+                        href={href("/products?q=" + encodeURIComponent(trimmedQuery))}
                         className="suggest-all-link"
                         onClick={() => {
                           setSearchOpen(false);
@@ -402,6 +426,17 @@ export function Navigation({
             </div>
 
             <LanguageToggle className="lang-toggle-pill" />
+
+            {superAdmin === true && (
+              <Link
+                href="/super-admin"
+                className="admin-subtle-link"
+                title={isEn ? "Super Admin" : "إدارة المنصة"}
+              >
+                <ShieldCheck size={15} />
+                <span>{isEn ? "Super Admin" : "إدارة المنصة"}</span>
+              </Link>
+            )}
 
             {admin === true && (
               <Link
@@ -434,19 +469,37 @@ export function Navigation({
                       <small dir="ltr">{user.email}</small>
                     </div>
                     <Link
-                      href="/account"
+                      href={href("/account")}
                       role="menuitem"
                       onClick={() => setUserMenuOpen(false)}
                     >
                       <UserRound size={15} /> {t("navAccount")}
                     </Link>
                     <Link
-                      href="/orders"
+                      href={href("/orders")}
                       role="menuitem"
                       onClick={() => setUserMenuOpen(false)}
                     >
                       <ClipboardList size={15} /> {t("navOrders")}
                     </Link>
+                    <Link
+                      href="/create-store"
+                      role="menuitem"
+                      onClick={() => setUserMenuOpen(false)}
+                    >
+                      <PlusCircle size={15} />{" "}
+                      {isEn ? "Create Store" : "إنشاء متجر جديد"}
+                    </Link>
+                    {superAdmin === true && (
+                      <Link
+                        href="/super-admin"
+                        role="menuitem"
+                        onClick={() => setUserMenuOpen(false)}
+                      >
+                        <ShieldCheck size={15} />{" "}
+                        {isEn ? "Super Admin" : "إدارة المنصة"}
+                      </Link>
+                    )}
                     <form action={logout} className="user-menu-logout">
                       <button type="submit" role="menuitem">
                         <LogOut size={15} /> {t("navLogout")}
@@ -490,7 +543,7 @@ export function Navigation({
             />
 
             <Link
-              href="/cart"
+              href={href("/cart")}
               className="cart-nav-btn"
               aria-label={`${t("navCart")} · ${count}`}
             >

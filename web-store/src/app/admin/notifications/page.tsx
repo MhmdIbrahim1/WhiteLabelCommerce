@@ -20,17 +20,16 @@ type NotificationLogRow = {
 };
 
 export default async function AdminNotificationsPage() {
-  const { db } = await requireAdmin();
+  const { db, storeId, activeStore } = await requireAdmin();
   const svc = adminDb();
 
   const { data: storeRow } = await db
     .from("store_settings")
     .select("store_id,store_name")
-    .eq("id", true)
+    .eq("store_id", storeId)
     .maybeSingle<{ store_id: string; store_name: string }>();
 
-  const storeId = storeRow?.store_id || "00000000-0000-0000-0000-000000000001";
-  const storeName = storeRow?.store_name || "Store";
+  const storeName = storeRow?.store_name || activeStore.name_ar || "Store";
 
   const [
     androidSubsRes,
@@ -68,12 +67,14 @@ export default async function AdminNotificationsPage() {
     db
       .from("products")
       .select("id,name,name_en")
+      .eq("store_id", storeId)
       .eq("is_active", true)
       .order("name")
       .limit(100),
     db
       .from("categories")
       .select("id,name,name_en")
+      .eq("store_id", storeId)
       .order("name")
       .limit(50),
   ]);

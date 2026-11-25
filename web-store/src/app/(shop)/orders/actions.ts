@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { serverDb } from "@/lib/db";
 import { getServerLang } from "@/lib/i18n-server";
 import { normalizePhone } from "@/lib/phone";
+import { resolveActiveStoreOrDefault } from "@/lib/tenant";
 
 export type OrderItemSummary = {
   id: string;
@@ -78,15 +79,11 @@ export async function switchOrderToCodAction(
     };
   }
 
-  const db = await serverDb();
-  const { data: storeRow } = await db
-    .from("store_settings")
-    .select("store_id")
-    .eq("id", true)
-    .maybeSingle<{ store_id: string }>();
-
-  const storeId =
-    storeRow?.store_id ?? "00000000-0000-0000-0000-000000000001";
+  const [db, store] = await Promise.all([
+    serverDb(),
+    resolveActiveStoreOrDefault(),
+  ]);
+  const storeId = store.id;
   const phone = normalizePhone(phoneRaw ?? "");
 
   const { data, error } = await db

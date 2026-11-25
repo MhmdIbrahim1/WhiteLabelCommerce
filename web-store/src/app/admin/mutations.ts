@@ -1,5 +1,6 @@
 "use server";
 import { randomBytes } from "node:crypto";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { templates, isTemplate } from "@/lib/theme-templates";
@@ -14,6 +15,7 @@ import {
   resolveCarrierLabel,
 } from "@/lib/shipping";
 import { requireAdmin } from "@/lib/db";
+import { ADMIN_STORE_COOKIE } from "@/lib/tenant-shared";
 import { adminDb } from "@/lib/supabase/admin";
 import { dispatchNotification } from "@/lib/notifications/dispatcher";
 import {
@@ -36,12 +38,29 @@ const list = (value: string) => [
       .filter(Boolean),
   ),
 ];
-function finish(path: string, success: boolean): never {
+function finish(path: string, success: boolean, code?: string): never {
   if (success) {
     revalidatePath("/admin", "layout");
     revalidatePath("/", "layout");
   }
-  redirect(path + "?result=" + (success ? "ok" : "error"));
+  redirect(path + "?result=" + (code ?? (success ? "ok" : "error")));
+}
+
+export async function switchAdminStore(nextStoreId: string): Promise<{ ok: boolean }> {
+  const { managedStores } = await requireAdmin();
+  const cleanId = (nextStoreId ?? "").trim();
+  if (!managedStores.some((s) => s.store_id === cleanId)) {
+    return { ok: false };
+  }
+  const jar = await cookies();
+  jar.set(ADMIN_STORE_COOKIE, cleanId, {
+    path: "/",
+    httpOnly: true,
+    sameSite: "lax",
+    maxAge: 60 * 60 * 24 * 30,
+  });
+  revalidatePath("/admin", "layout");
+  return { ok: true };
 }
 function numberField(value: string, integer = false) {
   const n = Number(value);
@@ -53,7 +72,7 @@ function numberField(value: string, integer = false) {
     : null;
 }
 export async function saveCategory(f: FormData) {
-  const { db } = await requireAdmin(),
+  const { db, storeId } = await requireAdmin(),
     id = text(f, "id");
   const row = {
     name: text(f, "name"),
@@ -62,23 +81,27 @@ export async function saveCategory(f: FormData) {
   };
   if (!row.name || !row.slug) finish(catalog, false);
   const q = db.from("categories");
-  const result = await (id ? q.update(row).eq("id", id) : q.insert(row))
+  const result = await (id
+    ? q.update(row).eq("id", id).eq("store_id", storeId)
+    : q.insert({ ...row, store_id: storeId })
+  )
     .select("id")
     .single();
   finish(catalog, !result.error);
 }
 export async function deleteCategory(f: FormData) {
-  const { db } = await requireAdmin();
+  const { db, storeId } = await requireAdmin();
   const result = await db
     .from("categories")
     .delete()
     .eq("id", text(f, "id"))
+    .eq("store_id", storeId)
     .select("id")
     .single();
   finish(catalog, !result.error);
 }
 export async function saveProduct(f: FormData) {
-  const { db } = await requireAdmin(),
+  const { db, storeId, activeStore } = await requireAdmin(),
     id = text(f, "id"),
     oldPrice = text(f, "old_price"),
     costPriceRaw = text(f, "cost_price");
@@ -120,6 +143,18 @@ export async function saveProduct(f: FormData) {
     (oldPrice && row.old_price === null)
   )
     finish(catalog, false);
+
+  // Enforce plan max_products cap before uploading/inserting a new product
+  if (!id) {
+    const { count } = await db
+      .from("products")
+      .select("id", { count: "exact", head: true })
+      .eq("store_id", storeId);
+    if ((count ?? 0) >= activeStore.max_products) {
+      finish(catalog, false, "limit_reached");
+    }
+  }
+
   const bucket = db.storage.from("product-images");
   const file = f.get("image");
   let image: string | undefined;
@@ -140,42 +175,48 @@ export async function saveProduct(f: FormData) {
   }
   const previous = text(f, "previous_image");
   let previousStock: number | null = null;
-  let productStoreId = "00000000-0000-0000-0000-000000000001";
   if (id) {
     const { data: existingProd } = await db
       .from("products")
-      .select("stock,store_id")
+      .select("stock")
       .eq("id", id)
-      .maybeSingle<{ stock: number; store_id: string }>();
+      .eq("store_id", storeId)
+      .maybeSingle<{ stock: number }>();
     if (existingProd) {
       previousStock = Number(existingProd.stock ?? 0);
-      if (existingProd.store_id) productStoreId = existingProd.store_id;
     }
   }
   const values = image ? { ...row, image_path: image } : row;
   const products = db.from("products");
-  let update = products.update(values).eq("id", id);
+  let update = products.update(values).eq("id", id).eq("store_id", storeId);
   if (image)
     update = previous
       ? update.eq("image_path", previous)
       : update.is("image_path", null);
-  const result = await (id ? update : products.insert(values))
+  const result = await (id
+    ? update
+    : products.insert({ ...values, store_id: storeId })
+  )
     .select("id")
     .single();
   if (result.error && image) await bucket.remove([image]);
   if (!result.error && image && id && previous.startsWith("products/"))
     await bucket.remove([previous]);
+  if (result.error?.message?.includes("store_product_limit_reached")) {
+    finish(catalog, false, "limit_reached");
+  }
   if (!result.error && id && previousStock !== null && previousStock <= 0 && stock > 0) {
-    void notifyBackInStock(id, productStoreId);
+    void notifyBackInStock(id, storeId);
   }
   finish(catalog, !result.error);
 }
 export async function deleteProduct(f: FormData) {
-  const { db } = await requireAdmin();
+  const { db, storeId } = await requireAdmin();
   const result = await db
     .from("products")
     .delete()
     .eq("id", text(f, "id"))
+    .eq("store_id", storeId)
     .select("image_path")
     .single();
   if (result.data?.image_path && result.data.image_path.startsWith("products/"))
@@ -183,7 +224,7 @@ export async function deleteProduct(f: FormData) {
   finish(catalog, !result.error);
 }
 export async function updateOrder(f: FormData) {
-  const { db } = await requireAdmin(),
+  const { db, storeId } = await requireAdmin(),
     id = text(f, "id"),
     prev = text(f, "previous"),
     status = text(f, "status"),
@@ -246,6 +287,7 @@ export async function updateOrder(f: FormData) {
     .from("orders")
     .update(updatePayload)
     .eq("id", id)
+    .eq("store_id", storeId)
     .eq("status", prev)
     .select("id,store_id,user_id,currency,wallet_discount")
     .single<{
@@ -322,7 +364,7 @@ export async function updateOrder(f: FormData) {
 }
 
 export async function ensureDeliveryToken(f: FormData) {
-  const { db } = await requireAdmin(),
+  const { db, storeId } = await requireAdmin(),
     id = text(f, "id");
   const destination = "/admin/orders/" + encodeURIComponent(id);
   if (!id) finish("/admin/orders", false);
@@ -331,13 +373,14 @@ export async function ensureDeliveryToken(f: FormData) {
     .from("orders")
     .update({ delivery_token: token })
     .eq("id", id)
+    .eq("store_id", storeId)
     .is("delivery_token", null)
     .select("id")
     .maybeSingle();
   finish(destination, !result.error);
 }
 export async function updateTicket(f: FormData) {
-  const { db } = await requireAdmin(),
+  const { db, storeId } = await requireAdmin(),
     id = text(f, "id"),
     prev = text(f, "previous"),
     status = text(f, "status");
@@ -350,6 +393,7 @@ export async function updateTicket(f: FormData) {
     .from("support_tickets")
     .update({ admin_reply: text(f, "reply"), status })
     .eq("id", id)
+    .eq("store_id", storeId)
     .eq("status", prev)
     .eq("admin_reply", text(f, "previous_reply"))
     .select("id")
@@ -357,7 +401,7 @@ export async function updateTicket(f: FormData) {
   finish("/admin/tickets", !result.error);
 }
 export async function saveSettings(f: FormData) {
-  const { db } = await requireAdmin();
+  const { db, storeId } = await requireAdmin();
   const banners = text(f, "banners")
     .split(/\r?\n/)
     .map((s) => s.trim())
@@ -377,24 +421,14 @@ export async function saveSettings(f: FormData) {
       whatsapp_number: text(f, "whatsapp_number"),
       banners,
     })
-    .eq("id", true)
-    .select("id")
+    .eq("store_id", storeId)
+    .select("store_id")
     .single();
   finish("/admin/settings", !result.error);
 }
 
 export async function savePaymentSettings(f: FormData) {
-  const { db } = await requireAdmin();
-
-  const { data: storeRow, error: storeErr } = await db
-    .from("store_settings")
-    .select("store_id")
-    .eq("id", true)
-    .single<{ store_id: string }>();
-
-  if (storeErr || !storeRow?.store_id) {
-    finish("/admin/settings", false);
-  }
+  const { db, storeId } = await requireAdmin();
 
   const codEnabled = f.has("cod_enabled");
   const paymobEnabled = f.has("paymob_enabled");
@@ -409,7 +443,7 @@ export async function savePaymentSettings(f: FormData) {
       paymob_card_enabled: paymobCardEnabled,
       paymob_wallet_enabled: paymobWalletEnabled,
     })
-    .eq("id", true)
+    .eq("store_id", storeId)
     .select("store_id")
     .single();
 
@@ -420,7 +454,7 @@ export async function savePaymentSettings(f: FormData) {
   const { data: existing } = await db
     .from("store_payment_secrets")
     .select("paymob_api_key,paymob_hmac_secret")
-    .eq("store_id", storeRow.store_id)
+    .eq("store_id", storeId)
     .maybeSingle<{
       paymob_api_key: string | null;
       paymob_hmac_secret: string | null;
@@ -436,7 +470,7 @@ export async function savePaymentSettings(f: FormData) {
     .from("store_payment_secrets")
     .upsert(
       {
-        store_id: storeRow.store_id,
+        store_id: storeId,
         paymob_api_key: newApiKey || existing?.paymob_api_key || null,
         paymob_hmac_secret: newHmacSecret || existing?.paymob_hmac_secret || null,
         paymob_card_integration_id: cardIntegrationId || null,
@@ -453,7 +487,7 @@ export async function savePaymentSettings(f: FormData) {
 }
 
 export async function saveWalletIncentiveSettings(f: FormData) {
-  const { db } = await requireAdmin();
+  const { db, storeId } = await requireAdmin();
 
   const cartIncentiveEnabled = f.has("cart_incentive_enabled");
   const cashbackEnabled = f.has("cashback_enabled");
@@ -477,7 +511,7 @@ export async function saveWalletIncentiveSettings(f: FormData) {
       cashback_enabled: cashbackEnabled,
       cashback_percentage: cashbackPercentage,
     })
-    .eq("id", true)
+    .eq("store_id", storeId)
     .select("store_id")
     .single();
 
@@ -494,20 +528,12 @@ export async function adjustCustomerWallet(input: {
   noteAr?: string;
   noteEn?: string;
 }): Promise<AdjustWalletResult> {
-  const { db } = await requireAdmin();
+  const { db, storeId } = await requireAdmin();
   const cleanUserId = (input.userId ?? "").trim();
   const amount = Number(input.amount);
   if (!UUID_REGEX.test(cleanUserId) || !Number.isFinite(amount) || amount === 0) {
     return { ok: false, error: "invalid_wallet_adjustment" };
   }
-
-  const { data: storeRow } = await db
-    .from("store_settings")
-    .select("store_id")
-    .eq("id", true)
-    .maybeSingle<{ store_id: string }>();
-
-  const storeId = storeRow?.store_id || "00000000-0000-0000-0000-000000000001";
 
   const { data, error } = await db.rpc("admin_adjust_customer_wallet", {
     p_store_id: storeId,
@@ -539,7 +565,7 @@ export async function adjustCustomerWallet(input: {
   };
 }
 export async function applyTemplate(form: FormData) {
-  const { db } = await requireAdmin();
+  const { db, storeId } = await requireAdmin();
   const id = form.get("template");
   if (!isTemplate(id)) finish("/admin/settings", false);
   const preset = templates[id];
@@ -554,8 +580,8 @@ export async function applyTemplate(form: FormData) {
       border_radius: preset.radius,
       ui_config: uiConfig,
     })
-    .eq("id", true)
-    .select("id")
+    .eq("store_id", storeId)
+    .select("store_id")
     .single();
   let error = primaryUpdate.error;
   if (error?.code === "42703" || error?.code === "PGRST204") {
@@ -568,8 +594,8 @@ export async function applyTemplate(form: FormData) {
         surface_color: preset.surface,
         border_radius: preset.radius,
       })
-      .eq("id", true)
-      .select("id")
+      .eq("store_id", storeId)
+      .select("store_id")
       .single();
     error = fallback.error;
   }
@@ -588,7 +614,7 @@ export type UploadHeroBannerResult =
 export async function uploadHeroBannerImage(
   f: FormData,
 ): Promise<UploadHeroBannerResult> {
-  const { db } = await requireAdmin();
+  const { db, storeId } = await requireAdmin();
   const file = f.get("file");
   const extensions: Record<string, string> = {
     "image/png": "png",
@@ -604,14 +630,7 @@ export async function uploadHeroBannerImage(
     return { ok: false, error: "invalid_file" };
   }
 
-  const { data: storeRow } = await db
-    .from("store_settings")
-    .select("store_id")
-    .eq("id", true)
-    .maybeSingle<{ store_id: string }>();
-
-  const storePrefix = storeRow?.store_id || "default";
-  const path = `banners/${storePrefix}/${crypto.randomUUID()}.${extensions[file.type]}`;
+  const path = `banners/${storeId}/${crypto.randomUUID()}.${extensions[file.type]}`;
   const bucket = db.storage.from("product-images");
   const uploaded = await bucket.upload(path, file, {
     contentType: file.type,
@@ -627,7 +646,7 @@ export async function uploadHeroBannerImage(
 export async function saveUiConfig(
   raw: unknown,
 ): Promise<SaveUiConfigResult> {
-  const { db } = await requireAdmin();
+  const { db, storeId } = await requireAdmin();
   const config = resolveUiConfig(raw);
   const { error } = await db
     .from("store_settings")
@@ -639,8 +658,8 @@ export async function saveUiConfig(
       border_radius: config.global.borderRadius,
       ui_config: config,
     })
-    .eq("id", true)
-    .select("id")
+    .eq("store_id", storeId)
+    .select("store_id")
     .single();
   if (error) {
     return {
@@ -658,7 +677,7 @@ export async function saveUiConfig(
 
 
 export async function saveCustomerNotes(f: FormData) {
-  const { db } = await requireAdmin();
+  const { db, storeId } = await requireAdmin();
   const id = text(f, "id");
   const notes = text(f, "notes").slice(0, 1000);
   if (!id) finish("/admin/customers", false);
@@ -666,13 +685,14 @@ export async function saveCustomerNotes(f: FormData) {
     .from("store_customers")
     .update({ notes, updated_at: new Date().toISOString() })
     .eq("id", id)
+    .eq("store_id", storeId)
     .select("id")
     .single();
   finish("/admin/customers", !error);
 }
 
 export async function saveCoupon(f: FormData) {
-  const { db } = await requireAdmin();
+  const { db, storeId } = await requireAdmin();
   const id = text(f, "id");
   const code = text(f, "code").toUpperCase();
   const discountType = text(f, "discount_type");
@@ -709,14 +729,17 @@ export async function saveCoupon(f: FormData) {
   };
 
   const q = db.from("coupons");
-  const result = await (id ? q.update(row).eq("id", id) : q.insert(row))
+  const result = await (id
+    ? q.update(row).eq("id", id).eq("store_id", storeId)
+    : q.insert({ ...row, store_id: storeId })
+  )
     .select("id")
     .single();
   finish("/admin/coupons", !result.error);
 }
 
 export async function toggleCoupon(f: FormData) {
-  const { db } = await requireAdmin();
+  const { db, storeId } = await requireAdmin();
   const id = text(f, "id");
   const nextActive = text(f, "next_active") === "true";
   if (!id) finish("/admin/coupons", false);
@@ -724,19 +747,21 @@ export async function toggleCoupon(f: FormData) {
     .from("coupons")
     .update({ is_active: nextActive })
     .eq("id", id)
+    .eq("store_id", storeId)
     .select("id")
     .single();
   finish("/admin/coupons", !error);
 }
 
 export async function deleteCoupon(f: FormData) {
-  const { db } = await requireAdmin();
+  const { db, storeId } = await requireAdmin();
   const id = text(f, "id");
   if (!id) finish("/admin/coupons", false);
   const { error } = await db
     .from("coupons")
     .delete()
     .eq("id", id)
+    .eq("store_id", storeId)
     .select("id")
     .single();
   finish("/admin/coupons", !error);
@@ -754,7 +779,7 @@ export type CampaignSendResult =
 export async function sendPromoCampaign(
   f: FormData,
 ): Promise<CampaignSendResult> {
-  const { db } = await requireAdmin();
+  const { storeId } = await requireAdmin();
 
   const titleAr = text(f, "title_ar").slice(0, 120);
   const titleEn = text(f, "title_en").slice(0, 120);
@@ -772,13 +797,6 @@ export async function sendPromoCampaign(
     return { ok: false, error: "invalid_audience" };
   }
 
-  const { data: storeRow } = await db
-    .from("store_settings")
-    .select("store_id")
-    .eq("id", true)
-    .maybeSingle<{ store_id: string }>();
-
-  const storeId = storeRow?.store_id || "00000000-0000-0000-0000-000000000001";
   const svc = adminDb();
   const campaignId = `camp_${Date.now()}_${randomBytes(3).toString("hex")}`;
 
@@ -897,14 +915,7 @@ export async function triggerRecoveryScan(): Promise<{
   abandonedCartsNotified: number;
   unpaidOrdersNotified: number;
 }> {
-  const { db } = await requireAdmin();
-  const { data: storeRow } = await db
-    .from("store_settings")
-    .select("store_id")
-    .eq("id", true)
-    .maybeSingle<{ store_id: string }>();
-
-  const storeId = storeRow?.store_id || "00000000-0000-0000-0000-000000000001";
+  const { storeId } = await requireAdmin();
   const result = await runRecoveryAutomations(storeId);
   revalidatePath("/admin/notifications");
   return { ok: true, ...result };
@@ -925,14 +936,7 @@ const UUID_REGEX =
 export async function deleteAdminNotifications(
   input: DeleteAdminNotificationsInput,
 ): Promise<DeleteAdminNotificationsResult> {
-  const { db } = await requireAdmin();
-  const { data: storeRow } = await db
-    .from("store_settings")
-    .select("store_id")
-    .eq("id", true)
-    .maybeSingle<{ store_id: string }>();
-
-  const storeId = storeRow?.store_id || "00000000-0000-0000-0000-000000000001";
+  const { storeId } = await requireAdmin();
   const svc = adminDb();
 
   try {

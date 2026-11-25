@@ -8,24 +8,22 @@ import {
   productFields,
   type Product,
 } from "@/lib/shop";
+import { storeHref } from "@/lib/tenant";
 import { localizedText, t, translateHomeCopy } from "@/lib/i18n";
 import { getServerLang } from "@/lib/i18n-server";
 import { Hero } from "@/components/shop/hero";
 import { Grid } from "@/components/shop/cards";
 
 export default async function Home() {
-  const db = await serverDb();
-  const [s, c, result] = await Promise.all([
-    settings(),
-    categories(),
-    db
-      .from("products")
-      .select(productFields)
-      .eq("is_active", true)
-      .order("created_at", { ascending: false })
-      .order("id")
-      .limit(48),
-  ]);
+  const [db, s, c] = await Promise.all([serverDb(), settings(), categories()]);
+  const result = await db
+    .from("products")
+    .select(productFields)
+    .eq("store_id", s.storeId)
+    .eq("is_active", true)
+    .order("created_at", { ascending: false })
+    .order("id")
+    .limit(48);
   const lang = await getServerLang(s.uiConfig.defaultLanguage);
   const ArrowIcon = lang === "en" ? ArrowRight : ArrowLeft;
   const allProducts = (
@@ -34,12 +32,15 @@ export default async function Home() {
           await db
             .from("products")
             .select(productFields)
+            .eq("store_id", s.storeId)
             .eq("is_active", true)
             .order("name")
             .limit(48),
         )
       : checked(result)
   ) as Product[];
+  const displayName = localizedText(lang, s.nameAr, s.nameEn) || s.name;
+  const href = (path: string) => storeHref(s.basePath, path);
 
   const visibleSections = s.uiConfig.homeSections.filter((sec) => sec.visible);
   const firstFeaturedId = visibleSections.find(
@@ -55,7 +56,7 @@ export default async function Home() {
             return (
               <div key={sec.id} data-home-section="hero_banner">
                 <Hero
-                  name={s.name}
+                  name={displayName}
                   banners={s.banners}
                   slider={brand.presets.hero === "slider"}
                   layout={s.uiConfig.pages.home.heroLayout}
@@ -81,11 +82,11 @@ export default async function Home() {
                   </div>
                 </div>
                 <div className="strip category-strip">
-                  <Link href="/products" className="category-chip-all">
+                  <Link href={href("/products")} className="category-chip-all">
                     {t(lang, "allProductsChip")}
                   </Link>
                   {c.map((x) => (
-                    <Link key={x.id} href={"/products?category=" + x.id}>
+                    <Link key={x.id} href={href("/products?category=" + x.id)}>
                       {localizedText(lang, x.name, x.name_en)}
                     </Link>
                   ))}
@@ -99,9 +100,11 @@ export default async function Home() {
               ? allProducts.filter((p) => p.category_id === sec.categoryId)
               : allProducts;
             const slice = filtered.slice(0, sec.limit);
-            const moreHref = sec.categoryId
-              ? "/products?category=" + encodeURIComponent(sec.categoryId)
-              : "/products";
+            const moreHref = href(
+              sec.categoryId
+                ? "/products?category=" + encodeURIComponent(sec.categoryId)
+                : "/products",
+            );
             return (
               <section
                 key={sec.id}
@@ -121,7 +124,12 @@ export default async function Home() {
                     <ArrowIcon size={15} />
                   </Link>
                 </div>
-                <Grid rows={slice} currency={s.currency} lang={lang} />
+                <Grid
+                  rows={slice}
+                  currency={s.currency}
+                  lang={lang}
+                  basePath={s.basePath}
+                />
               </section>
             );
           }

@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { LogOut } from "lucide-react";
 import { serverDb, checked } from "@/lib/db";
+import { settings } from "@/lib/shop";
+import { storeHref } from "@/lib/tenant";
 import { pagination } from "@/lib/workflow";
 import { t } from "@/lib/i18n";
 import { getServerLang } from "@/lib/i18n-server";
@@ -9,11 +11,12 @@ import { OrdersPaymentSync } from "@/components/shop/orders-payment-sync";
 import { customerLogin, customerLogout, type Summary } from "./actions";
 
 export default async function Orders({ searchParams }: PageProps<"/orders">) {
-  const [params, lang, db] = await Promise.all([
+  const [params, s, db] = await Promise.all([
     searchParams,
-    getServerLang(),
+    settings(),
     serverDb(),
   ]);
+  const lang = await getServerLang(s.uiConfig.defaultLanguage);
   const { page, from, to } = pagination(params.page);
   const {
     data: { user },
@@ -33,6 +36,7 @@ export default async function Orders({ searchParams }: PageProps<"/orders">) {
           "id,status,created_at,payment_method,payment_status,shipping_carrier,tracking_number,tracking_url,courier_note,shipped_at,delivered_at,order_items(id,product_name,quantity,unit_price,size,color)",
           { count: "exact" },
         )
+        .eq("store_id", s.storeId)
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
         .order("id")
@@ -82,7 +86,7 @@ export default async function Orders({ searchParams }: PageProps<"/orders">) {
                   {page > 1 && (
                     <Link
                       className="section-more-link"
-                      href={"/orders?page=" + (page - 1)}
+                      href={storeHref(s.basePath, "/orders?page=" + (page - 1))}
                     >
                       {t(lang, "prevPage")}
                     </Link>
@@ -90,7 +94,7 @@ export default async function Orders({ searchParams }: PageProps<"/orders">) {
                   {to + 1 < (result.count ?? 0) && (
                     <Link
                       className="section-more-link"
-                      href={"/orders?page=" + (page + 1)}
+                      href={storeHref(s.basePath, "/orders?page=" + (page + 1))}
                     >
                       {t(lang, "nextPage")}
                     </Link>

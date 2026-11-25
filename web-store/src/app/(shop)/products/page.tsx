@@ -7,6 +7,7 @@ import {
   settings,
   type Product,
 } from "@/lib/shop";
+import { storeHref } from "@/lib/tenant";
 import { localizedText, t } from "@/lib/i18n";
 import { getServerLang } from "@/lib/i18n-server";
 import { pagination } from "@/lib/workflow";
@@ -98,8 +99,11 @@ export default async function Catalog({
   }
 
   const href = (n: number) =>
-    "/products?" +
-    new URLSearchParams({ q, category, min, max, page: String(n) });
+    storeHref(
+      s.basePath,
+      "/products?" +
+        new URLSearchParams({ q, category, min, max, page: String(n) }),
+    );
 
   return (
     <>
@@ -183,7 +187,12 @@ export default async function Catalog({
           <p className="search-empty-hint">{t(lang, "searchTryAgainHint")}</p>
         </div>
       ) : (
-        <Grid rows={rows} currency={s.currency} lang={lang} />
+        <Grid
+          rows={rows}
+          currency={s.currency}
+          lang={lang}
+          basePath={s.basePath}
+        />
       )}
 
       <div className="actions" style={{ marginTop: "1.5rem" }}>

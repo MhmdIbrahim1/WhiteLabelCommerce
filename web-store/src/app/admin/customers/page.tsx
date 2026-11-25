@@ -43,29 +43,29 @@ export default async function AdminCustomersPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const [{ db }, lang] = await Promise.all([requireAdmin(), getServerLang()]);
+  const [{ db, storeId }, lang] = await Promise.all([requireAdmin(), getServerLang()]);
   const isEn = lang === "en";
   const [params, settingsRes, customersRes, ordersRes] = await Promise.all([
     searchParams,
     db
       .from("store_settings")
       .select("store_id,currency")
-      .eq("id", true)
+      .eq("store_id", storeId)
       .single<{ store_id: string; currency: string }>(),
     db
       .from("store_customers")
       .select("id,user_id,full_name,phone,email,city,address,notes,created_at")
+      .eq("store_id", storeId)
       .order("created_at", { ascending: false })
       .limit(500),
     db
       .from("orders")
       .select("id,customer_id,status,total,currency,created_at,shipping_carrier")
+      .eq("store_id", storeId)
       .order("created_at", { ascending: false })
       .limit(1000),
   ]);
 
-  const storeId =
-    settingsRes.data?.store_id || "00000000-0000-0000-0000-000000000001";
   const currency = settingsRes.data?.currency || brand.currency;
   const customers = (checked(customersRes) as RawCustomer[]) ?? [];
   const orders = (checked(ordersRes) as RawOrder[]) ?? [];

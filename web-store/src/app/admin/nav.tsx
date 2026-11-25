@@ -12,6 +12,7 @@ import {
   BellRing,
   Palette,
   Settings,
+  ShieldCheck,
 } from "lucide-react";
 import { useLanguage } from "@/components/language-provider";
 import type { DictKey } from "@/lib/i18n";
@@ -28,9 +29,14 @@ const sections: { url: string; key: DictKey; icon: typeof LayoutDashboard }[] = 
   { url: "/admin/settings", key: "adminSettings", icon: Settings },
 ];
 
-export default function Navigation() {
+export default function Navigation({
+  isSuperAdmin = false,
+}: {
+  isSuperAdmin?: boolean;
+}) {
   const path = usePathname();
-  const { t } = useLanguage();
+  const { lang, t } = useLanguage();
+  const isEn = lang === "en";
   return (
     <nav aria-label="Admin navigation">
       {sections.map(({ url, key, icon: Icon }) => {
@@ -43,6 +49,21 @@ export default function Navigation() {
           </Link>
         );
       })}
+      {isSuperAdmin && (
+        <Link
+          href="/super-admin"
+          aria-current={path.startsWith("/super-admin") ? "page" : undefined}
+          style={{
+            marginTop: "0.45rem",
+            borderTop: "1px solid rgba(255, 255, 255, 0.22)",
+            paddingTop: "0.7rem",
+            color: "#fde68a",
+          }}
+        >
+          <ShieldCheck size={19} />
+          {isEn ? "Super Admin" : "إدارة المنصة"}
+        </Link>
+      )}
     </nav>
   );
 }

@@ -1,9 +1,18 @@
 import { cache } from "react";
+import { notFound } from "next/navigation";
 import { serverDb, checked } from "./db";
 import { isTemplate } from "./theme-templates";
 import { resolveUiConfig, type StoreUiConfig } from "./ui-config";
 import type { ProductSpec } from "./specs";
+import {
+  DEFAULT_STORE_ID,
+  resolveActiveStore,
+  type StorePlan,
+  type StoreStatus,
+} from "./tenant";
 import brand from "./brand";
+
+export { DEFAULT_STORE_ID };
 
 export type Product = {
   id: string;
@@ -23,8 +32,6 @@ export type Product = {
 
 export const productFields =
   "id,name,name_en,category_id,description,description_en,price,old_price,stock,sizes,colors,image_path,specifications";
-
-export const DEFAULT_STORE_ID = "00000000-0000-0000-0000-000000000001";
 
 type SettingsRow = {
   store_id?: string | null;
@@ -57,13 +64,15 @@ export type StoreIncentives = {
 };
 
 export const settings = cache(async () => {
-  const db = await serverDb();
+  const [resolved, db] = await Promise.all([resolveActiveStore(), serverDb()]);
+  if (!resolved) notFound();
+
   const primary = await db
     .from("store_settings")
     .select(
       "store_id,store_name,primary_color,secondary_color,surface_color,border_radius,currency,shipping_fee,whatsapp_number,banners,theme_template,ui_config,cod_enabled,paymob_enabled,paymob_card_enabled,paymob_wallet_enabled,cart_incentive_enabled,free_shipping_threshold,cashback_enabled,cashback_percentage",
     )
-    .eq("id", true)
+    .eq("store_id", resolved.id)
     .single<SettingsRow>();
   let data = primary.data;
   let error = primary.error;
@@ -73,7 +82,7 @@ export const settings = cache(async () => {
       .select(
         "store_id,store_name,primary_color,secondary_color,surface_color,border_radius,currency,shipping_fee,whatsapp_number,banners,theme_template,ui_config,cod_enabled,paymob_enabled,paymob_card_enabled,paymob_wallet_enabled",
       )
-      .eq("id", true)
+      .eq("store_id", resolved.id)
       .single<SettingsRow>();
     data = fallback.data;
     error = fallback.error;
@@ -90,9 +99,17 @@ export const settings = cache(async () => {
     radius: data.border_radius ?? brand.borderRadius,
   });
   return {
-    storeId: data.store_id || DEFAULT_STORE_ID,
+    storeId: data.store_id || resolved.id || DEFAULT_STORE_ID,
+    slug: resolved.slug,
+    basePath: resolved.basePath,
+    isDefaultStore: resolved.isDefault,
+    plan: resolved.plan as StorePlan,
+    status: resolved.status as StoreStatus,
+    maxProducts: resolved.max_products,
+    nameAr: data.store_name || resolved.name_ar || brand.storeName,
+    nameEn: resolved.name_en || data.store_name || brand.storeName,
     template: uiConfig.baseTemplate,
-    name: data.store_name || brand.storeName,
+    name: data.store_name || resolved.name_ar || brand.storeName,
     primary: uiConfig.global.primaryButtonBg,
     accent: uiConfig.global.accentBadge,
     surface: uiConfig.global.cardSurface,
@@ -100,7 +117,9 @@ export const settings = cache(async () => {
     currency: String(data.currency || brand.currency),
     fee: Number(data.shipping_fee),
     whatsapp: String(data.whatsapp_number || brand.whatsappNumber),
-    banners: (data.banners as string[]).filter((s) => s.startsWith("https://")),
+    banners: ((data.banners as string[]) ?? []).filter((s) =>
+      s.startsWith("https://"),
+    ),
     uiConfig,
     payment: {
       codEnabled: data.cod_enabled ?? true,
@@ -116,14 +135,16 @@ export const settings = cache(async () => {
     } satisfies StoreIncentives,
   };
 });
+
 export const categories = cache(async () => {
-  const db = await serverDb();
+  const [s, db] = await Promise.all([settings(), serverDb()]);
   const all: { id: string; name: string; name_en?: string | null }[] = [];
   for (let start = 0; ; start += 200) {
     const batch = checked(
       await db
         .from("categories")
         .select("id,name,name_en")
+        .eq("store_id", s.storeId)
         .order("name")
         .order("id")
         .range(start, start + 199),
@@ -132,6 +153,7 @@ export const categories = cache(async () => {
     if (batch.length < 200) return all;
   }
 });
+
 export const photo = (path: string | null) =>
   path
     ? /^https?:\/\//i.test(path) || path.startsWith("/")
@@ -140,5 +162,6 @@ export const photo = (path: string | null) =>
         "/storage/v1/object/public/product-images/" +
         path.split("/").map(encodeURIComponent).join("/")
     : null;
+
 export const searchPattern = (value: string) =>
   "%" + value.slice(0, 100).replace(/[\\%_]/g, "\\$&") + "%";

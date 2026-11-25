@@ -23,20 +23,21 @@ export default async function AdminCouponsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const [{ db }, lang] = await Promise.all([requireAdmin(), getServerLang()]);
+  const [{ db, storeId }, lang] = await Promise.all([requireAdmin(), getServerLang()]);
   const isEn = lang === "en";
   const [params, settingsRes, couponsRes] = await Promise.all([
     searchParams,
     db
       .from("store_settings")
       .select("currency")
-      .eq("id", true)
+      .eq("store_id", storeId)
       .single<{ currency: string }>(),
     db
       .from("coupons")
       .select(
         "id,code,discount_type,discount_value,min_order_amount,max_uses,used_count,expires_at,is_active,created_at",
       )
+      .eq("store_id", storeId)
       .order("created_at", { ascending: false }),
   ]);
 

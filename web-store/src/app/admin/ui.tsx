@@ -26,15 +26,22 @@ export async function Status({ value }: { value: string }) {
 export async function Notice({ result }: { result?: string | string[] }) {
   if (!result) return null;
   const lang = await getServerLang();
+  const isEn = lang === "en";
+  const text =
+    result === "ok"
+      ? isEn
+        ? "Changes saved successfully."
+        : "تم حفظ التغييرات."
+      : result === "limit_reached"
+        ? isEn
+          ? "Product limit reached for your current plan. Upgrade your store plan to add more products."
+          : "لقد وصل متجرك إلى الحد الأقصى لعدد المنتجات في باقتك الحالية. يرجى ترقية الباقة لإضافة المزيد من المنتجات."
+        : isEn
+          ? "Could not save changes. Please verify values and try again."
+          : "تعذر حفظ التغييرات. تحقق من القيم والارتباطات ثم أعد المحاولة.";
   return (
     <p role="status" className="notice">
-      {result === "ok"
-        ? lang === "en"
-          ? "Changes saved successfully."
-          : "تم حفظ التغييرات."
-        : lang === "en"
-          ? "Could not save changes. Please verify values and try again."
-          : "تعذر حفظ التغييرات. تحقق من القيم والارتباطات ثم أعد المحاولة."}
+      {text}
     </p>
   );
 }

@@ -193,3 +193,13 @@
   - Added 4 JUnit tests in `WalletAndIncentivesTest.kt` verifying free-shipping threshold math, disabled-incentive behavior, `StoreSettingsDto` Phase 10A field decoding, and `WalletSummaryDto` decoding.
   - Bumped default `versionCode` to `22` and `versionName` to `"1.1.2"`.
 - **Build & Test Verification:** `$env:JAVA_HOME='C:\Users\moham\.jdks\jbr-21.0.11'; .\gradlew.bat testGithubDebugUnitTest assembleGithubDebug assemblePlaystoreDebug --no-daemon` passed (`BUILD SUCCESSFUL`, 0 errors) across both `github` and `playstore` flavors.
+
+
+### 6.9 Phase 10B: White-Label Multi-Tenant Build Parameterization (2026-11-25)
+- **Parameterized Gradle White-Label Builds (`android-app/app/build.gradle.kts`, `AndroidManifest.xml`):**
+  - Added optional Gradle CLI properties so any merchant's white-label APK can be built from the single Android codebase while defaulting strictly to `Nova Store` (`00000000-0000-0000-0000-000000000001`, `com.whitelabel.commerce`) when omitted:
+    - `-PstoreId=<uuid>` -> `BuildConfig.STORE_ID` (preserving backward-compatible `-PSTORE_ID` / `local.properties` resolution)
+    - `-PstoreName="<Name>"` -> `manifestPlaceholders["appName"]` wired to `android:label="${appName}"` in `AndroidManifest.xml` (default `"Nova Store"`)
+    - `-PappIdSuffix=.<slug>` -> optional `applicationIdSuffix` (omitted when unset so default package ID remains `com.whitelabel.commerce`)
+  - No version bump or release tag in Phase 10B (reserved for Phase 10C Reviews & Wishlist).
+- **Build & Test Verification:** `$env:JAVA_HOME='C:\Users\moham\.jdks\jbr-21.0.11'; .\gradlew.bat testGithubDebugUnitTest assembleGithubDebug --no-daemon` passed (`BUILD SUCCESSFUL`, 0 errors) with zero Gradle parameters passed.

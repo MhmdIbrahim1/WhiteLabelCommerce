@@ -39,7 +39,7 @@ type PaymentSecretRow = {
 export default async function Settings({
   searchParams,
 }: PageProps<"/admin/settings">) {
-  const [{ db }, lang, params] = await Promise.all([
+  const [{ db, storeId }, lang, params] = await Promise.all([
     requireAdmin(),
     getServerLang(),
     searchParams,
@@ -51,7 +51,7 @@ export default async function Settings({
       .select(
         "store_id,store_name,shipping_fee,currency,whatsapp_number,banners,theme_template,cod_enabled,paymob_enabled,paymob_card_enabled,paymob_wallet_enabled,cart_incentive_enabled,free_shipping_threshold,cashback_enabled,cashback_percentage",
       )
-      .eq("id", true)
+      .eq("store_id", storeId)
       .single<StoreSettingsRow>(),
   );
 

@@ -96,6 +96,7 @@ export default async function AccountPage({
     db
       .from("store_customers")
       .select("full_name,phone,email,governorate,city,address")
+      .eq("store_id", store.storeId)
       .eq("user_id", user.id)
       .maybeSingle<CustomerProfileRow>(),
     db
@@ -103,6 +104,7 @@ export default async function AccountPage({
       .select(
         "id,status,created_at,total,currency,payment_method,payment_status,shipping_carrier,tracking_number,tracking_url,courier_note,shipped_at,delivered_at,order_items(id,product_name,quantity,unit_price,size,color)",
       )
+      .eq("store_id", store.storeId)
       .eq("user_id", user.id)
       .order("created_at", { ascending: false })
       .limit(50),

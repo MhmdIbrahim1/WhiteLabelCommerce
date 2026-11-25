@@ -4,6 +4,7 @@ import { Package } from "lucide-react";
 import { photo, type Product } from "@/lib/shop";
 import { money } from "@/lib/brand";
 import { localizedText, t, type Lang } from "@/lib/i18n";
+import { storeHref } from "@/lib/tenant-shared";
 import { Buy } from "./buy";
 
 export function Picture({ p, lang = "ar" }: { p: Product; lang?: Lang }) {
@@ -43,16 +44,19 @@ export function Grid({
   rows,
   currency,
   lang = "ar",
+  basePath = "",
 }: {
   rows: Product[];
   currency: string;
   lang?: Lang;
+  basePath?: string;
 }) {
   if (!rows.length) return <p className="panel">{t(lang, "noMatchingProducts")}</p>;
   return (
     <div className="product-grid">
       {rows.map((p, idx) => {
         const title = localizedText(lang, p.name, p.name_en);
+        const detailHref = storeHref(basePath, "/products/" + p.id);
         return (
           <article
             className="tile shop-animate"
@@ -61,7 +65,7 @@ export function Grid({
           >
             <div className="tile-media">
               <Link
-                href={"/products/" + p.id}
+                href={detailHref}
                 className="tile-photo-link"
                 aria-label={title}
               >
@@ -78,7 +82,7 @@ export function Grid({
               </div>
             </div>
             <div className="tile-body">
-              <Link href={"/products/" + p.id} className="tile-title-link">
+              <Link href={detailHref} className="tile-title-link">
                 <h3>{title}</h3>
               </Link>
               <Price p={p} currency={currency} lang={lang} />

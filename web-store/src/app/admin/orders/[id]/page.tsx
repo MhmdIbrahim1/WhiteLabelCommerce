@@ -20,7 +20,7 @@ export default async function OrderDetails({
   params,
   searchParams,
 }: PageProps<"/admin/orders/[id]">) {
-  const [{ id }, { db }, lang] = await Promise.all([
+  const [{ id }, { db, storeId }, lang] = await Promise.all([
     params,
     requireAdmin(),
     getServerLang(),
@@ -30,6 +30,7 @@ export default async function OrderDetails({
     .from("orders")
     .select("*,order_items(*)")
     .eq("id", id)
+    .eq("store_id", storeId)
     .maybeSingle();
   if (!result.data && !result.error) notFound();
   const o = checked(result);

@@ -2,8 +2,9 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { serverDb } from "@/lib/db";
-import { adminUser } from "@/lib/access";
+import { adminUser, superAdminUser } from "@/lib/access";
 import { normalizePhone } from "@/lib/phone";
+import { resolveActiveStoreOrDefault } from "@/lib/tenant";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const OTP_RE = /^[0-9]{6}$/;
@@ -41,6 +42,8 @@ async function syncProfileForUser(
   const metaPhone =
     typeof meta.phone === "string" ? normalizePhone(meta.phone) : "";
 
+  const store = await resolveActiveStoreOrDefault();
+
   await db
     .rpc("sync_customer_profile", {
       p_full_name: overrides?.fullName ?? metaName,
@@ -48,6 +51,7 @@ async function syncProfileForUser(
       p_city: overrides?.city ?? "",
       p_address: overrides?.address ?? "",
       p_governorate: overrides?.governorate ?? "",
+      p_store_id: store.id,
     })
     .then(
       () => {},
@@ -59,7 +63,16 @@ async function resolvePostAuthRedirect(
   db: Awaited<ReturnType<typeof serverDb>>,
   nextPath: string,
 ): Promise<string> {
-  const isAdmin = Boolean(await adminUser(db));
+  const [isAdmin, isSuper] = await Promise.all([
+    adminUser(db).then(Boolean),
+    superAdminUser(db).then(Boolean),
+  ]);
+  if (nextPath.startsWith("/super-admin")) {
+    return isSuper ? nextPath : "/";
+  }
+  if (nextPath.startsWith("/create-store")) {
+    return nextPath;
+  }
   if (isAdmin) return nextPath || "/admin";
   if (nextPath.startsWith("/admin")) return "/account?notice=customer_only";
   return nextPath || "/account";
