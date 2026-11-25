@@ -5,6 +5,7 @@ import brand from "@/lib/brand";
 import { photo } from "@/lib/shop";
 import { getServerLang } from "@/lib/i18n-server";
 import { OrderTable } from "./ui";
+import { StoreLaunchChecklist } from "./launch-checklist";
 import {
   AnalyticsDashboard,
   type AnalyticsOrder,
@@ -41,33 +42,38 @@ type RawAnalyticsProduct = {
 };
 
 export default async function Overview() {
-  const { db, storeId } = await requireAdmin();
-  const [settingsRes, ordersRes, productsRes, ticketsRes] = await Promise.all([
-    db
-      .from("store_settings")
-      .select("currency")
-      .eq("store_id", storeId)
-      .single<{ currency: string }>(),
-    db
-      .from("orders")
-      .select(
-        "id,status,subtotal,shipping_fee,discount_amount,total,currency,created_at,order_items(product_id,product_name,quantity,unit_price,unit_cost)",
-      )
-      .eq("store_id", storeId)
-      .order("created_at", { ascending: false })
-      .limit(1000),
-    db
-      .from("products")
-      .select("id,name,name_en,price,cost_price,stock,image_path,is_active")
-      .eq("store_id", storeId)
-      .order("name")
-      .limit(500),
-    db
-      .from("support_tickets")
-      .select("id", { count: "exact", head: true })
-      .eq("store_id", storeId)
-      .eq("status", "open"),
-  ]);
+  const { db, storeId, activeStore } = await requireAdmin();
+  const [settingsRes, ordersRes, productsRes, ticketsRes, couponsRes] =
+    await Promise.all([
+      db
+        .from("store_settings")
+        .select("currency,store_name")
+        .eq("store_id", storeId)
+        .single<{ currency: string; store_name: string }>(),
+      db
+        .from("orders")
+        .select(
+          "id,status,subtotal,shipping_fee,discount_amount,total,currency,created_at,order_items(product_id,product_name,quantity,unit_price,unit_cost)",
+        )
+        .eq("store_id", storeId)
+        .order("created_at", { ascending: false })
+        .limit(1000),
+      db
+        .from("products")
+        .select("id,name,name_en,price,cost_price,stock,image_path,is_active")
+        .eq("store_id", storeId)
+        .order("name")
+        .limit(500),
+      db
+        .from("support_tickets")
+        .select("id", { count: "exact", head: true })
+        .eq("store_id", storeId)
+        .eq("status", "open"),
+      db
+        .from("coupons")
+        .select("id", { count: "exact", head: true })
+        .eq("store_id", storeId),
+    ]);
 
   if (ordersRes.error || productsRes.error || ticketsRes.error) {
     throw new Error("تعذر تحميل الإحصاءات.");
@@ -112,6 +118,14 @@ export default async function Overview() {
 
   return (
     <>
+      <StoreLaunchChecklist
+        storeId={storeId}
+        storeSlug={activeStore.slug}
+        storeNameAr={settingsRes.data?.store_name || activeStore.name_ar}
+        storeNameEn={activeStore.name_en || activeStore.name_ar}
+        productsCount={rawProducts.length}
+        couponsCount={couponsRes.count ?? 0}
+      />
       <AnalyticsDashboard
         orders={analyticsOrders}
         products={analyticsProducts}

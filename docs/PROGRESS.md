@@ -736,3 +736,24 @@ Stored as `store_settings.ui_config.homeSections` (ordered array, up to 15 items
   - Live Chrome verification at `http://localhost:3000` passed across all 7 checks (`0` console errors, `0` HTTP `>= 400`, `0` horizontal overflow): Nova Store regression check, `/super-admin` KPIs + Edit Plan modal, `/create-store` provisioning `qa-demo-store` (`Vibrant Pop`), isolated `/s/qa-demo-store` theme & empty catalog, `/admin` Active Store Switcher, `/super-admin` Suspend toggle -> Suspended Store gate, and clean Nova Store restore.
   - Deleted temporary `qa-demo-store` and confirmed `0` leftover QA rows (`1` store remaining: `nova-store`).
   - Passed `npx tsc --noEmit` (0 errors), `npm run lint -- --max-warnings 0` (0 warnings), and `npm run build` (23/23 routes).
+
+
+### Phase 10B Polish: Merchant Admin Onboarding Checklist & Interactive Guided Tour — 2026-11-25
+
+- **Per-Store Onboarding State ([onboarding-store.ts](../web-store/src/app/admin/onboarding-store.ts)):**
+  - Zero-migration, zero-external-dependency reactive state persisted per `store_id` in `localStorage` (`nova.admin.onboarding.v1:<store_id>`) via `useSyncExternalStore`, plus `<OnboardingStepMarker>` and custom event triggers (`triggerAdminGuidedTour`).
+- **Smart Store Launch Checklist ([launch-checklist.tsx](../web-store/src/app/admin/launch-checklist.tsx), [admin/page.tsx](../web-store/src/app/admin/page.tsx)):**
+  - Collapsible & dismissible bilingual (**AR RTL / EN LTR**) **"دليل إطلاق متجرك / Store Launch Checklist"** card at the top of `/admin` with animated live progress bar (`X / 5 مكتمل`):
+    1. **Add your first product** (`productsCount > 0`, auto-computed, CTA -> `/admin/products`)
+    2. **Customize store theme & banners** (auto-completed on `saveUiConfig` in [customizer-studio.tsx](../web-store/src/app/admin/customizer/customizer-studio.tsx) or manual toggle, CTA -> `/admin/customizer`)
+    3. **Configure shipping, cashback & payments** (auto-completed on `/admin/settings?result=ok` or manual toggle, CTA -> `/admin/settings`)
+    4. **Create your first promo coupon** (`couponsCount > 0`, auto-computed, CTA -> `/admin/coupons`)
+    5. **Share your live storefront** (one-click **Copy Link** for `/s/[activeStoreSlug]` auto-marking step complete + **Open Storefront** button)
+  - Renders a crisp emerald celebratory banner when `5 / 5` are completed.
+- **Interactive 6-Step Spotlight Guided Tour ([guided-tour.tsx](../web-store/src/app/admin/guided-tour.tsx), [admin/layout.tsx](../web-store/src/app/admin/layout.tsx), [admin/nav.tsx](../web-store/src/app/admin/nav.tsx), [store-switcher.tsx](../web-store/src/app/admin/store-switcher.tsx), [wizard.tsx](../web-store/src/app/create-store/wizard.tsx)):**
+  - Custom portaled React + CSS spotlight walkthrough highlighting `data-tour` elements (`store-switcher`, `nav-products`, `nav-orders`, `nav-customers`, `nav-customizer`, `nav-settings`) with RTL/LTR-aware viewport-clamped popover positioning, safe narrow-viewport docking, **Next / Previous / Skip / Done**, step counter (`1 / 6`), and `Escape` / Arrow key support.
+  - Updated `/create-store` success CTA (**"افتح لوحة تحكم متجرك / Open Store Admin"**) to route to `/admin?onboarding=1` so new merchants automatically launch the tour once per `store_id`.
+  - Added compact **"جولة سريعة / Quick Tour"** (`?`) replay button in the `/admin` topbar that relaunches the tour anytime and reopens the Launch Checklist if dismissed.
+- **Verification:**
+  - Live Chrome check at `http://localhost:3000/admin?onboarding=1` in both EN (LTR) and AR (RTL) verified `?onboarding=1` auto-launch, all 6 tour steps + `Previous` / `Done` / `Escape`, live `2 / 5` -> `3 / 5` (Copy Link) -> `5 / 5` celebration state, Dismiss + Quick Tour reopen/relaunch, `0` console errors, `0` HTTP `>= 400`, and `0` horizontal overflow.
+  - Passed `npx tsc --noEmit` (0 errors), `npm run lint -- --max-warnings 0` (0 warnings), and `npm run build` (23/23 routes).

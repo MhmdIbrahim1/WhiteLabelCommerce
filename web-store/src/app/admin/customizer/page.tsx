@@ -107,6 +107,7 @@ export default async function CustomizerPage() {
 
   return (
     <CustomizerStudio
+      storeId={storeId}
       initialConfig={initialConfig}
       storeName={settingsRow.store_name || brand.storeName}
       currency={settingsRow.currency || brand.currency}

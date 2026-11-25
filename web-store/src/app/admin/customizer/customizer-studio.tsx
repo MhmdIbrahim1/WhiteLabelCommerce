@@ -52,6 +52,7 @@ import {
 } from "@/lib/ui-config";
 import { useLanguage } from "@/components/language-provider";
 import { saveUiConfig, uploadHeroBannerImage } from "../mutations";
+import { markOnboardingStepDone } from "../onboarding-store";
 import {
   PreviewFrame,
   type PreviewPageKey,
@@ -197,6 +198,7 @@ function ColorControl({
 }
 
 export function CustomizerStudio({
+  storeId,
   initialConfig,
   storeName,
   currency,
@@ -205,6 +207,7 @@ export function CustomizerStudio({
   products,
   categories,
 }: {
+  storeId: string;
   initialConfig: StoreUiConfig;
   storeName: string;
   currency: string;
@@ -433,6 +436,7 @@ export function CustomizerStudio({
     startTransition(async () => {
       const res = await saveUiConfig(config);
       if (res.ok) {
+        markOnboardingStepDone(storeId, "customizerDone", true);
         setConfig(res.config);
         setSavedSnapshot(JSON.stringify(res.config));
         setFeedback({

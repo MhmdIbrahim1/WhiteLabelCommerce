@@ -194,7 +194,7 @@ export function CreateStoreWizard({ userEmail }: { userEmail: string }) {
 
           <div className="grid sm:grid-cols-2 gap-3 pt-2">
             <Link
-              href="/admin"
+              href="/admin?onboarding=1"
               className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold hover:bg-slate-800 no-underline"
               style={{ color: "#ffffff" }}
             >

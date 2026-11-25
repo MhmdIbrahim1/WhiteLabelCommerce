@@ -8,6 +8,7 @@ import { NotificationBell } from "@/components/notifications/notification-bell";
 import { logout } from "../login/actions";
 import Navigation from "./nav";
 import { AdminStoreSwitcher } from "./store-switcher";
+import { AdminGuidedTour, AdminTourTrigger } from "./guided-tour";
 
 export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
   const [{ db, user, storeId, activeStore, managedStores, isSuperAdmin }, lang] =
@@ -44,7 +45,8 @@ export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
           <span>
             <PanelTop size={17} /> {storeTitle}
           </span>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.7rem" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.7rem", flexWrap: "wrap" }}>
+            <AdminTourTrigger storeId={storeId} />
             <NotificationBell storeId={storeId} userId={user.id} scope="admin" />
             <LanguageToggle className="lang-toggle-pill" />
             <span dir="ltr">
@@ -53,6 +55,7 @@ export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
             </span>
           </div>
         </header>
+        <AdminGuidedTour storeId={storeId} />
         <main className="content">
           {activeStore.status === "suspended" && (
             <div

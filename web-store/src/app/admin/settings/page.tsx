@@ -9,6 +9,7 @@ import { TemplateGallery } from "./template-gallery";
 import { isTemplate } from "@/lib/theme-templates";
 import { getServerLang } from "@/lib/i18n-server";
 import { Notice } from "../ui";
+import { OnboardingStepMarker } from "../onboarding-store";
 
 type StoreSettingsRow = {
   store_id: string;
@@ -69,6 +70,11 @@ export default async function Settings({
 
   return (
     <>
+      <OnboardingStepMarker
+        storeId={storeId}
+        step="settingsDone"
+        active={params.result === "ok"}
+      />
       <h1>{isEn ? "Store Settings" : "إعدادات المتجر"}</h1>
       <Notice result={params.result} />
       <TemplateGallery

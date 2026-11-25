@@ -17,16 +17,21 @@ import {
 import { useLanguage } from "@/components/language-provider";
 import type { DictKey } from "@/lib/i18n";
 
-const sections: { url: string; key: DictKey; icon: typeof LayoutDashboard }[] = [
+const sections: {
+  url: string;
+  key: DictKey;
+  icon: typeof LayoutDashboard;
+  tourId?: string;
+}[] = [
   { url: "/admin", key: "adminOverview", icon: LayoutDashboard },
-  { url: "/admin/products", key: "adminProducts", icon: Boxes },
-  { url: "/admin/orders", key: "adminOrders", icon: ClipboardList },
-  { url: "/admin/customers", key: "adminCustomers", icon: Users },
+  { url: "/admin/products", key: "adminProducts", icon: Boxes, tourId: "nav-products" },
+  { url: "/admin/orders", key: "adminOrders", icon: ClipboardList, tourId: "nav-orders" },
+  { url: "/admin/customers", key: "adminCustomers", icon: Users, tourId: "nav-customers" },
   { url: "/admin/coupons", key: "adminCoupons", icon: TicketPercent },
   { url: "/admin/notifications", key: "adminNotifications", icon: BellRing },
   { url: "/admin/tickets", key: "adminTickets", icon: MessagesSquare },
-  { url: "/admin/customizer", key: "adminCustomizer", icon: Palette },
-  { url: "/admin/settings", key: "adminSettings", icon: Settings },
+  { url: "/admin/customizer", key: "adminCustomizer", icon: Palette, tourId: "nav-customizer" },
+  { url: "/admin/settings", key: "adminSettings", icon: Settings, tourId: "nav-settings" },
 ];
 
 export default function Navigation({
@@ -39,11 +44,16 @@ export default function Navigation({
   const isEn = lang === "en";
   return (
     <nav aria-label="Admin navigation">
-      {sections.map(({ url, key, icon: Icon }) => {
+      {sections.map(({ url, key, icon: Icon, tourId }) => {
         const active =
           path === url || (url !== "/admin" && path.startsWith(url + "/"));
         return (
-          <Link key={url} href={url} aria-current={active ? "page" : undefined}>
+          <Link
+            key={url}
+            href={url}
+            data-tour={tourId}
+            aria-current={active ? "page" : undefined}
+          >
             <Icon size={19} />
             {t(key)}
           </Link>

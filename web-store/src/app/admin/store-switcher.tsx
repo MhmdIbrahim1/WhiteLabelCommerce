@@ -51,6 +51,7 @@ export function AdminStoreSwitcher({
 
   return (
     <div
+      data-tour="store-switcher"
       style={{
         display: "grid",
         gap: "0.55rem",
