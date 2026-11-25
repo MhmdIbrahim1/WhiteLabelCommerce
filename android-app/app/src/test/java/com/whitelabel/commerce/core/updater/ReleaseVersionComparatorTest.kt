@@ -114,4 +114,81 @@ class ReleaseVersionComparatorTest {
         assertEquals(sample, ApkVerifier.normalizeSha256("sha256:${sample.uppercase()}"))
         assertNull(ApkVerifier.normalizeSha256("not-a-valid-hash"))
     }
+
+    @Test
+    fun `prioritizes numeric remote versionCode cleanly across upgrades and prevents downgrades`() {
+        // Explicit numeric comparisons: 25 > 24, 25 > 21, 21 <= 23
+        assertTrue(
+            ReleaseVersionComparator.isNewerRelease(
+                remoteTag = "v1.3.1",
+                currentVersionCode = 24,
+                currentVersionName = "1.3.0",
+                remoteVersionCode = 25,
+            ),
+        )
+        assertTrue(
+            ReleaseVersionComparator.isNewerRelease(
+                remoteTag = "v1.3.1",
+                currentVersionCode = 21,
+                currentVersionName = "1.1.1",
+                remoteVersionCode = 25,
+            ),
+        )
+        assertFalse(
+            ReleaseVersionComparator.isNewerRelease(
+                remoteTag = "v1.0.21",
+                currentVersionCode = 23,
+                currentVersionName = "1.2.0",
+                remoteVersionCode = 21,
+            ),
+        )
+
+        // Real-world CI release history: v1.3.1 (43) upgrades v1.3.0 (42), v1.2.0 (40), and v1.0.21 (31)
+        assertTrue(
+            ReleaseVersionComparator.isNewerRelease(
+                remoteTag = "v1.3.1",
+                currentVersionCode = 42,
+                currentVersionName = "1.3.0",
+                remoteVersionCode = 43,
+            ),
+        )
+        assertTrue(
+            ReleaseVersionComparator.isNewerRelease(
+                remoteTag = "v1.3.1",
+                currentVersionCode = 40,
+                currentVersionName = "1.2.0",
+                remoteVersionCode = 43,
+            ),
+        )
+        assertFalse(
+            ReleaseVersionComparator.isNewerRelease(
+                remoteTag = "v1.0.21",
+                currentVersionCode = 40,
+                currentVersionName = "1.2.0",
+                remoteVersionCode = 31,
+            ),
+        )
+    }
+
+    @Test
+    fun `parses valid and malformed release-meta json safely`() {
+        val valid = GitHubReleaseUpdater.parseReleaseMetaJson(
+            """
+            {
+              "versionCode": 43,
+              "versionName": "1.3.1",
+              "apkName": "WhiteLabelCommerce-v1.3.1-release.apk",
+              "sha256": "${"b".repeat(64)}",
+              "notes": "Fix release versioning",
+              "unknownFutureField": true
+            }
+            """.trimIndent(),
+        )
+        assertEquals(43, valid?.versionCode)
+        assertEquals("1.3.1", valid?.versionName)
+        assertEquals("WhiteLabelCommerce-v1.3.1-release.apk", valid?.apkName)
+
+        assertNull(GitHubReleaseUpdater.parseReleaseMetaJson("{not valid json"))
+        assertNull(GitHubReleaseUpdater.parseReleaseMetaJson(""))
+    }
 }

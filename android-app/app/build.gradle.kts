@@ -76,16 +76,21 @@ if (isCiEnvironment && isReleaseBuildRequested && !hasReleaseSigning) {
     )
 }
 
+// Single source of truth for Android release versioning (read by .github/workflows/android-release.yml).
+// Must be strictly greater than all previously published GitHub Releases (v1.2.0 = 40, v1.3.0 = 42).
+val defaultVersionCode = 43
+val defaultVersionName = "1.3.1"
+
 val resolvedVersionCode = (project.findProperty("VERSION_CODE") as? String)
     ?.trim()
     ?.toIntOrNull()
     ?.takeIf { it > 0 }
-    ?: 24
+    ?: defaultVersionCode
 
 val resolvedVersionName = (project.findProperty("VERSION_NAME") as? String)
     ?.trim()
     ?.takeIf { it.isNotEmpty() }
-    ?: "1.3.0"
+    ?: defaultVersionName
 
 val resolvedStoreId = resolveConfigValue(
     "storeId",

@@ -2,18 +2,15 @@ name: Android Release APK
 
 on:
   push:
-    branches:
-      - main
-      - master
     tags:
-      - "v*"
+      - "v*.*.*"
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: android-release-${{ github.ref }}
+  group: android-release-publish
   cancel-in-progress: false
 
 jobs:
@@ -76,18 +73,94 @@ jobs:
             echo "::warning::GOOGLE_SERVICES_JSON_BASE64 secret is not set; building without google-services.json."
           fi
 
-      - name: Compute version metadata
+      - name: Resolve and validate version metadata (Single Source of Truth)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            VERSION_NAME="${GITHUB_REF_NAME#v}"
-            VERSION_CODE=$(( ${{ github.run_number }} + 20 ))
-          else
-            VERSION_NAME="1.0.${{ github.run_number }}"
-            VERSION_CODE=$(( ${{ github.run_number }} + 10 ))
-          fi
-          echo "VERSION_CODE=${VERSION_CODE}" >> "$GITHUB_ENV"
-          echo "VERSION_NAME=${VERSION_NAME}" >> "$GITHUB_ENV"
-          echo "Building versionName=${VERSION_NAME} (versionCode=${VERSION_CODE})"
+          python3 - << 'PY'
+          import json, os, re, sys, urllib.request
+
+          gradle_path = "android-app/app/build.gradle.kts"
+          with open(gradle_path, "r", encoding="utf-8") as f:
+              text = f.read()
+
+          vc_match = re.search(r"val\s+defaultVersionCode\s*=\s*(\d+)", text)
+          vn_match = re.search(r'val\s+defaultVersionName\s*=\s*"([^"]+)"', text)
+          if not vc_match or not vn_match:
+              sys.exit("::error::Could not parse defaultVersionCode / defaultVersionName from android-app/app/build.gradle.kts")
+
+          version_code = int(vc_match.group(1))
+          version_name = vn_match.group(1).strip()
+
+          if not re.match(r"^\d+\.\d+\.\d+$", version_name):
+              sys.exit(f"::error::defaultVersionName '{version_name}' must be semantic X.Y.Z")
+
+          ref = os.environ.get("GITHUB_REF", "")
+          ref_name = os.environ.get("GITHUB_REF_NAME", "")
+          if ref.startswith("refs/tags/v"):
+              tag_version = ref_name[1:]
+              if tag_version != version_name:
+                  sys.exit(
+                      f"::error::Tag v{tag_version} does not match defaultVersionName '{version_name}' in {gradle_path}. "
+                      "Keep build.gradle.kts and the Git release tag strictly synchronized."
+                  )
+
+          target_tag = f"v{version_name}"
+
+          # Monotonic versionCode guard against all other published GitHub Releases
+          repo = os.environ.get("GITHUB_REPOSITORY", "")
+          token = os.environ.get("GH_TOKEN", "")
+          highest_other_code = 0
+          highest_other_tag = ""
+          if repo:
+              req = urllib.request.Request(
+                  f"https://api.github.com/repos/{repo}/releases?per_page=20",
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "User-Agent": "WhiteLabelCommerce-CI",
+                      **({"Authorization": f"Bearer {token}"} if token else {}),
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(req, timeout=15) as resp:
+                      releases = json.loads(resp.read().decode("utf-8"))
+                  for rel in releases:
+                      if rel.get("draft") or rel.get("prerelease"):
+                          continue
+                      rtag = rel.get("tag_name", "")
+                      if rtag == target_tag:
+                          continue
+                      for asset in rel.get("assets", []):
+                          if asset.get("name", "").lower() == "release-meta.json":
+                              meta_url = asset.get("browser_download_url", "")
+                              if meta_url:
+                                  try:
+                                      mreq = urllib.request.Request(meta_url, headers={"User-Agent": "WhiteLabelCommerce-CI"})
+                                      with urllib.request.urlopen(mreq, timeout=10) as mresp:
+                                          meta = json.loads(mresp.read().decode("utf-8"))
+                                      code = int(meta.get("versionCode") or 0)
+                                      if code > highest_other_code:
+                                          highest_other_code = code
+                                          highest_other_tag = rtag
+                                  except Exception:
+                                      pass
+                              break
+              except Exception as e:
+                  print(f"::warning::Could not query existing releases for monotonic guard: {e}")
+
+          if highest_other_code > 0 and version_code <= highest_other_code:
+              sys.exit(
+                  f"::error::defaultVersionCode={version_code} is NOT strictly greater than existing release "
+                  f"{highest_other_tag} (versionCode={highest_other_code}). Bump defaultVersionCode in {gradle_path}."
+              )
+
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as envf:
+              envf.write(f"VERSION_CODE={version_code}\n")
+              envf.write(f"VERSION_NAME={version_name}\n")
+
+          print(f"Resolved single-source-of-truth release: tag={target_tag}, versionName={version_name}, versionCode={version_code} (previous max={highest_other_code} from {highest_other_tag or 'none'})")
+          PY
 
       - name: Build Android GitHub-Flavor Release APK
         working-directory: android-app

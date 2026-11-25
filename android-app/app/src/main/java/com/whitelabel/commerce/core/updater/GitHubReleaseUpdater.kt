@@ -13,6 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import okhttp3.CacheControl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
@@ -34,6 +35,7 @@ class GitHubReleaseUpdater @Inject constructor(
     }
 
     private val client: OkHttpClient = OkHttpClient.Builder()
+        .cache(null)
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .followRedirects(true)
@@ -76,6 +78,9 @@ class GitHubReleaseUpdater @Inject constructor(
             .header("Accept", "application/vnd.github+json")
             .header("X-GitHub-Api-Version", "2022-11-28")
             .header("User-Agent", "WhiteLabelCommerce-Android/$currentVersionName")
+            .header("Cache-Control", "no-cache, no-store")
+            .header("Pragma", "no-cache")
+            .cacheControl(CacheControl.FORCE_NETWORK)
             .get()
             .build()
 
@@ -86,12 +91,12 @@ class GitHubReleaseUpdater @Inject constructor(
                 val release = json.decodeFromString(GitHubReleaseDto.serializer(), body)
                 if (release.draft || release.prerelease) return@use null
 
-                val apkAsset = selectApkAsset(release.assets) ?: return@use null
                 val metaAsset = release.assets.firstOrNull {
                     it.name.equals("release-meta.json", ignoreCase = true) &&
                         it.browserDownloadUrl.startsWith("https://", ignoreCase = true)
                 }
                 val releaseMeta = metaAsset?.let { fetchReleaseMeta(it.browserDownloadUrl, currentVersionName) }
+                val apkAsset = selectApkAsset(release.assets, releaseMeta?.apkName) ?: return@use null
 
                 if (!ReleaseVersionComparator.isNewerRelease(
                         remoteTag = release.tagName,
@@ -133,23 +138,48 @@ class GitHubReleaseUpdater @Inject constructor(
                 .url(url)
                 .header("Accept", "application/json")
                 .header("User-Agent", "WhiteLabelCommerce-Android/$currentVersionName")
+                .header("Cache-Control", "no-cache, no-store")
+                .header("Pragma", "no-cache")
+                .cacheControl(CacheControl.FORCE_NETWORK)
                 .get()
                 .build()
             client.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) return@use null
                 val text = resp.body?.string()?.takeIf { it.isNotBlank() } ?: return@use null
-                json.decodeFromString(ReleaseMetaDto.serializer(), text)
+                parseReleaseMetaJson(text, json)
             }
         }.getOrNull()
     }
 
-    internal fun selectApkAsset(assets: List<GitHubAssetDto>): GitHubAssetDto? {
+    internal fun selectApkAsset(
+        assets: List<GitHubAssetDto>,
+        preferredApkName: String? = null,
+    ): GitHubAssetDto? {
         val validApks = assets.filter { asset ->
             asset.name.endsWith(".apk", ignoreCase = true) &&
                 asset.browserDownloadUrl.startsWith("https://", ignoreCase = true)
         }
+        val cleanPreferred = preferredApkName?.trim()?.takeIf { it.isNotEmpty() }
+        if (cleanPreferred != null) {
+            validApks.firstOrNull { it.name.equals(cleanPreferred, ignoreCase = true) }?.let { return it }
+        }
         return validApks.firstOrNull { it.name.contains("release", ignoreCase = true) }
             ?: validApks.firstOrNull()
+    }
+
+    internal companion object {
+        fun parseReleaseMetaJson(
+            raw: String?,
+            jsonParser: Json = Json {
+                ignoreUnknownKeys = true
+                isLenient = true
+            },
+        ): ReleaseMetaDto? {
+            val trimmed = raw?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+            return runCatching {
+                jsonParser.decodeFromString(ReleaseMetaDto.serializer(), trimmed)
+            }.getOrNull()
+        }
     }
 
     suspend fun downloadApk(
