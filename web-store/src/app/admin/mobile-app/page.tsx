@@ -6,7 +6,7 @@ import { MobileAppStudio } from "./mobile-app-studio";
 export const dynamic = "force-dynamic";
 
 export default async function AdminMobileAppPage() {
-  const { db, storeId, activeStore } = await requireAdmin();
+  const { db, storeId, activeStore, isSuperAdmin } = await requireAdmin();
 
   const [settingsRes, accessRes, buildsRes] = await Promise.all([
     db
@@ -71,6 +71,7 @@ export default async function AdminMobileAppPage() {
         supportEmail: s?.support_email ?? "",
       }}
       unlocked={unlocked}
+      isSuperAdmin={isSuperAdmin}
       githubConfigured={githubConfigured}
       initialBuilds={(buildsRes.data ?? []) as StoreAppBuildRow[]}
     />

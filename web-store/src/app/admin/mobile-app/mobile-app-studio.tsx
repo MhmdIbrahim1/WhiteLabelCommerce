@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Smartphone,
   Lock,
@@ -22,6 +22,9 @@ import {
   Heart,
   Bell,
   ShoppingBag,
+  Upload,
+  Link2,
+  Trash2,
 } from "lucide-react";
 import { useLanguage } from "@/components/language-provider";
 import { date } from "@/lib/brand";
@@ -398,11 +401,13 @@ function QrCodeCard({ url, isEn }: { url: string; isEn: boolean }) {
 export function MobileAppStudio({
   store,
   unlocked,
+  isSuperAdmin,
   githubConfigured,
   initialBuilds,
 }: {
   store: StudioStoreProps;
   unlocked: boolean;
+  isSuperAdmin: boolean;
   githubConfigured: boolean;
   initialBuilds: StoreAppBuildRow[];
 }) {
@@ -414,6 +419,14 @@ export function MobileAppStudio({
     (isEn ? store.nameEn : store.nameAr) || store.nameAr,
   );
   const [iconUrl, setIconUrl] = useState<string>(store.logoUrl || "");
+  const [uploadedIconPath, setUploadedIconPath] = useState<string | null>(null);
+  const [showUrlInput, setShowUrlInput] = useState(false);
+  const [uploadingIcon, setUploadingIcon] = useState(false);
+  const [iconFeedback, setIconFeedback] = useState<{
+    kind: "ok" | "err";
+    text: string;
+  } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [submitting, setSubmitting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [banner, setBanner] = useState<{
@@ -421,6 +434,98 @@ export function MobileAppStudio({
     text: string;
   } | null>(null);
   const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
+
+  const handleIconFileChange = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+
+    const allowedTypes = ["image/png", "image/jpeg", "image/webp"];
+    if (!allowedTypes.includes(file.type)) {
+      setIconFeedback({
+        kind: "err",
+        text: isEn
+          ? "Unsupported format. Please choose a PNG, JPG, or WEBP image."
+          : "نوع الملف غير مدعوم. يرجى اختيار صورة بصيغة PNG أو JPG أو WEBP.",
+      });
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      setIconFeedback({
+        kind: "err",
+        text: isEn
+          ? "Image size must be 2 MB or less."
+          : "يجب ألا يتجاوز حجم الصورة 2 ميجابايت.",
+      });
+      return;
+    }
+
+    setUploadingIcon(true);
+    setIconFeedback(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      if (uploadedIconPath) {
+        formData.append("previousPath", uploadedIconPath);
+      }
+      const resp = await fetch("/api/admin/mobile-builds/icon", {
+        method: "POST",
+        body: formData,
+      });
+      const json = (await resp.json().catch(() => ({}))) as {
+        url?: string;
+        path?: string;
+        message_ar?: string;
+        message_en?: string;
+      };
+      if (!resp.ok || !json.url) {
+        setIconFeedback({
+          kind: "err",
+          text:
+            (isEn ? json.message_en : json.message_ar) ||
+            (isEn
+              ? "Could not upload icon image. Please try again."
+              : "تعذر رفع صورة الأيقونة. حاول مرة أخرى."),
+        });
+        return;
+      }
+      setIconUrl(json.url);
+      setUploadedIconPath(json.path ?? null);
+      setIconFeedback({
+        kind: "ok",
+        text: isEn
+          ? "App icon uploaded and applied to live preview."
+          : "تم رفع أيقونة التطبيق وتحديث المعاينة بنجاح.",
+      });
+    } catch {
+      setIconFeedback({
+        kind: "err",
+        text: isEn
+          ? "Network error while uploading the icon."
+          : "حدث خطأ في الاتصال أثناء رفع الأيقونة.",
+      });
+    } finally {
+      setUploadingIcon(false);
+    }
+  };
+
+  const handleRemoveIcon = async () => {
+    const pathToDelete = uploadedIconPath;
+    setIconUrl("");
+    setUploadedIconPath(null);
+    setIconFeedback(null);
+    if (pathToDelete) {
+      await fetch("/api/admin/mobile-builds/icon", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: pathToDelete }),
+      }).catch(() => undefined);
+    }
+  };
 
   const hasActiveBuild = builds.some(
     (b) => b.status === "queued" || b.status === "building",
@@ -961,24 +1066,34 @@ export function MobileAppStudio({
             gap: "0.65rem",
             padding: "0.9rem 1.05rem",
             borderRadius: "14px",
-            border: "1px solid #fde68a",
-            background: "#fffbeb",
-            color: "#92400e",
+            border: isSuperAdmin ? "1px solid #fde68a" : "1px solid #cbd5e1",
+            background: isSuperAdmin ? "#fffbeb" : "#f8fafc",
+            color: isSuperAdmin ? "#92400e" : "#334155",
             fontSize: "0.86rem",
           }}
         >
           <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: "2px" }} />
           <div>
-            <strong>
-              {isEn
-                ? "GitHub Actions Cloud Builder not connected on this server yet."
-                : "خادم البناء السحابي (GitHub Actions) غير مربوط بعد على هذه البيئة."}
-            </strong>
-            <div style={{ marginTop: "0.2rem", opacity: 0.9 }}>
-              {isEn
-                ? "Set GITHUB_ACTIONS_TOKEN, GITHUB_REPO_OWNER, and GITHUB_REPO_NAME in web-store/.env.local to enable 1-click cloud APK builds."
-                : "أضف GITHUB_ACTIONS_TOKEN و GITHUB_REPO_OWNER و GITHUB_REPO_NAME في web-store/.env.local لتفعيل البناء السحابي التلقائي."}
-            </div>
+            {isSuperAdmin ? (
+              <>
+                <strong>
+                  {isEn
+                    ? "GitHub Actions Cloud Builder not connected on this server yet."
+                    : "خادم البناء السحابي (GitHub Actions) غير مربوط بعد على هذه البيئة."}
+                </strong>
+                <div style={{ marginTop: "0.2rem", opacity: 0.9 }}>
+                  {isEn
+                    ? "Set GITHUB_ACTIONS_TOKEN, GITHUB_REPO_OWNER, and GITHUB_REPO_NAME in web-store/.env.local to enable 1-click cloud APK builds."
+                    : "أضف GITHUB_ACTIONS_TOKEN و GITHUB_REPO_OWNER و GITHUB_REPO_NAME في web-store/.env.local لتفعيل البناء السحابي التلقائي."}
+                </div>
+              </>
+            ) : (
+              <strong>
+                {isEn
+                  ? "Cloud APK builder is currently being provisioned. Please check back shortly."
+                  : "خدمة بناء التطبيق قيد التجهيز حالياً. يرجى المحاولة مرة أخرى قريباً."}
+              </strong>
+            )}
           </div>
         </div>
       )}
@@ -1068,25 +1183,201 @@ export function MobileAppStudio({
             />
           </label>
 
-          <label style={{ display: "grid", gap: "0.35rem" }}>
+          {/* Direct Device App Icon Uploader Card */}
+          <div style={{ display: "grid", gap: "0.55rem" }}>
             <span style={{ fontSize: "0.84rem", fontWeight: 700 }}>
-              {isEn
-                ? "App Launcher Icon URL (optional HTTPS PNG/JPG)"
-                : "رابط أيقونة التطبيق (اختياري — رابط HTTPS لصورة PNG/JPG)"}
+              {isEn ? "App Launcher Icon" : "أيقونة التطبيق"}
             </span>
-            <input
-              type="url"
-              dir="ltr"
-              value={iconUrl}
-              onChange={(e) => setIconUrl(e.target.value)}
-              placeholder="https://.../logo.png"
-            />
-            <small style={{ color: "#64748b", fontSize: "0.76rem" }}>
-              {isEn
-                ? "Square 512×512 PNG recommended. Defaults to your store logo when available."
-                : "يفضّل صورة مربعة 512×512 PNG. يتم استخدام شعار متجرك افتراضياً إن وجد."}
-            </small>
-          </label>
+            <div
+              style={{
+                borderRadius: "14px",
+                border: "1px solid #e2e8f0",
+                background: "#f8fafc",
+                padding: "0.9rem",
+                display: "grid",
+                gap: "0.75rem",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.9rem",
+                  flexWrap: "wrap",
+                }}
+              >
+                {/* Live 64x64 Rounded-Square Preview */}
+                <div
+                  style={{
+                    width: "64px",
+                    height: "64px",
+                    borderRadius: "16px",
+                    overflow: "hidden",
+                    background: /^#[0-9a-fA-F]{6}$/.test(store.primaryColor)
+                      ? store.primaryColor
+                      : "#0f172a",
+                    color: "#ffffff",
+                    display: "grid",
+                    placeItems: "center",
+                    fontSize: "1.45rem",
+                    fontWeight: 800,
+                    border: "1px solid rgba(15, 23, 42, 0.1)",
+                    flexShrink: 0,
+                    boxShadow: "0 4px 12px rgba(15, 23, 42, 0.1)",
+                  }}
+                >
+                  {iconUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={iconUrl}
+                      alt={appName || "App icon"}
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "cover",
+                      }}
+                    />
+                  ) : (
+                    <span>{(appName || "S").slice(0, 1).toUpperCase()}</span>
+                  )}
+                </div>
+
+                <div style={{ flex: 1, minWidth: "180px", display: "grid", gap: "0.45rem" }}>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    onChange={handleIconFileChange}
+                    style={{ display: "none" }}
+                    aria-label={
+                      isEn ? "Upload app icon from device" : "رفع أيقونة التطبيق من الجهاز"
+                    }
+                  />
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.45rem", flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      disabled={uploadingIcon}
+                      onClick={() => fileInputRef.current?.click()}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "0.4rem",
+                        padding: "0.52rem 0.9rem",
+                        borderRadius: "10px",
+                        background: "#0284c7",
+                        color: "#ffffff",
+                        fontSize: "0.82rem",
+                        fontWeight: 700,
+                      }}
+                    >
+                      <Upload size={14} />
+                      <span>
+                        {uploadingIcon
+                          ? isEn
+                            ? "Uploading…"
+                            : "جارٍ الرفع…"
+                          : isEn
+                            ? "Upload from Device"
+                            : "رفع صورة من الجهاز"}
+                      </span>
+                    </button>
+
+                    {iconUrl && (
+                      <button
+                        type="button"
+                        disabled={uploadingIcon}
+                        onClick={() => void handleRemoveIcon()}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "0.3rem",
+                          padding: "0.5rem 0.72rem",
+                          borderRadius: "10px",
+                          background: "#ffffff",
+                          color: "#b91c1c",
+                          border: "1px solid #fecaca",
+                          fontSize: "0.78rem",
+                          fontWeight: 650,
+                        }}
+                      >
+                        <Trash2 size={13} />
+                        <span>{isEn ? "Remove" : "إزالة"}</span>
+                      </button>
+                    )}
+                  </div>
+                  <small style={{ color: "#64748b", fontSize: "0.74rem" }}>
+                    {isEn
+                      ? "PNG, JPG, or WEBP · 512×512 square recommended · Max 2 MB"
+                      : "PNG أو JPG أو WEBP · يُفضّل 512×512 مربعة · الحد الأقصى 2 ميجابايت"}
+                  </small>
+                </div>
+              </div>
+
+              {iconFeedback && (
+                <div
+                  role="status"
+                  style={{
+                    fontSize: "0.78rem",
+                    fontWeight: 600,
+                    padding: "0.45rem 0.65rem",
+                    borderRadius: "8px",
+                    background:
+                      iconFeedback.kind === "ok" ? "#ecfdf5" : "#fef2f2",
+                    color: iconFeedback.kind === "ok" ? "#047857" : "#b91c1c",
+                    border:
+                      iconFeedback.kind === "ok"
+                        ? "1px solid #a7f3d0"
+                        : "1px solid #fecaca",
+                  }}
+                >
+                  {iconFeedback.text}
+                </div>
+              )}
+
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setShowUrlInput((v) => !v)}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "0.35rem",
+                    background: "transparent",
+                    color: "#475569",
+                    padding: "0.15rem 0",
+                    fontSize: "0.76rem",
+                    fontWeight: 650,
+                  }}
+                >
+                  <Link2 size={13} />
+                  <span>
+                    {showUrlInput
+                      ? isEn
+                        ? "Hide direct image URL"
+                        : "إخفاء رابط الصورة المباشر"
+                      : isEn
+                        ? "Or paste image URL"
+                        : "أو استخدام رابط مباشر"}
+                  </span>
+                </button>
+
+                {showUrlInput && (
+                  <input
+                    type="url"
+                    dir="ltr"
+                    value={iconUrl}
+                    onChange={(e) => {
+                      setIconUrl(e.target.value);
+                      setUploadedIconPath(null);
+                      setIconFeedback(null);
+                    }}
+                    placeholder="https://.../logo.png"
+                    style={{ marginTop: "0.45rem", background: "#ffffff" }}
+                  />
+                )}
+              </div>
+            </div>
+          </div>
 
           <div
             style={{
