@@ -113,6 +113,17 @@ class CartViewModel @Inject constructor(
                     }
                 }
         }
+        viewModelScope.launch {
+            combine(cartRepository.cartItems, storeRepository.storeSettings) { items, settings ->
+                items.size to settings.currency
+            }
+                .distinctUntilChanged()
+                .collectLatest { (count, currency) ->
+                    if (count > 0) {
+                        cartRepository.syncAbandonedCartAsync(currency)
+                    }
+                }
+        }
     }
 
     fun addUpsellProduct(product: Product) {

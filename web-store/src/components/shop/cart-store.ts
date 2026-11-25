@@ -39,8 +39,31 @@ export function lineEffectivePrice(line: Line, nowMs: number = Date.now()): numb
 }
 const key = "nova.cart.v2";
 const guestSessionKey = "nova.guest_session_id";
+const abandonedSessionKey = "wlc_cart_session";
 let memory: string | null = null;
 let heartbeatTimer: ReturnType<typeof setTimeout> | null = null;
+let contactCache: {
+  name?: string;
+  email?: string;
+  phone?: string;
+  currency?: string;
+} = {};
+
+export function getCartSessionKey(): string {
+  try {
+    let id = localStorage.getItem(abandonedSessionKey);
+    if (!id) {
+      id =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? `web-${crypto.randomUUID()}`
+          : `web-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      localStorage.setItem(abandonedSessionKey, id);
+    }
+    return id;
+  } catch {
+    return "web-fallback";
+  }
+}
 
 export function getGuestSessionId(): string {
   try {
@@ -78,7 +101,69 @@ function scheduleCartHeartbeat(rows: Line[]) {
         locale,
       }),
     }).catch(() => {});
+
+    const serializedItems = rows.map((l) => ({
+      id: l.id,
+      name: l.name,
+      name_en: l.name_en ?? null,
+      quantity: l.quantity,
+      price: lineEffectivePrice(l),
+      size: l.size || null,
+      color: l.color || null,
+    }));
+
+    void fetch("/api/abandoned-cart", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "upsert",
+        session_key: getCartSessionKey(),
+        items: serializedItems,
+        subtotal,
+        currency: contactCache.currency || "EGP",
+        source: "web",
+        customer_name: contactCache.name || null,
+        customer_email: contactCache.email || null,
+        customer_phone: contactCache.phone || null,
+      }),
+    }).catch(() => {});
   }, 1500);
+}
+
+export function syncAbandonedCartContact(contact: {
+  name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  currency?: string | null;
+}) {
+  if (typeof window === "undefined") return;
+  contactCache = {
+    name: contact.name?.trim() || contactCache.name,
+    email: contact.email?.trim() || contactCache.email,
+    phone: contact.phone?.trim() || contactCache.phone,
+    currency: contact.currency?.trim() || contactCache.currency,
+  };
+  const rows = decode(snapshot());
+  if (rows.length > 0) {
+    scheduleCartHeartbeat(rows);
+  }
+}
+
+export function markWebCartRecovered(orderId?: string | null) {
+  if (typeof window === "undefined") return;
+  if (heartbeatTimer) {
+    clearTimeout(heartbeatTimer);
+    heartbeatTimer = null;
+  }
+  void fetch("/api/abandoned-cart", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "recover",
+      session_key: getCartSessionKey(),
+      order_id: orderId || null,
+    }),
+  }).catch(() => {});
 }
 function snapshot() {
   try {

@@ -14,7 +14,7 @@ export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
   const [{ db, user, storeId, activeStore, managedStores, isSuperAdmin }, lang] =
     await Promise.all([requireAdmin(), getServerLang()]);
   const isEn = lang === "en";
-  const [settingsRes, pendingReturnsRes] = await Promise.all([
+  const [settingsRes, pendingReturnsRes, openAbandonedRes] = await Promise.all([
     db
       .from("store_settings")
       .select("store_id,store_name")
@@ -25,11 +25,19 @@ export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
       .select("id", { count: "exact", head: true })
       .eq("store_id", storeId)
       .eq("status", "pending"),
+    db
+      .from("abandoned_carts")
+      .select("id", { count: "exact", head: true })
+      .eq("store_id", storeId)
+      .eq("status", "open"),
   ]);
   const settings = checked(settingsRes);
   const pendingReturnsCount = pendingReturnsRes.error
     ? 0
     : (pendingReturnsRes.count ?? 0);
+  const openAbandonedCartsCount = openAbandonedRes.error
+    ? 0
+    : (openAbandonedRes.count ?? 0);
   const storeTitle =
     localizedText(lang, settings.store_name || activeStore.name_ar, activeStore.name_en) ||
     brand.storeName;
@@ -46,6 +54,7 @@ export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
           isSuperAdmin={isSuperAdmin}
           mobileAppUnlocked={activeStore.mobile_app_unlocked !== false}
           pendingReturnsCount={pendingReturnsCount}
+          openAbandonedCartsCount={openAbandonedCartsCount}
         />
         <form action={logout} className="logout">
           <button>

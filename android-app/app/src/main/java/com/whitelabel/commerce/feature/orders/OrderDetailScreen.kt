@@ -20,9 +20,9 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.AssignmentReturn
 import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.AssignmentReturn
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CreditCard
@@ -286,7 +286,7 @@ fun OrderDetailScreen(
                                             .height(48.dp),
                                     ) {
                                         Icon(
-                                            imageVector = Icons.Rounded.AssignmentReturn,
+                                            imageVector = Icons.AutoMirrored.Rounded.AssignmentReturn,
                                             contentDescription = null,
                                             modifier = Modifier.size(18.dp),
                                         )
@@ -520,7 +520,7 @@ fun ReturnRequestStatusCard(
                         imageVector = if (returnRequest.requestType == ReturnRequestType.EXCHANGE) {
                             Icons.Rounded.SwapHoriz
                         } else {
-                            Icons.Rounded.AssignmentReturn
+                            Icons.AutoMirrored.Rounded.AssignmentReturn
                         },
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
@@ -832,7 +832,7 @@ private fun ReturnRequestBottomSheet(
                                     imageVector = if (typeOpt == ReturnRequestType.EXCHANGE) {
                                         Icons.Rounded.SwapHoriz
                                     } else {
-                                        Icons.Rounded.AssignmentReturn
+                                        Icons.AutoMirrored.Rounded.AssignmentReturn
                                     },
                                     contentDescription = null,
                                     modifier = Modifier.size(16.dp),

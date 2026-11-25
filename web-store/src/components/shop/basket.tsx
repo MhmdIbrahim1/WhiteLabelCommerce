@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   Plus,
   Minus,
@@ -23,7 +23,10 @@ import {
   purchased,
   setPendingOnlineOrder,
   lineEffectivePrice,
+  syncAbandonedCartContact,
+  markWebCartRecovered,
 } from "./cart-store";
+import { trackInitiateCheckout, trackPurchase } from "@/lib/analytics";
 import {
   checkout,
   previewCoupon,
@@ -127,6 +130,7 @@ export function Basket({
   const [checkingCoupon, setCheckingCoupon] = useState(false);
   const [useWallet, setUseWallet] = useState(false);
   const lock = useRef(false);
+  const checkoutTrackedRef = useRef(false);
 
   const activePayment: SelectedPayment = availableMethods.includes(
     selectedPayment,
@@ -154,6 +158,31 @@ export function Basket({
       : 0;
   const finalTotal = Math.max(0, preWalletTotal - walletApplied);
   const fullyPaidByWallet = walletApplied > 0 && finalTotal === 0;
+
+  // Fire InitiateCheckout once when shopper lands on /checkout with items, and sync contact info
+  useEffect(() => {
+    if (!order || lines.length === 0) return;
+    if (!checkoutTrackedRef.current) {
+      checkoutTrackedRef.current = true;
+      trackInitiateCheckout({
+        currency,
+        value: subtotal,
+        items: lines.map((l) => ({
+          id: l.id,
+          name: l.name,
+          price: lineEffectivePrice(l),
+          quantity: l.quantity,
+          variant: [l.size, l.color].filter(Boolean).join(" / ") || undefined,
+        })),
+      });
+    }
+    syncAbandonedCartContact({
+      name: defaultName,
+      email: signedInEmail,
+      phone: defaultPhone,
+      currency,
+    });
+  }, [order, lines, subtotal, currency, defaultName, signedInEmail, defaultPhone]);
 
   const handleApplyCoupon = async () => {
     if (!couponInput.trim()) return;
@@ -506,16 +535,35 @@ export function Basket({
                     return;
                   }
 
+                  const purchasedPixelItems = lines.map((l) => ({
+                    id: l.id,
+                    name: l.name,
+                    price: lineEffectivePrice(l),
+                    quantity: l.quantity,
+                    variant:
+                      [l.size, l.color].filter(Boolean).join(" / ") || undefined,
+                  }));
+
                   // Full Store Wallet Payment (remainingTotal === 0): skip Paymob, clear cart & confirm
                   if (
                     effectivePaymentMethod === "wallet" ||
                     Number(receipt.total ?? 0) <= 0
                   ) {
+                    markWebCartRecovered(receipt.id);
+                    trackPurchase({
+                      orderId: receipt.id,
+                      value: Number(receipt.total ?? finalTotal),
+                      currency: receipt.currency ?? currency,
+                      items: purchasedPixelItems,
+                    });
                     purchased(lines);
                     localStorage.removeItem(key);
                     router.push(
-                      "/orders?placed=wallet&order=" +
-                        encodeURIComponent(receipt.id),
+                      storeHref(
+                        basePath,
+                        "/orders?placed=wallet&order=" +
+                          encodeURIComponent(receipt.id),
+                      ),
                     );
                     return;
                   }
@@ -565,10 +613,21 @@ export function Basket({
                   }
 
                   // Cash on Delivery Flow: clear cart immediately and redirect to /orders
+                  markWebCartRecovered(receipt.id);
+                  trackPurchase({
+                    orderId: receipt.id,
+                    value: Number(receipt.total ?? finalTotal),
+                    currency: receipt.currency ?? currency,
+                    items: purchasedPixelItems,
+                  });
                   purchased(lines);
                   localStorage.removeItem(key);
                   router.push(
-                    "/orders?placed=cod&order=" + encodeURIComponent(receipt.id),
+                    storeHref(
+                      basePath,
+                      "/orders?placed=cod&order=" +
+                        encodeURIComponent(receipt.id),
+                    ),
                   );
                 } catch {
                   setRedirectingPayment(false);
@@ -617,6 +676,14 @@ export function Basket({
                   dir="ltr"
                   type="tel"
                   defaultValue={defaultPhone}
+                  onChange={(e) => {
+                    syncAbandonedCartContact({
+                      phone: e.target.value,
+                      name: defaultName,
+                      email: signedInEmail,
+                      currency,
+                    });
+                  }}
                   autoComplete="tel"
                   required
                   maxLength={24}

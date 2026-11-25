@@ -4,6 +4,7 @@ import { serverDb, checked } from "./db";
 import { isTemplate } from "./theme-templates";
 import { resolveUiConfig, type StoreUiConfig } from "./ui-config";
 import type { ProductSpec } from "./specs";
+import type { StorePixelsConfig } from "./marketing";
 import {
   DEFAULT_STORE_ID,
   resolveActiveStore,
@@ -59,6 +60,9 @@ type SettingsRow = {
   free_shipping_threshold?: number | null;
   cashback_enabled?: boolean | null;
   cashback_percentage?: number | null;
+  meta_pixel_id?: string | null;
+  tiktok_pixel_id?: string | null;
+  ga4_measurement_id?: string | null;
 };
 
 export type StoreIncentives = {
@@ -75,7 +79,7 @@ export const settings = cache(async () => {
   const primary = await db
     .from("store_settings")
     .select(
-      "store_id,store_name,primary_color,secondary_color,surface_color,border_radius,currency,shipping_fee,whatsapp_number,banners,theme_template,ui_config,cod_enabled,paymob_enabled,paymob_card_enabled,paymob_wallet_enabled,cart_incentive_enabled,free_shipping_threshold,cashback_enabled,cashback_percentage",
+      "store_id,store_name,primary_color,secondary_color,surface_color,border_radius,currency,shipping_fee,whatsapp_number,banners,theme_template,ui_config,cod_enabled,paymob_enabled,paymob_card_enabled,paymob_wallet_enabled,cart_incentive_enabled,free_shipping_threshold,cashback_enabled,cashback_percentage,meta_pixel_id,tiktok_pixel_id,ga4_measurement_id",
     )
     .eq("store_id", resolved.id)
     .single<SettingsRow>();
@@ -138,6 +142,11 @@ export const settings = cache(async () => {
       cashbackEnabled: data.cashback_enabled ?? true,
       cashbackPercentage: Number(data.cashback_percentage ?? 5),
     } satisfies StoreIncentives,
+    pixels: {
+      metaPixelId: String(data.meta_pixel_id ?? "").trim(),
+      tiktokPixelId: String(data.tiktok_pixel_id ?? "").trim(),
+      ga4MeasurementId: String(data.ga4_measurement_id ?? "").trim(),
+    } satisfies StorePixelsConfig,
   };
 });
 

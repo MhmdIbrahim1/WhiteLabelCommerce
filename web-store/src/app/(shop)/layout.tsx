@@ -13,6 +13,7 @@ import brand from "@/lib/brand";
 import { Navigation } from "@/components/shop/navigation";
 import { SuspendedStoreGate } from "@/components/shop/suspended-store";
 import { WishlistProvider } from "@/components/shop/wishlist-provider";
+import { StorePixels } from "@/components/shop/store-pixels";
 import "./shop.css";
 
 export const dynamic = "force-dynamic";
@@ -90,6 +91,12 @@ export default async function Layout({
         data-card={brand.presets.productCard}
         style={style}
       >
+        <StorePixels
+          storeId={s.storeId}
+          metaPixelId={s.pixels.metaPixelId}
+          tiktokPixelId={s.pixels.tiktokPixelId}
+          ga4MeasurementId={s.pixels.ga4MeasurementId}
+        />
         <Navigation
           name={displayName}
           storeId={s.storeId}

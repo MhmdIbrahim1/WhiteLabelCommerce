@@ -16,6 +16,8 @@ import { Buy } from "@/components/shop/buy";
 import { ProductSpecsTable } from "@/components/shop/product-specs";
 import { WishlistHeartButton } from "@/components/shop/wishlist-heart";
 import { ProductReviewsSection } from "@/components/shop/product-reviews";
+import { ProductViewTracker } from "@/components/shop/product-view-tracker";
+import { resolveEffectivePrice } from "@/lib/flash-sale";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -108,6 +110,12 @@ export default async function Details({ params }: PageProps<"/products/[id]">) {
 
   return (
     <>
+      <ProductViewTracker
+        id={p.id}
+        name={title}
+        price={resolveEffectivePrice(p)}
+        currency={s.currency}
+      />
       <section className="details-grid">
         <ProductGallery src={photo(p.image_path)} alt={title} />
         <div>

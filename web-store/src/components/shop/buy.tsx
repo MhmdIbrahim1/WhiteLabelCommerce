@@ -8,6 +8,7 @@ import { resolveEffectivePrice } from "@/lib/flash-sale";
 import { translateColor } from "@/lib/i18n";
 import { storeHref } from "@/lib/tenant-shared";
 import { useLanguage } from "@/components/language-provider";
+import { trackAddToCart } from "@/lib/analytics";
 import { change } from "./cart-store";
 import { SizeGuideModal } from "./size-guide-modal";
 
@@ -90,27 +91,35 @@ export function Buy({
             return;
           }
           setError("");
-          setMessage(
-            change(
-              {
-                id: p.id,
-                name: p.name,
-                name_en: p.name_en ?? null,
-                size,
-                color,
-                price: resolveEffectivePrice(p),
-                regular_price: p.price,
-                flash_sale_price: p.flash_sale_price ?? null,
-                flash_sale_starts_at: p.flash_sale_starts_at ?? null,
-                flash_sale_ends_at: p.flash_sale_ends_at ?? null,
-                stock: p.stock,
-                quantity: 1,
-              },
-              1,
-            )
-              ? t("addedToCart")
-              : t("stockLimitReached"),
+          const effectiveUnit = resolveEffectivePrice(p);
+          const added = change(
+            {
+              id: p.id,
+              name: p.name,
+              name_en: p.name_en ?? null,
+              size,
+              color,
+              price: effectiveUnit,
+              regular_price: p.price,
+              flash_sale_price: p.flash_sale_price ?? null,
+              flash_sale_starts_at: p.flash_sale_starts_at ?? null,
+              flash_sale_ends_at: p.flash_sale_ends_at ?? null,
+              stock: p.stock,
+              quantity: 1,
+            },
+            1,
           );
+          if (added) {
+            trackAddToCart({
+              id: p.id,
+              name: p.name,
+              price: effectiveUnit,
+              quantity: 1,
+              size,
+              color,
+            });
+          }
+          setMessage(added ? t("addedToCart") : t("stockLimitReached"));
         }}
       >
         {detail && p.sizes.length > 0 && (

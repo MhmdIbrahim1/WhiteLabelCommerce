@@ -237,6 +237,7 @@ export const config = {
     "/contact",
     "/support",
     "/api/catalog-search",
+    "/api/abandoned-cart",
     "/api/notifications/:path*",
   ],
 };

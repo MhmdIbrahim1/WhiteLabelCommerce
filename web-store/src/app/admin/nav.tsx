@@ -17,6 +17,8 @@ import {
   Lock,
   Star,
   RotateCcw,
+  Megaphone,
+  ShoppingCart,
 } from "lucide-react";
 import { useLanguage } from "@/components/language-provider";
 import type { DictKey } from "@/lib/i18n";
@@ -28,14 +30,17 @@ const sections: {
   tourId?: string;
   isMobileApp?: boolean;
   isReturns?: boolean;
+  isAbandonedCarts?: boolean;
 }[] = [
   { url: "/admin", key: "adminOverview", icon: LayoutDashboard },
   { url: "/admin/products", key: "adminProducts", icon: Boxes, tourId: "nav-products" },
   { url: "/admin/orders", key: "adminOrders", icon: ClipboardList, tourId: "nav-orders" },
   { url: "/admin/returns", key: "adminReturns", icon: RotateCcw, isReturns: true },
+  { url: "/admin/abandoned-carts", key: "adminAbandonedCarts", icon: ShoppingCart, isAbandonedCarts: true },
   { url: "/admin/customers", key: "adminCustomers", icon: Users, tourId: "nav-customers" },
   { url: "/admin/reviews", key: "adminReviews", icon: Star },
   { url: "/admin/coupons", key: "adminCoupons", icon: TicketPercent },
+  { url: "/admin/marketing", key: "adminMarketing", icon: Megaphone },
   { url: "/admin/notifications", key: "adminNotifications", icon: BellRing },
   { url: "/admin/tickets", key: "adminTickets", icon: MessagesSquare },
   { url: "/admin/customizer", key: "adminCustomizer", icon: Palette, tourId: "nav-customizer" },
@@ -47,17 +52,19 @@ export default function Navigation({
   isSuperAdmin = false,
   mobileAppUnlocked = true,
   pendingReturnsCount = 0,
+  openAbandonedCartsCount = 0,
 }: {
   isSuperAdmin?: boolean;
   mobileAppUnlocked?: boolean;
   pendingReturnsCount?: number;
+  openAbandonedCartsCount?: number;
 }) {
   const path = usePathname();
   const { lang, t } = useLanguage();
   const isEn = lang === "en";
   return (
     <nav aria-label="Admin navigation">
-      {sections.map(({ url, key, icon: Icon, tourId, isMobileApp, isReturns }) => {
+      {sections.map(({ url, key, icon: Icon, tourId, isMobileApp, isReturns, isAbandonedCarts }) => {
         const active =
           path === url || (url !== "/admin" && path.startsWith(url + "/"));
         return (
@@ -91,6 +98,30 @@ export default function Navigation({
                 }}
               >
                 {pendingReturnsCount}
+              </span>
+            )}
+            {isAbandonedCarts && openAbandonedCartsCount > 0 && (
+              <span
+                aria-label={
+                  isEn
+                    ? `${openAbandonedCartsCount} open abandoned carts`
+                    : `${openAbandonedCartsCount} سلات متروكة مفتوحة`
+                }
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  minWidth: "1.35rem",
+                  height: "1.35rem",
+                  padding: "0 0.4rem",
+                  borderRadius: "999px",
+                  fontSize: "0.72rem",
+                  fontWeight: 800,
+                  background: "#f43f5e",
+                  color: "#ffffff",
+                }}
+              >
+                {openAbandonedCartsCount}
               </span>
             )}
             {isMobileApp && !mobileAppUnlocked && (

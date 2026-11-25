@@ -386,6 +386,8 @@ class CheckoutViewModel @Inject constructor(
                     },
                 )
                 orderRepository.saveLocalOrderReceipt(receipt)
+                // Mark omnichannel abandoned cart recovered on order placement
+                cartRepository.markAbandonedCartRecoveredAsync(result.orderNumber)
                 // COD & full Store Wallet clear cart immediately; Paymob online methods keep cart intact until paid!
                 if (effectiveMethod == PaymentMethod.COD || isPaidViaWallet) {
                     cartRepository.settleReceipt(receipt)

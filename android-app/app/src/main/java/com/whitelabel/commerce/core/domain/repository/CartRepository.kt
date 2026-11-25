@@ -22,4 +22,14 @@ interface CartRepository {
 
     suspend fun settleReceipt(receipt: com.whitelabel.commerce.core.domain.model.SavedOrderReceipt)
     suspend fun clearCart()
+
+    /**
+     * Non-blocking omnichannel abandoned cart sync to `public.upsert_abandoned_cart` (`p_source = 'android'`).
+     */
+    fun syncAbandonedCartAsync(currency: String = "EGP")
+
+    /**
+     * Marks the authenticated shopper's Android cart as recovered via `public.mark_abandoned_cart_recovered`.
+     */
+    fun markAbandonedCartRecoveredAsync(orderId: String? = null)
 }

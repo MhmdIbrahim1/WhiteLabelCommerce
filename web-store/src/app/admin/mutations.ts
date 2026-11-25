@@ -26,6 +26,11 @@ import {
   notifyWishlistProductAlert,
   runRecoveryAutomations,
 } from "@/lib/notifications/events";
+import {
+  validateGa4Id,
+  validateMetaPixelId,
+  validateTiktokPixelId,
+} from "@/lib/marketing";
 import type { ProductReview } from "@/lib/reviews-wishlist";
 import { resolveEffectivePrice } from "@/lib/flash-sale";
 import { normalizeSpecs } from "@/lib/specs";
@@ -1228,6 +1233,127 @@ export async function processReturnRequestAction(input: {
       admin_notes: row.admin_notes ?? null,
       restocked: Boolean(row.restocked),
       wallet_credited: Boolean(row.wallet_credited),
+      updated_at: row.updated_at,
+    },
+  };
+}
+
+export type SaveMarketingPixelsResult =
+  | {
+      ok: true;
+      metaPixelId: string;
+      tiktokPixelId: string;
+      ga4MeasurementId: string;
+    }
+  | { ok: false; error: string };
+
+export async function saveMarketingPixelsAction(input: {
+  metaPixelId: string;
+  tiktokPixelId: string;
+  ga4MeasurementId: string;
+}): Promise<SaveMarketingPixelsResult> {
+  const { db, storeId } = await requireAdmin();
+
+  const meta = validateMetaPixelId(input.metaPixelId);
+  const tiktok = validateTiktokPixelId(input.tiktokPixelId);
+  const ga4 = validateGa4Id(input.ga4MeasurementId);
+
+  if (!meta.valid) return { ok: false, error: "invalid_meta_pixel_id" };
+  if (!tiktok.valid) return { ok: false, error: "invalid_tiktok_pixel_id" };
+  if (!ga4.valid) return { ok: false, error: "invalid_ga4_measurement_id" };
+
+  const { error } = await db
+    .from("store_settings")
+    .update({
+      meta_pixel_id: meta.value || null,
+      tiktok_pixel_id: tiktok.value || null,
+      ga4_measurement_id: ga4.value || null,
+    })
+    .eq("store_id", storeId)
+    .select("store_id")
+    .single();
+
+  if (error) {
+    return { ok: false, error: error.message || "save_pixels_failed" };
+  }
+
+  revalidatePath("/admin/marketing");
+  revalidatePath("/", "layout");
+
+  return {
+    ok: true,
+    metaPixelId: meta.value,
+    tiktokPixelId: tiktok.value,
+    ga4MeasurementId: ga4.value,
+  };
+}
+
+export type UpdateAbandonedCartResult =
+  | {
+      ok: true;
+      cart: {
+        id: string;
+        status: "open" | "reminded" | "recovered" | "dismissed";
+        reminder_count: number;
+        last_reminded_at: string | null;
+        recovery_coupon_code: string | null;
+        updated_at: string;
+      };
+    }
+  | { ok: false; error: string };
+
+export async function updateAbandonedCartAction(input: {
+  cartId: string;
+  action: "mark_reminded" | "dismiss";
+  couponCode?: string | null;
+}): Promise<UpdateAbandonedCartResult> {
+  const { db } = await requireAdmin();
+  const cleanId = (input.cartId ?? "").trim();
+  if (!UUID_REGEX.test(cleanId)) {
+    return { ok: false, error: "invalid_cart_id" };
+  }
+  if (input.action !== "mark_reminded" && input.action !== "dismiss") {
+    return { ok: false, error: "invalid_action" };
+  }
+
+  const cleanCoupon =
+    typeof input.couponCode === "string" && input.couponCode.trim()
+      ? input.couponCode.trim().toUpperCase().slice(0, 40)
+      : null;
+
+  const { data, error } = await db.rpc("admin_update_abandoned_cart", {
+    p_cart_id: cleanId,
+    p_action: input.action,
+    p_coupon_code: cleanCoupon,
+  });
+
+  if (error || !data) {
+    return {
+      ok: false,
+      error: error?.message || "update_abandoned_cart_failed",
+    };
+  }
+
+  const row = data as {
+    id: string;
+    status: "open" | "reminded" | "recovered" | "dismissed";
+    reminder_count: number;
+    last_reminded_at: string | null;
+    recovery_coupon_code: string | null;
+    updated_at: string;
+  };
+
+  revalidatePath("/admin", "layout");
+  revalidatePath("/admin/abandoned-carts");
+
+  return {
+    ok: true,
+    cart: {
+      id: row.id,
+      status: row.status,
+      reminder_count: Number(row.reminder_count ?? 0),
+      last_reminded_at: row.last_reminded_at ?? null,
+      recovery_coupon_code: row.recovery_coupon_code ?? null,
       updated_at: row.updated_at,
     },
   };

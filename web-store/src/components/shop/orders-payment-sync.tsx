@@ -6,7 +6,9 @@ import {
   clearCart,
   clearPendingOnlineOrder,
   getPendingOnlineOrder,
+  markWebCartRecovered,
 } from "./cart-store";
+import { trackPurchase } from "@/lib/analytics";
 import { useLanguage } from "@/components/language-provider";
 
 export function OrdersPaymentSync({
@@ -33,10 +35,19 @@ export function OrdersPaymentSync({
     // Clear cart ONLY on confirmed online payment (?payment=success or pending order now paid).
     // Never clear cart on ?payment=failed so the customer can retry seamlessly.
     if (paymentCallback === "success" || pendingNowPaid) {
+      const recoveredOrder = callbackOrder || pendingId || "";
+      if (recoveredOrder) {
+        markWebCartRecovered(recoveredOrder);
+        trackPurchase({
+          orderId: recoveredOrder,
+          value: 0,
+          currency: "EGP",
+        });
+      }
       clearCart();
       clearPendingOnlineOrder();
     }
-  }, [paymentCallback, paidOrderIds]);
+  }, [paymentCallback, callbackOrder, paidOrderIds]);
 
   if (placedWallet) {
     return (
