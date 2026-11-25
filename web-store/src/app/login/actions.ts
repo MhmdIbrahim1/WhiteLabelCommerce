@@ -5,7 +5,7 @@ import { serverDb } from "@/lib/db";
 import { adminUser, superAdminUser } from "@/lib/access";
 import { normalizePhone } from "@/lib/phone";
 import { safeRelativePath } from "@/lib/security";
-import { resolveActiveStoreOrDefault } from "@/lib/tenant";
+import { resolveActiveStoreOrDefault, storeHref } from "@/lib/tenant";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const OTP_RE = /^[0-9]{6}$/;
@@ -298,11 +298,15 @@ export async function logout() {
 }
 
 export async function saveCustomerAccount(form: FormData) {
-  const db = await serverDb();
+  const [db, store] = await Promise.all([
+    serverDb(),
+    resolveActiveStoreOrDefault(),
+  ]);
+  const accountBase = storeHref(store.basePath, "/account");
   const {
     data: { user },
   } = await db.auth.getUser();
-  if (!user) redirect("/account");
+  if (!user) redirect(accountBase);
 
   const fullName = String(form.get("full_name") ?? "").trim().slice(0, 100);
   const phone = normalizePhone(String(form.get("phone") ?? ""));
@@ -311,7 +315,7 @@ export async function saveCustomerAccount(form: FormData) {
   const address = String(form.get("address") ?? "").trim().slice(0, 500);
 
   if (phone && !/^[0-9]{8,15}$/.test(phone)) {
-    redirect("/account?result=phone_error");
+    redirect(storeHref(store.basePath, "/account?result=phone_error"));
   }
 
   const { error } = await db.rpc("sync_customer_profile", {
@@ -320,14 +324,21 @@ export async function saveCustomerAccount(form: FormData) {
     p_city: city,
     p_address: address,
     p_governorate: governorate,
+    p_store_id: store.id,
   });
 
+  revalidatePath(accountBase);
   revalidatePath("/account");
+  revalidatePath(storeHref(store.basePath, "/checkout"));
   revalidatePath("/checkout");
+  revalidatePath(storeHref(store.basePath, "/orders"));
   revalidatePath("/orders");
   const isPhoneUsed = error?.message?.includes("phone_already_in_use");
   redirect(
-    "/account?result=" +
-      (error ? (isPhoneUsed ? "phone_in_use" : "error") : "saved"),
+    storeHref(
+      store.basePath,
+      "/account?result=" +
+        (error ? (isPhoneUsed ? "phone_in_use" : "error") : "saved"),
+    ),
   );
 }

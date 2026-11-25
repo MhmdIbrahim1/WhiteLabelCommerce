@@ -25,8 +25,11 @@
   --ink: #f4f7f9;
   --muted: #a6b7c2;
   --line: rgba(255, 255, 255, 0.1);
-  --glass-bg: rgba(12, 19, 24, 0.8);
+  --glass-bg: rgba(12, 19, 24, 0.86);
   --glass-border: rgba(255, 255, 255, 0.08);
+  --primary-dark-ink: color-mix(in srgb, var(--primary) 26%, #ffffff);
+  --price-badge-dark-ink: color-mix(in srgb, var(--price-badge, var(--primary)) 24%, #ffffff);
+  --timeline-dark-ink: color-mix(in srgb, var(--order-timeline-active, var(--primary)) 24%, #ffffff);
   color-scheme: dark;
 }
 
@@ -72,11 +75,23 @@
   position: sticky;
   top: 0;
   z-index: 40;
-  background: var(--glass-bg);
+  background: var(--glass-bg, rgba(255, 255, 255, 0.88));
+  color: var(--ink);
   backdrop-filter: blur(18px) saturate(165%);
   -webkit-backdrop-filter: blur(18px) saturate(165%);
   border-bottom: 1px solid var(--glass-border);
   transition: background-color 240ms var(--ease-editorial);
+}
+
+[data-shop-theme="light"] .shop .shop-head {
+  background: color-mix(in srgb, var(--paper, #ffffff) 88%, transparent);
+  color: #0f172a;
+}
+
+[data-shop-theme="dark"] .shop .shop-head {
+  background: rgba(12, 19, 24, 0.88);
+  color: #f4f7f9;
+  border-bottom-color: rgba(255, 255, 255, 0.08);
 }
 
 .shop .bar,
@@ -89,9 +104,9 @@
 
 .shop .bar {
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 1rem;
+  gap: 0.75rem;
   min-height: 70px;
   padding-block: 0.7rem;
 }
@@ -139,16 +154,18 @@
   display: flex;
   align-items: center;
   justify-self: center;
-  gap: 0.35rem;
+  gap: 0.25rem;
 }
 
 .shop .desk .nav-link {
   position: relative;
-  padding: 0.48rem 0.95rem;
+  padding: 0.44rem 0.78rem;
   border-radius: 999px;
-  font-size: 0.93rem;
+  font-size: 0.9rem;
   font-weight: 550;
   color: var(--muted);
+  white-space: nowrap;
+  flex-shrink: 0;
   transition:
     color 200ms var(--ease-editorial),
     background-color 200ms var(--ease-editorial);
@@ -282,13 +299,15 @@
   align-items: center;
   gap: 0.35rem;
   height: 36px;
-  padding: 0 0.75rem;
+  padding: 0 0.7rem;
   border-radius: 999px;
   font-size: 0.82rem;
   font-weight: 600;
   color: var(--muted);
   border: 1px solid var(--glass-border);
   background: color-mix(in srgb, var(--ink) 3%, transparent);
+  white-space: nowrap;
+  flex-shrink: 0;
   transition:
     color 200ms ease,
     border-color 200ms ease,
@@ -505,7 +524,7 @@
   justify-content: space-between;
 }
 
-.shop button:not(.theme-btn):not(.icon-ghost-btn):not(.icon-copy-chip):not(.orders-logout-btn):not(.search-trigger-pill):not(.variant-chip):not(.gallery-thumb):not(.slide-dot) {
+.shop button:not(.theme-btn):not(.icon-ghost-btn):not(.icon-copy-chip):not(.orders-logout-btn):not(.search-trigger-pill):not(.variant-chip):not(.gallery-thumb):not(.slide-dot):not(.lang-toggle-pill):not(.notif-bell-btn):not(.user-menu-trigger):not(.mobile-drawer-theme-btn) {
   background: var(--primary);
   color: var(--primary-ink, #fff);
   border-radius: var(--radius);
@@ -516,6 +535,16 @@
     background-color var(--motion-duration, 280ms) var(--ease-editorial),
     border-color var(--motion-duration, 280ms) var(--ease-editorial),
     color var(--motion-duration, 280ms) var(--ease-editorial);
+}
+
+.shop .notif-bell-btn {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--glass-border);
+}
+
+.shop .notif-bell-btn:hover {
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
 }
 
 .shop button:active:not(:disabled),
@@ -2278,8 +2307,21 @@
 
 .shop .coupon-input-row input {
   flex: 1;
+  font-family: inherit;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.shop .coupon-input-row input:not(:placeholder-shown) {
   text-transform: uppercase;
-  font-family: monospace;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  letter-spacing: 0.04em;
+}
+
+.shop .coupon-input-row input::placeholder {
+  font-family: var(--shop-font, "IBM Plex Sans Arabic", "Cairo", system-ui, sans-serif);
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 .shop .coupon-applied-chip {
@@ -5257,4 +5299,98 @@
   color: #b91c1c;
   font-size: 0.84rem;
   font-weight: 600;
+}
+
+/* ============================================================================
+   Phase 14B: Dark-Mode High-Contrast Pills, Badges & Order Breakdown Rows
+   ============================================================================ */
+.shop .order-detail-discount-row {
+  color: #15803d;
+  font-weight: 650;
+}
+
+.shop .order-detail-cashback-row {
+  color: #0369a1;
+  font-weight: 650;
+}
+
+[data-shop-theme="dark"] .shop .order-detail-discount-row,
+[data-shop-theme="dark"] .shop .coupon-discount-line {
+  color: #34d399 !important;
+}
+
+[data-shop-theme="dark"] .shop .order-detail-cashback-row {
+  color: #38bdf8;
+}
+
+[data-shop-theme="dark"] .shop .price-badge {
+  color: var(--price-badge-dark-ink, #d6eef4);
+  background: color-mix(in srgb, var(--price-badge, var(--primary)) 34%, rgba(255, 255, 255, 0.08));
+  border: 1px solid color-mix(in srgb, var(--price-badge, var(--primary)) 45%, rgba(255, 255, 255, 0.14));
+}
+
+[data-shop-theme="dark"] .shop .cart-upsell-gap-pill {
+  color: var(--primary-dark-ink, #d6eef4);
+  background: color-mix(in srgb, var(--primary) 36%, rgba(255, 255, 255, 0.08));
+  border: 1px solid color-mix(in srgb, var(--primary) 48%, rgba(255, 255, 255, 0.16));
+}
+
+[data-shop-theme="dark"] .shop .cart-incentive-icon,
+[data-shop-theme="dark"] .shop .wordmark-badge,
+[data-shop-theme="dark"] .shop .trust-icon,
+[data-shop-theme="dark"] .shop .footer-mark,
+[data-shop-theme="dark"] .shop .order-return-icon-badge {
+  color: var(--primary-dark-ink, #d6eef4);
+  background: color-mix(in srgb, var(--primary) 34%, var(--surface));
+  border-color: color-mix(in srgb, var(--primary) 46%, rgba(255, 255, 255, 0.16));
+}
+
+[data-shop-theme="dark"] .shop .cart-upsell-price-row strong:not(.is-flash),
+[data-shop-theme="dark"] .shop .cart-upsell-sparkle,
+[data-shop-theme="dark"] .shop .customer-shipping-title,
+[data-shop-theme="dark"] .shop .order-return-admin-reply-head,
+[data-shop-theme="dark"] .shop .suggest-price b,
+[data-shop-theme="dark"] .shop .suggest-all-link {
+  color: var(--primary-dark-ink, #d6eef4) !important;
+}
+
+[data-shop-theme="dark"] .shop[data-badge-style="pill"] .order-status-badge {
+  color: var(--timeline-dark-ink, #d6eef4);
+  background: color-mix(in srgb, var(--order-timeline-active, var(--primary)) 36%, rgba(255, 255, 255, 0.08));
+  border: 1px solid color-mix(in srgb, var(--order-timeline-active, var(--primary)) 48%, rgba(255, 255, 255, 0.16));
+}
+
+[data-shop-theme="dark"] .shop[data-badge-style="outline"] .order-status-badge,
+[data-shop-theme="dark"] .shop .timeline [data-done="true"] {
+  color: var(--timeline-dark-ink, #d6eef4);
+  border-color: color-mix(in srgb, var(--order-timeline-active, var(--primary)) 65%, #ffffff);
+}
+
+[data-shop-theme="dark"] .shop .order-detail-chip,
+[data-shop-theme="dark"] .shop .order-return-trigger-btn {
+  color: var(--primary-dark-ink, #d6eef4);
+  background: color-mix(in srgb, var(--primary) 28%, var(--surface));
+  border-color: color-mix(in srgb, var(--primary) 48%, rgba(255, 255, 255, 0.16));
+}
+
+[data-shop-theme="dark"] .shop .order-return-meta-pill.is-success {
+  background: rgba(16, 185, 129, 0.16);
+  color: #6ee7b7;
+  border-color: rgba(16, 185, 129, 0.35);
+}
+
+[data-shop-theme="dark"] .shop .order-return-meta-pill.is-info {
+  background: rgba(59, 130, 246, 0.18);
+  color: #93c5fd;
+  border-color: rgba(59, 130, 246, 0.36);
+}
+
+[data-shop-theme="dark"] .return-modal-sheet .return-choice-card.is-active,
+[data-shop-theme="dark"] .return-modal-sheet .return-summary-bar strong {
+  color: #7dd3fc;
+}
+
+[data-shop-theme="dark"] .shop .coupon-applied-chip {
+  background: rgba(16, 185, 129, 0.16);
+  color: #6ee7b7;
 }

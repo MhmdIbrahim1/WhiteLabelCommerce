@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import type { CSSProperties } from "react";
 import { IBM_Plex_Sans_Arabic } from "next/font/google";
 import Link from "next/link";
@@ -17,6 +18,33 @@ import { StorePixels } from "@/components/shop/store-pixels";
 import "./shop.css";
 
 export const dynamic = "force-dynamic";
+
+export async function generateMetadata(): Promise<Metadata> {
+  try {
+    const s = await settings();
+    const lang = await getServerLang(s.uiConfig.defaultLanguage);
+    const displayName = localizedText(lang, s.nameAr, s.nameEn) || s.name;
+    const tagline =
+      (lang === "en"
+        ? s.uiConfig.pages.home.hero_subtitle_en
+        : s.uiConfig.pages.home.hero_subtitle_ar
+      )?.trim() || t(lang, "footerTagline");
+    return {
+      title: {
+        default: displayName,
+        template: `%s · ${displayName}`,
+      },
+      description: tagline,
+    };
+  } catch {
+    return {
+      title: {
+        default: brand.storeName,
+        template: `%s · ${brand.storeName}`,
+      },
+    };
+  }
+}
 
 const font = IBM_Plex_Sans_Arabic({
   weight: ["400", "500", "600", "700"],

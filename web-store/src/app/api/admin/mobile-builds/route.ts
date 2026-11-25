@@ -108,8 +108,8 @@ export async function GET() {
     return NextResponse.json(
       {
         error: "load_builds_failed",
-        message_ar: `تعذر تحميل سجل البناء: ${error.message}`,
-        message_en: `Failed to load build history: ${error.message}`,
+        message_ar: "تعذر تحميل سجل البناء حالياً. يرجى المحاولة مرة أخرى.",
+        message_en: "Failed to load build history right now. Please try again.",
       },
       { status: 500 },
     );
@@ -238,8 +238,8 @@ export async function POST(req: Request) {
     return NextResponse.json(
       {
         error: "db_check_failed",
-        message_ar: `تعذر التحقق من حالة البناء الحالية: ${activeErr.message}`,
-        message_en: `Failed to check active builds: ${activeErr.message}`,
+        message_ar: "تعذر التحقق من حالة البناء الحالية. يرجى المحاولة مرة أخرى.",
+        message_en: "Failed to check active builds right now. Please try again.",
       },
       { status: 500 },
     );
@@ -296,8 +296,8 @@ export async function POST(req: Request) {
     return NextResponse.json(
       {
         error: "insert_build_failed",
-        message_ar: `تعذر إنشاء سجل البناء في قاعدة البيانات: ${detail}`,
-        message_en: `Failed to record build in database: ${detail}`,
+        message_ar: "تعذر إنشاء سجل البناء في قاعدة البيانات حالياً.",
+        message_en: "Failed to record the build request. Please try again.",
       },
       { status: 500 },
     );

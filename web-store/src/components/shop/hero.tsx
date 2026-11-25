@@ -22,6 +22,7 @@ import {
 } from "@/lib/ui-config";
 import { useLanguage } from "@/components/language-provider";
 import { safeRelativePath } from "@/lib/security";
+import { storeHref } from "@/lib/tenant-shared";
 
 export function normalizePromoHref(rawHref: string | null | undefined): string {
   const clean = (rawHref ?? "").trim();
@@ -51,11 +52,13 @@ export function normalizePromoHref(rawHref: string | null | undefined): string {
 
 function CtaLink({
   href,
+  basePath = "",
   className,
   onPreviewNavigate,
   children,
 }: {
   href: string;
+  basePath?: string;
   className: string;
   onPreviewNavigate?: (href: string) => void;
   children: React.ReactNode;
@@ -93,7 +96,7 @@ function CtaLink({
   }
   return (
     <Link
-      href={resolved}
+      href={storeHref(basePath, resolved)}
       className={className}
       onClick={(e) => e.stopPropagation()}
     >
@@ -107,12 +110,14 @@ export function PromoBannerCarousel({
   autoSlideMs,
   overlayOpacity,
   isEn,
+  basePath = "",
   onPreviewNavigate,
 }: {
   campaigns: PromoBannerCampaign[];
   autoSlideMs: number;
   overlayOpacity: number;
   isEn: boolean;
+  basePath?: string;
   onPreviewNavigate?: (href: string) => void;
 }) {
   const router = useRouter();
@@ -170,7 +175,7 @@ export function PromoBannerCarousel({
     if (resolved.startsWith("http://") || resolved.startsWith("https://")) {
       window.open(resolved, "_blank", "noopener,noreferrer");
     } else {
-      router.push(resolved);
+      router.push(storeHref(basePath, resolved));
     }
   };
 
@@ -230,10 +235,10 @@ export function PromoBannerCarousel({
                 if (isActive) navigateSlide(slide.cta_link);
               }}
             >
-              {slide.image_url && (
+              {slide.image_url?.trim() && (
                 <div className="promo-carousel-bg" aria-hidden="true">
                   <Image
-                    src={slide.image_url}
+                    src={slide.image_url.trim()}
                     unoptimized
                     fill
                     loading={idx === 0 ? "eager" : "lazy"}
@@ -279,6 +284,7 @@ export function PromoBannerCarousel({
                   <CtaLink
                     className="cta hero-cta-pill"
                     href={slide.cta_link || "/products"}
+                    basePath={basePath}
                     onPreviewNavigate={onPreviewNavigate}
                   >
                     {cta} <ArrowIcon size={16} />
@@ -349,6 +355,7 @@ export function Hero({
   layout = "split",
   autoSlideMs = 5000,
   cms = defaultHeroBannerCms(),
+  basePath = "",
 }: {
   name: string;
   banners: string[];
@@ -356,6 +363,7 @@ export function Hero({
   layout?: HeroLayout;
   autoSlideMs?: number;
   cms?: HeroBannerCmsConfig;
+  basePath?: string;
 }) {
   const { lang, t } = useLanguage();
   const isEn = lang === "en";
@@ -394,6 +402,7 @@ export function Hero({
         autoSlideMs={autoSlideMs}
         overlayOpacity={cms.hero_overlay_opacity}
         isEn={isEn}
+        basePath={basePath}
       />
     );
   }
@@ -459,10 +468,10 @@ export function Hero({
           {subtitleText && <p className="hero-subtitle">{subtitleText}</p>}
           {cms.hero_cta_visible && (
             <div className="hero-actions">
-              <CtaLink className="cta hero-cta-pill" href={ctaHref}>
+              <CtaLink className="cta hero-cta-pill" href={ctaHref} basePath={basePath}>
                 {ctaText} <ArrowIcon size={16} />
               </CtaLink>
-              <Link className="hero-ghost-link" href="/#latest">
+              <Link className="hero-ghost-link" href={storeHref(basePath, "/#latest")}>
                 {t("navLatest")}
               </Link>
             </div>
@@ -517,7 +526,7 @@ export function Hero({
             {subtitleText && <p className="hero-subtitle">{subtitleText}</p>}
             <div className="hero-actions">
               {cms.hero_cta_visible && (
-                <CtaLink className="cta hero-cta-pill" href={ctaHref}>
+                <CtaLink className="cta hero-cta-pill" href={ctaHref} basePath={basePath}>
                   {ctaText} <ArrowIcon size={16} />
                 </CtaLink>
               )}
@@ -540,7 +549,7 @@ export function Hero({
         </div>
 
         <div className="bento-side">
-          <Link href="/products" className="bento-tile bento-tile--media">
+          <Link href={storeHref(basePath, "/products")} className="bento-tile bento-tile--media">
             <Image
               src={secondaryImage}
               unoptimized
@@ -616,7 +625,7 @@ export function Hero({
         {subtitleText && <p className="hero-subtitle">{subtitleText}</p>}
         {cms.hero_cta_visible && (
           <div className="hero-actions">
-            <CtaLink className="cta hero-cta-pill" href={ctaHref}>
+            <CtaLink className="cta hero-cta-pill" href={ctaHref} basePath={basePath}>
               {ctaText} <ArrowIcon size={16} />
             </CtaLink>
           </div>

@@ -1,5 +1,10 @@
 import { adminDb } from "@/lib/supabase/admin";
-import { dispatchNotification, notifyStoreAdmins } from "./dispatcher";
+import { localizeCarrierLabel } from "@/lib/shipping";
+import {
+  dispatchNotification,
+  dispatchPushForExistingNotification,
+  notifyStoreAdmins,
+} from "./dispatcher";
 
 type OrderEventRow = {
   id: string;
@@ -217,7 +222,9 @@ export async function notifyOrderStatusChanged(params: {
 
     const code = shortOrderId(order.id);
     const codeAr = rtlSafeOrderCode(order.id);
-    const carrier = params.shippingCarrier || order.shipping_carrier || "";
+    const rawCarrier = params.shippingCarrier || order.shipping_carrier || "";
+    const carrierAr = localizeCarrierLabel(rawCarrier, "ar");
+    const carrierEn = localizeCarrierLabel(rawCarrier, "en");
     const tracking = params.trackingNumber || order.tracking_number || "";
 
     let titleAr = "";
@@ -236,11 +243,11 @@ export async function notifyOrderStatusChanged(params: {
         titleAr = `تم شحن طلبك ${codeAr}`;
         titleEn = `Order ${code} Has Shipped!`;
         bodyAr = tracking
-          ? `شحنتك في الطريق إليك${carrier ? ` عبر ${carrier}` : ""} · رقم التتبع: ${tracking}`
-          : `شحنتك في الطريق إليك${carrier ? ` عبر ${carrier}` : ""}. تتبّع حالتها الآن.`;
+          ? `شحنتك في الطريق إليك${carrierAr ? ` عبر ${carrierAr}` : ""} · رقم التتبع: ${tracking}`
+          : `شحنتك في الطريق إليك${carrierAr ? ` عبر ${carrierAr}` : ""}. تتبّع حالتها الآن.`;
         bodyEn = tracking
-          ? `Your parcel is on the way${carrier ? ` via ${carrier}` : ""} · Tracking: ${tracking}`
-          : `Your parcel is on the way${carrier ? ` via ${carrier}` : ""}. Tap to track live.`;
+          ? `Your parcel is on the way${carrierEn ? ` via ${carrierEn}` : ""} · Tracking: ${tracking}`
+          : `Your parcel is on the way${carrierEn ? ` via ${carrierEn}` : ""}. Tap to track live.`;
         break;
       case "delivered":
         titleAr = `تم تسليم طلبك ${codeAr}`;
@@ -694,5 +701,171 @@ export async function notifyWishlistProductAlert(params: {
       code: err instanceof Error ? err.message : "unknown",
     });
     return 0;
+  }
+}
+
+/**
+ * Fires when a store admin processes a return/exchange request
+ * (`approve`, `reject`, `mark_received`, `complete_refund`).
+ * Dispatches FCM / Web Push for the DB notification created by
+ * `admin_process_return_request` (or creates + dispatches if absent).
+ */
+export async function notifyReturnStatusUpdate(params: {
+  storeId: string;
+  returnId: string;
+  orderId?: string | null;
+  status: "approved" | "rejected" | "received" | "refunded";
+  action?: "approve" | "reject" | "mark_received" | "complete_refund";
+}): Promise<void> {
+  try {
+    const db = adminDb();
+    const dedupeKey = `return_status:${params.returnId}:${params.status}`;
+
+    const [existingNotifRes, returnRes, settingsRes] = await Promise.all([
+      db
+        .from("notifications")
+        .select(
+          "id,store_id,user_id,title_ar,title_en,body_ar,body_en,deep_link,data,sent_push",
+        )
+        .eq("store_id", params.storeId)
+        .eq("dedupe_key", dedupeKey)
+        .maybeSingle<{
+          id: string;
+          store_id: string;
+          user_id: string | null;
+          title_ar: string;
+          title_en: string;
+          body_ar: string;
+          body_en: string;
+          deep_link: string;
+          data: Record<string, string | number | boolean | null> | null;
+          sent_push: boolean;
+        }>(),
+      db
+        .from("return_requests")
+        .select(
+          "id,store_id,order_id,user_id,request_type,status,refund_method,refund_amount,admin_notes,wallet_credited",
+        )
+        .eq("id", params.returnId)
+        .eq("store_id", params.storeId)
+        .maybeSingle<{
+          id: string;
+          store_id: string;
+          order_id: string;
+          user_id: string | null;
+          request_type: "return" | "exchange";
+          status: string;
+          refund_method: "wallet" | "original_payment";
+          refund_amount: number;
+          admin_notes: string | null;
+          wallet_credited: boolean;
+        }>(),
+      db
+        .from("store_settings")
+        .select("currency")
+        .eq("store_id", params.storeId)
+        .maybeSingle<{ currency: string }>(),
+    ]);
+
+    const existing = existingNotifRes.data;
+    if (existing) {
+      if (existing.sent_push || !existing.user_id) return;
+      await dispatchPushForExistingNotification({
+        notificationId: existing.id,
+        storeId: existing.store_id,
+        userId: existing.user_id,
+        category: "order_update",
+        titleAr: existing.title_ar,
+        titleEn: existing.title_en,
+        bodyAr: existing.body_ar,
+        bodyEn: existing.body_en,
+        deepLink:
+          existing.deep_link ||
+          (params.orderId ? `/orders/${params.orderId}` : "/orders"),
+        data: existing.data ?? {
+          order_id: params.orderId ?? null,
+          return_id: params.returnId,
+          return_status: params.status,
+        },
+      });
+      return;
+    }
+
+    const req = returnRes.data;
+    if (!req || !req.user_id) return;
+
+    const currencyEn = settingsRes.data?.currency?.trim() || "EGP";
+    const currencyAr = formatArabicCurrency(currencyEn);
+    const shortRet = shortOrderId(req.id);
+    const shortRetAr = rtlSafeOrderCode(req.id);
+    const shortOrd = shortOrderId(req.order_id);
+    const shortOrdAr = rtlSafeOrderCode(req.order_id);
+    const typeAr = req.request_type === "exchange" ? "الاستبدال" : "الإرجاع";
+    const typeEn = req.request_type === "exchange" ? "exchange" : "return";
+    const amountStr = Number(req.refund_amount ?? 0).toFixed(
+      Number.isInteger(Number(req.refund_amount ?? 0)) ? 0 : 2,
+    );
+
+    let titleAr = "";
+    let titleEn = "";
+    let bodyAr = "";
+    let bodyEn = "";
+
+    switch (params.status) {
+      case "approved":
+        titleAr = `تمت الموافقة على طلب ${typeAr} ${shortRetAr}`;
+        titleEn = `${typeEn === "exchange" ? "Exchange" : "Return"} request ${shortRet} approved`;
+        bodyAr = `تمت الموافقة على طلب ${typeAr} للطلب ${shortOrdAr}. يرجى تجهيز المنتجات للتسليم.`;
+        bodyEn = `Your ${typeEn} request for order ${shortOrd} has been approved. Please prepare your items for pickup.`;
+        break;
+      case "rejected":
+        titleAr = `تحديث بشأن طلب ${typeAr} ${shortRetAr}`;
+        titleEn = `Update on ${typeEn} request ${shortRet}`;
+        bodyAr = `نأسف، لم تتم الموافقة على طلب ${typeAr} للطلب ${shortOrdAr}.${req.admin_notes ? ` ملاحظة: ${req.admin_notes.slice(0, 180)}` : ""}`;
+        bodyEn = `Your ${typeEn} request for order ${shortOrd} was declined.${req.admin_notes ? ` Note: ${req.admin_notes.slice(0, 180)}` : ""}`;
+        break;
+      case "received":
+        titleAr = `تم استلام شحنة ${typeAr} ${shortRetAr}`;
+        titleEn = `${typeEn === "exchange" ? "Exchange" : "Return"} items received (${shortRet})`;
+        bodyAr = `استلم المتجر منتجات طلب ${typeAr} للطلب ${shortOrdAr} وجارٍ إتمام الاسترداد.`;
+        bodyEn = `We received your ${typeEn} items for order ${shortOrd} and are finalizing your refund.`;
+        break;
+      case "refunded":
+        if (req.refund_method === "wallet" && req.wallet_credited) {
+          titleAr = `تم إيداع ${amountStr} ${currencyAr} في محفظة المتجر`;
+          titleEn = `${amountStr} ${currencyEn} refunded to your Store Wallet`;
+          bodyAr = `تم إتمام طلب ${typeAr} ${shortRetAr} للطلب ${shortOrdAr} وإيداع المبلغ في محفظتك.`;
+          bodyEn = `Your ${typeEn} ${shortRet} for order ${shortOrd} is complete and credited to your Store Wallet.`;
+        } else {
+          titleAr = `تم إتمام الاسترداد لطلب ${typeAr} ${shortRetAr}`;
+          titleEn = `Refund completed for ${typeEn} ${shortRet}`;
+          bodyAr = `تم إتمام استرداد مبلغ ${amountStr} ${currencyAr} للطلب ${shortOrdAr}.`;
+          bodyEn = `Your refund of ${amountStr} ${currencyEn} for order ${shortOrd} has been completed.`;
+        }
+        break;
+    }
+
+    await dispatchNotification({
+      storeId: req.store_id,
+      userId: req.user_id,
+      targetRole: "customer",
+      category: "order_update",
+      titleAr,
+      titleEn,
+      bodyAr,
+      bodyEn,
+      deepLink: `/orders/${req.order_id}`,
+      dedupeKey,
+      data: {
+        order_id: req.order_id,
+        return_id: req.id,
+        return_status: params.status,
+        refund_amount: Number(req.refund_amount ?? 0),
+      },
+    });
+  } catch (err) {
+    console.error("[notifications] notifyReturnStatusUpdate failed", {
+      code: err instanceof Error ? err.message : "unknown",
+    });
   }
 }

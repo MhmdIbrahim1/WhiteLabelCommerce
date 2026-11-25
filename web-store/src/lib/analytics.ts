@@ -17,12 +17,22 @@ export type PixelEventItem = {
 };
 
 type FbqFn = (...args: unknown[]) => void;
-type TtqObj = {
+type TtqInstance = {
   page?: () => void;
   track?: (event: string, payload?: Record<string, unknown>) => void;
+};
+type TtqObj = TtqInstance & {
   load?: (id: string) => void;
+  instance?: (id: string) => TtqInstance;
 };
 type GtagFn = (...args: unknown[]) => void;
+
+export type ActivePixelConfig = {
+  storeId: string;
+  metaId: string;
+  tiktokId: string;
+  ga4Id: string;
+};
 
 export type FiredPixelEvent = {
   event: PixelEventName;
@@ -38,8 +48,38 @@ declare global {
     gtag?: GtagFn;
     dataLayer?: unknown[];
     __wlcInitializedPixels?: Set<string>;
+    __wlcActivePixels?: ActivePixelConfig;
     __wlcPixelEvents?: FiredPixelEvent[];
   }
+}
+
+export function setActivePixelConfig(config: ActivePixelConfig) {
+  if (typeof window === "undefined") return;
+  window.__wlcActivePixels = {
+    storeId: config.storeId,
+    metaId: config.metaId.trim(),
+    tiktokId: config.tiktokId.trim(),
+    ga4Id: config.ga4Id.trim(),
+  };
+}
+
+function getActivePixelConfig(): ActivePixelConfig {
+  if (typeof window === "undefined") {
+    return { storeId: "", metaId: "", tiktokId: "", ga4Id: "" };
+  }
+  if (window.__wlcActivePixels) {
+    return window.__wlcActivePixels;
+  }
+  const root = document.getElementById("wlc-pixels-root");
+  if (root) {
+    return {
+      storeId: root.dataset.storeId ?? "",
+      metaId: (root.dataset.metaPixel ?? "").trim(),
+      tiktokId: (root.dataset.tiktokPixel ?? "").trim(),
+      ga4Id: (root.dataset.ga4Id ?? "").trim(),
+    };
+  }
+  return { storeId: "", metaId: "", tiktokId: "", ga4Id: "" };
 }
 
 function recordEvent(event: PixelEventName, payload: Record<string, unknown>) {
@@ -64,26 +104,37 @@ function recordEvent(event: PixelEventName, payload: Record<string, unknown>) {
   } catch {}
 }
 
-export function trackPageView(path?: string) {
+export function trackPageView(path?: string, configOverride?: ActivePixelConfig) {
   if (typeof window === "undefined") return;
+  const active = configOverride ?? getActivePixelConfig();
   const pagePath = path || window.location.pathname + window.location.search;
-  recordEvent("PageView", { page_path: pagePath });
+  recordEvent("PageView", {
+    page_path: pagePath,
+    store_id: active.storeId,
+  });
 
   try {
-    if (typeof window.fbq === "function") {
-      window.fbq("track", "PageView");
+    if (active.metaId && typeof window.fbq === "function") {
+      window.fbq("trackSingle", active.metaId, "PageView");
     }
   } catch {}
 
   try {
-    if (window.ttq && typeof window.ttq.page === "function") {
-      window.ttq.page();
+    if (active.tiktokId && window.ttq) {
+      const inst =
+        typeof window.ttq.instance === "function"
+          ? window.ttq.instance(active.tiktokId)
+          : null;
+      if (inst && typeof inst.page === "function") {
+        inst.page();
+      }
     }
   } catch {}
 
   try {
-    if (typeof window.gtag === "function") {
+    if (active.ga4Id && typeof window.gtag === "function") {
       window.gtag("event", "page_view", {
+        send_to: active.ga4Id,
         page_path: pagePath,
         page_location: window.location.href,
       });
@@ -99,9 +150,11 @@ export function trackViewContent(params: {
   category?: string;
 }) {
   if (typeof window === "undefined") return;
+  const active = getActivePixelConfig();
   const currency = params.currency || "EGP";
   const value = Number(params.price) || 0;
   recordEvent("ViewContent", {
+    store_id: active.storeId,
     content_id: params.id,
     content_name: params.name,
     value,
@@ -109,8 +162,8 @@ export function trackViewContent(params: {
   });
 
   try {
-    if (typeof window.fbq === "function") {
-      window.fbq("track", "ViewContent", {
+    if (active.metaId && typeof window.fbq === "function") {
+      window.fbq("trackSingle", active.metaId, "ViewContent", {
         content_ids: [params.id],
         content_name: params.name,
         content_type: "product",
@@ -121,8 +174,8 @@ export function trackViewContent(params: {
   } catch {}
 
   try {
-    if (window.ttq && typeof window.ttq.track === "function") {
-      window.ttq.track("ViewContent", {
+    if (active.tiktokId && window.ttq && typeof window.ttq.instance === "function") {
+      window.ttq.instance(active.tiktokId).track?.("ViewContent", {
         content_id: params.id,
         content_name: params.name,
         content_type: "product",
@@ -133,8 +186,9 @@ export function trackViewContent(params: {
   } catch {}
 
   try {
-    if (typeof window.gtag === "function") {
+    if (active.ga4Id && typeof window.gtag === "function") {
       window.gtag("event", "view_item", {
+        send_to: active.ga4Id,
         currency,
         value,
         items: [
@@ -161,6 +215,7 @@ export function trackAddToCart(params: {
   color?: string;
 }) {
   if (typeof window === "undefined") return;
+  const active = getActivePixelConfig();
   const currency = params.currency || "EGP";
   const quantity = Math.max(1, Math.round(params.quantity ?? 1));
   const unitPrice = Number(params.price) || 0;
@@ -168,6 +223,7 @@ export function trackAddToCart(params: {
   const variant = [params.size, params.color].filter(Boolean).join(" / ");
 
   recordEvent("AddToCart", {
+    store_id: active.storeId,
     content_id: params.id,
     content_name: params.name,
     quantity,
@@ -176,8 +232,8 @@ export function trackAddToCart(params: {
   });
 
   try {
-    if (typeof window.fbq === "function") {
-      window.fbq("track", "AddToCart", {
+    if (active.metaId && typeof window.fbq === "function") {
+      window.fbq("trackSingle", active.metaId, "AddToCart", {
         content_ids: [params.id],
         content_name: params.name,
         content_type: "product",
@@ -189,8 +245,8 @@ export function trackAddToCart(params: {
   } catch {}
 
   try {
-    if (window.ttq && typeof window.ttq.track === "function") {
-      window.ttq.track("AddToCart", {
+    if (active.tiktokId && window.ttq && typeof window.ttq.instance === "function") {
+      window.ttq.instance(active.tiktokId).track?.("AddToCart", {
         content_id: params.id,
         content_name: params.name,
         content_type: "product",
@@ -203,8 +259,9 @@ export function trackAddToCart(params: {
   } catch {}
 
   try {
-    if (typeof window.gtag === "function") {
+    if (active.ga4Id && typeof window.gtag === "function") {
       window.gtag("event", "add_to_cart", {
+        send_to: active.ga4Id,
         currency,
         value,
         items: [
@@ -227,19 +284,21 @@ export function trackInitiateCheckout(params: {
   currency?: string;
 }) {
   if (typeof window === "undefined") return;
+  const active = getActivePixelConfig();
   const currency = params.currency || "EGP";
   const value = Math.round((Number(params.value) || 0) * 100) / 100;
   const numItems = params.items.reduce((s, it) => s + it.quantity, 0);
 
   recordEvent("InitiateCheckout", {
+    store_id: active.storeId,
     num_items: numItems,
     value,
     currency,
   });
 
   try {
-    if (typeof window.fbq === "function") {
-      window.fbq("track", "InitiateCheckout", {
+    if (active.metaId && typeof window.fbq === "function") {
+      window.fbq("trackSingle", active.metaId, "InitiateCheckout", {
         content_ids: params.items.map((it) => it.id),
         content_type: "product",
         num_items: numItems,
@@ -250,8 +309,8 @@ export function trackInitiateCheckout(params: {
   } catch {}
 
   try {
-    if (window.ttq && typeof window.ttq.track === "function") {
-      window.ttq.track("InitiateCheckout", {
+    if (active.tiktokId && window.ttq && typeof window.ttq.instance === "function") {
+      window.ttq.instance(active.tiktokId).track?.("InitiateCheckout", {
         contents: params.items.map((it) => ({
           content_id: it.id,
           content_name: it.name,
@@ -265,8 +324,9 @@ export function trackInitiateCheckout(params: {
   } catch {}
 
   try {
-    if (typeof window.gtag === "function") {
+    if (active.ga4Id && typeof window.gtag === "function") {
       window.gtag("event", "begin_checkout", {
+        send_to: active.ga4Id,
         currency,
         value,
         items: params.items.map((it) => ({
@@ -288,6 +348,7 @@ export function trackPurchase(params: {
   items?: PixelEventItem[];
 }) {
   if (typeof window === "undefined") return;
+  const active = getActivePixelConfig();
   const cleanOrderId = (params.orderId ?? "").trim();
   if (!cleanOrderId) return;
 
@@ -305,6 +366,7 @@ export function trackPurchase(params: {
   const items = params.items ?? [];
 
   recordEvent("Purchase", {
+    store_id: active.storeId,
     order_id: cleanOrderId,
     value,
     currency,
@@ -312,9 +374,10 @@ export function trackPurchase(params: {
   });
 
   try {
-    if (typeof window.fbq === "function") {
+    if (active.metaId && typeof window.fbq === "function") {
       window.fbq(
-        "track",
+        "trackSingle",
+        active.metaId,
         "Purchase",
         {
           content_ids: items.map((it) => it.id),
@@ -328,8 +391,8 @@ export function trackPurchase(params: {
   } catch {}
 
   try {
-    if (window.ttq && typeof window.ttq.track === "function") {
-      window.ttq.track("CompletePayment", {
+    if (active.tiktokId && window.ttq && typeof window.ttq.instance === "function") {
+      window.ttq.instance(active.tiktokId).track?.("CompletePayment", {
         content_type: "product",
         contents: items.map((it) => ({
           content_id: it.id,
@@ -344,8 +407,9 @@ export function trackPurchase(params: {
   } catch {}
 
   try {
-    if (typeof window.gtag === "function") {
+    if (active.ga4Id && typeof window.gtag === "function") {
       window.gtag("event", "purchase", {
+        send_to: active.ga4Id,
         transaction_id: cleanOrderId,
         currency,
         value,

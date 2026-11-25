@@ -21,6 +21,7 @@ import { dispatchNotification } from "@/lib/notifications/dispatcher";
 import {
   notifyBackInStock,
   notifyOrderStatusChanged,
+  notifyReturnStatusUpdate,
   notifyReviewReply,
   notifyWalletCashback,
   notifyWishlistProductAlert,
@@ -197,12 +198,24 @@ export async function saveProduct(f: FormData) {
     !row.name ||
     !row.slug ||
     !row.category_id ||
+    !UUID_REGEX.test(row.category_id) ||
     price === null ||
     stock === null ||
     costPrice === null ||
     (oldPrice && row.old_price === null)
   )
     finish(catalog, false);
+
+  // Verify category_id strictly belongs to the active store
+  const { data: ownedCategory } = await db
+    .from("categories")
+    .select("id")
+    .eq("id", row.category_id)
+    .eq("store_id", storeId)
+    .maybeSingle<{ id: string }>();
+  if (!ownedCategory) {
+    finish(catalog, false);
+  }
 
   // Enforce plan max_products cap before uploading/inserting a new product
   if (!id) {
@@ -519,24 +532,55 @@ export async function saveSettings(f: FormData) {
     .map((s) => s.trim())
     .filter(Boolean);
   const fee = numberField(text(f, "shipping_fee"));
+  const returnWindowRaw = text(f, "return_window_days");
+  const returnWindowDays = returnWindowRaw
+    ? numberField(returnWindowRaw, true)
+    : null;
   if (
     !text(f, "store_name") ||
     fee === null ||
+    (returnWindowRaw && (returnWindowDays === null || returnWindowDays > 365)) ||
     banners.some((s) => !URL.canParse(s) || new URL(s).protocol !== "https:")
   )
     finish("/admin/settings", false);
+  const payload: Record<string, unknown> = {
+    store_name: text(f, "store_name"),
+    shipping_fee: fee,
+    whatsapp_number: text(f, "whatsapp_number"),
+    banners,
+  };
+  if (returnWindowDays !== null) {
+    payload.return_window_days = returnWindowDays;
+  }
   const result = await db
     .from("store_settings")
-    .update({
-      store_name: text(f, "store_name"),
-      shipping_fee: fee,
-      whatsapp_number: text(f, "whatsapp_number"),
-      banners,
-    })
+    .update(payload)
     .eq("store_id", storeId)
     .select("store_id")
     .single();
   finish("/admin/settings", !result.error);
+}
+
+export async function saveReturnWindowDaysAction(
+  daysRaw: number,
+): Promise<{ ok: true; days: number } | { ok: false; error: string }> {
+  const { db, storeId } = await requireAdmin();
+  const days = Math.trunc(Number(daysRaw));
+  if (!Number.isSafeInteger(days) || days < 0 || days > 365) {
+    return { ok: false, error: "invalid_return_window_days" };
+  }
+  const { error } = await db
+    .from("store_settings")
+    .update({ return_window_days: days })
+    .eq("store_id", storeId)
+    .select("store_id")
+    .single();
+  if (error) {
+    return { ok: false, error: "save_failed" };
+  }
+  revalidatePath("/admin/returns");
+  revalidatePath("/admin/settings");
+  return { ok: true, days };
 }
 
 export async function savePaymentSettings(f: FormData) {
@@ -808,7 +852,14 @@ export async function saveCoupon(f: FormData) {
   const maxUsesRaw = text(f, "max_uses");
   const maxUses = maxUsesRaw ? numberField(maxUsesRaw, true) : null;
   const expiresRaw = text(f, "expires_at");
-  const expiresAt = expiresRaw ? new Date(expiresRaw).toISOString() : null;
+  let expiresAt: string | null = null;
+  if (expiresRaw) {
+    const ms = Date.parse(expiresRaw);
+    if (!Number.isFinite(ms)) {
+      finish("/admin/coupons", false);
+    }
+    expiresAt = new Date(ms).toISOString();
+  }
   const isActive = f.has("is_active");
 
   if (
@@ -1232,6 +1283,21 @@ export async function processReturnRequestAction(input: {
     wallet_credited: boolean;
     updated_at: string;
   };
+
+  if (
+    row.status === "approved" ||
+    row.status === "rejected" ||
+    row.status === "received" ||
+    row.status === "refunded"
+  ) {
+    await notifyReturnStatusUpdate({
+      storeId,
+      returnId: row.id,
+      orderId: row.order_id,
+      status: row.status,
+      action: input.action,
+    });
+  }
 
   revalidatePath("/admin", "layout");
   revalidatePath("/admin/returns");

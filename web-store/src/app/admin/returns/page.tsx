@@ -37,14 +37,19 @@ export default async function AdminReturnsPage() {
       .limit(200),
     db
       .from("store_settings")
-      .select("currency")
+      .select("currency,return_window_days")
       .eq("store_id", storeId)
-      .maybeSingle<{ currency: string }>(),
+      .maybeSingle<{ currency: string; return_window_days?: number | null }>(),
   ]);
 
   const rawRows = (checked(returnsRes) ?? []) as Record<string, unknown>[];
   const normalized = rawRows.map(normalizeReturnRecord);
   const defaultCurrency = settingsRes.data?.currency || "EGP";
+  const returnWindowDays =
+    typeof settingsRes.data?.return_window_days === "number" &&
+    Number.isFinite(settingsRes.data.return_window_days)
+      ? settingsRes.data.return_window_days
+      : 14;
 
   const orderIds = Array.from(new Set(normalized.map((r) => r.order_id)));
   const userIds = Array.from(new Set(normalized.map((r) => r.user_id)));
@@ -98,6 +103,7 @@ export default async function AdminReturnsPage() {
       initialReturns={items}
       initialLang={lang}
       currency={defaultCurrency}
+      initialReturnWindowDays={returnWindowDays}
     />
   );
 }

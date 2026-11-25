@@ -598,6 +598,7 @@ export function Navigation({
                 storeId={storeId}
                 userId={user?.id ?? null}
                 scope="customer"
+                basePath={basePath}
               />
 
               <Link

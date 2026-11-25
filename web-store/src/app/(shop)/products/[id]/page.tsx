@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Star } from "lucide-react";
 import { serverDb, checked } from "@/lib/db";
@@ -21,6 +22,37 @@ import { resolveEffectivePrice } from "@/lib/flash-sale";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export async function generateMetadata({
+  params,
+}: PageProps<"/products/[id]">): Promise<Metadata> {
+  try {
+    const [{ id }, db, s] = await Promise.all([params, serverDb(), settings()]);
+    const isUuid = UUID_RE.test(id);
+    const query = db
+      .from("products")
+      .select("name,name_en,description,description_en")
+      .eq("store_id", s.storeId)
+      .eq("is_active", true);
+    const { data } = await (isUuid ? query.eq("id", id) : query.eq("slug", id))
+      .maybeSingle<{
+        name: string;
+        name_en: string | null;
+        description: string | null;
+        description_en: string | null;
+      }>();
+    if (!data) return {};
+    const lang = await getServerLang(s.uiConfig.defaultLanguage);
+    const title = localizedText(lang, data.name, data.name_en);
+    const desc = localizedText(lang, data.description ?? "", data.description_en);
+    return {
+      title,
+      description: desc ? desc.slice(0, 160) : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
 
 export default async function Details({ params }: PageProps<"/products/[id]">) {
   const [{ id }, db, s] = await Promise.all([params, serverDb(), settings()]);

@@ -64,16 +64,16 @@ export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
       </aside>
       <div className="workspace">
         <header className="top">
-          <span>
+          <span className="admin-top-brand">
             <PanelTop size={17} /> {storeTitle}
           </span>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.7rem", flexWrap: "wrap" }}>
+          <div className="admin-top-actions">
             <AdminTourTrigger storeId={storeId} />
             <NotificationBell storeId={storeId} userId={user.id} scope="admin" />
             <LanguageToggle className="lang-toggle-pill" />
-            <span dir="ltr">
+            <span className="admin-top-email" dir="ltr" title={user.email ?? ""}>
               <UserRound size={16} />
-              {user.email}
+              <span className="admin-top-email-text">{user.email}</span>
             </span>
           </div>
         </header>

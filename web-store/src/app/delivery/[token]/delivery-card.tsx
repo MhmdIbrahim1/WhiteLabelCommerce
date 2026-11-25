@@ -12,7 +12,8 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { date, money } from "@/lib/brand";
-import { orderStatusLabel } from "@/lib/i18n";
+import { localizedText, orderStatusLabel } from "@/lib/i18n";
+import { localizeCarrierLabel } from "@/lib/shipping";
 import { LanguageToggle, useLanguage } from "@/components/language-provider";
 import { confirmDelivery } from "./action";
 
@@ -36,21 +37,26 @@ export type DeliveryInfo = {
 export function DeliveryCard({
   token,
   storeName,
+  storeNameEn,
   info,
 }: {
   token: string;
   storeName: string;
+  storeNameEn?: string;
   info: DeliveryInfo;
 }) {
   const { lang, t } = useLanguage();
   const isEn = lang === "en";
+  const displayStoreName = localizedText(lang, storeName, storeNameEn ?? storeName);
   const [status, setStatus] = useState(info.status);
   const [deliveredAt, setDeliveredAt] = useState(info.delivered_at);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const isDelivered = status === "delivered";
-  const canConfirm = status === "confirmed" || status === "shipped";
+  const canConfirm = status === "shipped";
+  const isCod = (info.payment_method ?? "").trim().toLowerCase() === "cod";
+  const carrierDisplay = localizeCarrierLabel(info.shipping_carrier, lang);
 
   const handleConfirm = () => {
     setFeedback(null);
@@ -70,6 +76,12 @@ export function DeliveryCard({
           isEn
             ? "Delivery confirmed and order status updated."
             : "تم تأكيد تسليم الطلب وتحديث حالته بنجاح.",
+        );
+      } else if (res.outcome === "expired") {
+        setFeedback(
+          isEn
+            ? "This delivery confirmation link has expired."
+            : "انتهت صلاحية رابط تأكيد التسليم هذا.",
         );
       } else if (res.outcome === "invalid_state") {
         setFeedback(
@@ -92,7 +104,7 @@ export function DeliveryCard({
               <Store size={18} />
             </span>
             <div>
-              <strong>{storeName}</strong>
+              <strong>{displayStoreName}</strong>
               <small>{t("deliverySubtitle")}</small>
             </div>
           </div>
@@ -112,22 +124,22 @@ export function DeliveryCard({
           <div className="delivery-amount">
             <small>
               <Banknote size={13} />{" "}
-              {info.payment_method === "COD"
-                ? t("deliveryCollectCod")
-                : t("deliveryOrderValue")}
+              {isCod ? t("deliveryCollectCod") : t("deliveryOrderValue")}
             </small>
             <strong>{money(info.total, info.currency, lang)}</strong>
           </div>
         </section>
 
         <section className="delivery-details">
-          <div className="delivery-row">
-            <MapPin size={18} />
-            <div>
-              <small>{t("deliveryAddress")}</small>
-              <p>{info.shipping_address}</p>
+          {info.shipping_address && (
+            <div className="delivery-row">
+              <MapPin size={18} />
+              <div>
+                <small>{t("deliveryAddress")}</small>
+                <p>{info.shipping_address}</p>
+              </div>
             </div>
-          </div>
+          )}
 
           {info.phone && (
             <div className="delivery-row">
@@ -155,13 +167,13 @@ export function DeliveryCard({
             </div>
           </div>
 
-          {(info.shipping_carrier || info.courier_note) && (
+          {(carrierDisplay || info.tracking_number || info.courier_note) && (
             <div className="delivery-row">
               <Truck size={18} />
               <div>
                 <small>{t("deliveryShippingInfo")}</small>
                 <p>
-                  {[info.shipping_carrier, info.tracking_number]
+                  {[carrierDisplay, info.tracking_number]
                     .filter(Boolean)
                     .join(" · ")}
                 </p>

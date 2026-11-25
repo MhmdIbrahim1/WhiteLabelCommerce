@@ -76,10 +76,14 @@ export async function updateStorePlanAndStatusAction(input: {
       ? Math.max(0, Math.trunc(Number(input.maxProducts)))
       : null;
 
-  const parsedExpiry =
-    input.subscriptionExpiresAt && input.subscriptionExpiresAt.trim()
-      ? new Date(input.subscriptionExpiresAt).toISOString()
-      : null;
+  let parsedExpiry: string | null = null;
+  if (input.subscriptionExpiresAt && input.subscriptionExpiresAt.trim()) {
+    const ms = Date.parse(input.subscriptionExpiresAt.trim());
+    if (!Number.isFinite(ms)) {
+      return { ok: false, error: "invalid_expiry_date" };
+    }
+    parsedExpiry = new Date(ms).toISOString();
+  }
 
   const { data, error } = await db
     .rpc("super_admin_update_store_plan_and_status", {
@@ -165,26 +169,32 @@ export async function assignStoreOwnerAction(input: {
       p_owner_email: cleanEmail,
     })
     .single<{
-      store_id: string;
-      owner_email: string;
-      owner_user_id: string | null;
-      pending_owner_email: string | null;
-      mode: "assigned_existing" | "pending_signup";
+      status: "assigned" | "pending_signup";
+      owner_email?: string | null;
+      user_id?: string | null;
+      pending_owner_email?: string | null;
     }>();
 
   if (error || !data) {
     return { ok: false, error: error?.message || "assign_failed" };
   }
 
+  const isAssigned = data.status === "assigned";
+  const resolvedEmail =
+    (isAssigned ? data.owner_email : data.pending_owner_email)?.trim() ||
+    cleanEmail;
+
   revalidatePath("/super-admin");
   revalidatePath("/admin", "layout");
 
   return {
     ok: true,
-    mode: data.mode,
-    ownerEmail: data.owner_email,
-    ownerUserId: data.owner_user_id,
-    pendingOwnerEmail: data.pending_owner_email,
+    mode: isAssigned ? "assigned_existing" : "pending_signup",
+    ownerEmail: resolvedEmail,
+    ownerUserId: isAssigned ? (data.user_id ?? null) : null,
+    pendingOwnerEmail: isAssigned
+      ? null
+      : (data.pending_owner_email?.trim() || cleanEmail),
   };
 }
 

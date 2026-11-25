@@ -98,7 +98,9 @@ export function AdminTourTrigger({ storeId }: { storeId: string }) {
   return (
     <button
       type="button"
+      className="admin-tour-btn"
       onClick={() => triggerAdminGuidedTour(storeId)}
+      aria-label={isEn ? "Quick Tour" : "جولة سريعة"}
       title={
         isEn
           ? "Start Quick Tour & Reopen Checklist"
@@ -117,7 +119,7 @@ export function AdminTourTrigger({ storeId }: { storeId: string }) {
       }}
     >
       <HelpCircle size={15} />
-      <span>{isEn ? "Quick Tour" : "جولة سريعة"}</span>
+      <span className="admin-tour-label">{isEn ? "Quick Tour" : "جولة سريعة"}</span>
     </button>
   );
 }

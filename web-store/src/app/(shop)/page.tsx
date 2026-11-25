@@ -83,6 +83,7 @@ export default async function Home() {
                   layout={s.uiConfig.pages.home.heroLayout}
                   autoSlideMs={s.uiConfig.pages.home.bannerSpeedMs}
                   cms={s.uiConfig.pages.home}
+                  basePath={s.basePath}
                 />
                 {flashDealsNode}
               </div>
@@ -189,7 +190,7 @@ export default async function Home() {
                     <ArrowIcon size={16} />
                   </a>
                 ) : (
-                  <Link href={sec.ctaHref} className="cta promo-cta-btn">
+                  <Link href={href(sec.ctaHref)} className="cta promo-cta-btn">
                     <span>{translateHomeCopy(sec.ctaLabel, lang)}</span>
                     <ArrowIcon size={16} />
                   </Link>

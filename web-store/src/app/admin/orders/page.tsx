@@ -5,7 +5,7 @@ import { date, money } from "@/lib/brand";
 import { orderStatusLabel, type Lang } from "@/lib/i18n";
 import { getServerLang } from "@/lib/i18n-server";
 import { nextOrder, orders, pagination } from "@/lib/workflow";
-import { summarizeAddress } from "@/lib/shipping";
+import { localizeCarrierLabel, summarizeAddress } from "@/lib/shipping";
 import { updateOrder } from "../mutations";
 import { Empty, Notice, Pager, Status } from "../ui";
 
@@ -161,7 +161,7 @@ export default async function OrdersPage({
                           <Status value={o.status} />
                           {o.shipping_carrier && (
                             <small className="order-meta-line">
-                              <Truck size={12} /> {o.shipping_carrier}
+                              <Truck size={12} /> {localizeCarrierLabel(o.shipping_carrier, lang)}
                               {o.tracking_number
                                 ? ` · ${o.tracking_number}`
                                 : ""}
@@ -264,7 +264,7 @@ export default async function OrdersPage({
                     </span>
                     {o.shipping_carrier && (
                       <span>
-                        <Truck size={13} /> {o.shipping_carrier}
+                        <Truck size={13} /> {localizeCarrierLabel(o.shipping_carrier, lang)}
                         {o.tracking_number ? ` · ${o.tracking_number}` : ""}
                       </span>
                     )}

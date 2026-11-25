@@ -524,6 +524,109 @@ export async function dispatchNotification(
 }
 
 /**
+ * Dispatches FCM HTTP v1 / Web Push notifications for an already-inserted
+ * public.notifications row (e.g. created atomically inside a SQL RPC) without
+ * creating a duplicate inbox record.
+ */
+export async function dispatchPushForExistingNotification(params: {
+  notificationId: string;
+  storeId: string;
+  userId: string;
+  category: NotificationCategory;
+  titleAr: string;
+  titleEn: string;
+  bodyAr: string;
+  bodyEn: string;
+  deepLink: string;
+  data?: Record<string, string | number | boolean | null>;
+}): Promise<{ pushAttempted: number; pushDelivered: number }> {
+  const db = adminDb();
+  if (!params.userId || !params.notificationId) {
+    return { pushAttempted: 0, pushDelivered: 0 };
+  }
+
+  const { data: pref } = await db
+    .from("notification_preferences")
+    .select(
+      "user_id,order_updates,promotions,restock_alerts,quiet_hours_start,quiet_hours_end",
+    )
+    .eq("user_id", params.userId)
+    .eq("store_id", params.storeId)
+    .maybeSingle<PrefRow>();
+
+  if (!categoryAllowedByPrefs(params.category, pref)) {
+    return { pushAttempted: 0, pushDelivered: 0 };
+  }
+
+  const { data: subs } = await db
+    .from("push_subscriptions")
+    .select("id,token,platform,locale,user_id")
+    .eq("store_id", params.storeId)
+    .eq("user_id", params.userId)
+    .eq("is_active", true);
+
+  const targets = ((subs ?? []) as PushSubRow[]).filter((s) => Boolean(s.token));
+  if (targets.length === 0) {
+    return { pushAttempted: 0, pushDelivered: 0 };
+  }
+
+  const fcmAuth = await getFcmAccessToken();
+  if (!fcmAuth) {
+    return { pushAttempted: 0, pushDelivered: 0 };
+  }
+
+  const deepLink = params.deepLink || "/";
+  const dataPayload = stringifyDataPayload(
+    deepLink,
+    params.category,
+    params.notificationId,
+    params.data,
+  );
+
+  let pushAttempted = 0;
+  let pushDelivered = 0;
+  const invalidTokens: string[] = [];
+
+  for (const target of targets) {
+    pushAttempted += 1;
+    const isEn = target.locale === "en";
+    const outcome = await sendSingleFcmMessage({
+      projectId: fcmAuth.projectId,
+      accessToken: fcmAuth.accessToken,
+      token: target.token,
+      platform: target.platform,
+      title: isEn ? params.titleEn : params.titleAr,
+      body: isEn ? params.bodyEn : params.bodyAr,
+      deepLink,
+      category: params.category,
+      data: dataPayload,
+    });
+    if (outcome.ok) {
+      pushDelivered += 1;
+    } else if (outcome.invalidToken) {
+      invalidTokens.push(target.token);
+    }
+  }
+
+  if (invalidTokens.length > 0) {
+    await db
+      .from("push_subscriptions")
+      .update({ is_active: false })
+      .eq("store_id", params.storeId)
+      .in("token", invalidTokens);
+  }
+
+  if (pushDelivered > 0) {
+    await db
+      .from("notifications")
+      .update({ sent_push: true })
+      .eq("id", params.notificationId);
+  }
+
+  return { pushAttempted, pushDelivered };
+}
+
+/**
  * Helper to alert all store admins for a specific store_id.
  */
 export async function notifyStoreAdmins(params: {

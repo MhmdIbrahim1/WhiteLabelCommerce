@@ -83,7 +83,9 @@ export function AdminStoreSwitcher({
               alignItems: "center",
               gap: "0.35rem",
               fontSize: "0.72rem",
-              opacity: 0.78,
+              opacity: 0.84,
+              minWidth: 0,
+              flexWrap: "nowrap",
             }}
           >
             <span
@@ -93,10 +95,24 @@ export function AdminStoreSwitcher({
                 borderRadius: "999px",
                 background: statusColor,
                 display: "inline-block",
+                flexShrink: 0,
               }}
             />
-            <span>{planLabel(activeStore.plan)}</span>
-            <span dir="ltr">/{activeStore.slug}</span>
+            <span style={{ whiteSpace: "nowrap", flexShrink: 0 }}>
+              {planLabel(activeStore.plan)}
+            </span>
+            <span
+              dir="ltr"
+              title={`/${activeStore.slug}`}
+              style={{
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                minWidth: 0,
+              }}
+            >
+              /{activeStore.slug}
+            </span>
           </div>
         </div>
       </div>

@@ -27,6 +27,7 @@ type StoreSettingsRow = {
   free_shipping_threshold?: number | null;
   cashback_enabled?: boolean | null;
   cashback_percentage?: number | null;
+  return_window_days?: number | null;
 };
 
 type PaymentSecretRow = {
@@ -50,7 +51,7 @@ export default async function Settings({
     await db
       .from("store_settings")
       .select(
-        "store_id,store_name,shipping_fee,currency,whatsapp_number,banners,theme_template,cod_enabled,paymob_enabled,paymob_card_enabled,paymob_wallet_enabled,cart_incentive_enabled,free_shipping_threshold,cashback_enabled,cashback_percentage",
+        "store_id,store_name,shipping_fee,currency,whatsapp_number,banners,theme_template,cod_enabled,paymob_enabled,paymob_card_enabled,paymob_wallet_enabled,cart_incentive_enabled,free_shipping_threshold,cashback_enabled,cashback_percentage,return_window_days",
       )
       .eq("store_id", storeId)
       .single<StoreSettingsRow>(),
@@ -411,6 +412,20 @@ export default async function Settings({
               dir="ltr"
               name="whatsapp_number"
               defaultValue={s.whatsapp_number}
+            />
+          </label>
+          <label>
+            {isEn
+              ? "Return Window (Days · 0 = Unlimited)"
+              : "نافذة الإرجاع (بالأيام · 0 = بدون حد)"}
+            <input
+              type="number"
+              name="return_window_days"
+              min="0"
+              max="365"
+              step="1"
+              defaultValue={s.return_window_days ?? 14}
+              required
             />
           </label>
           <label className="wide">

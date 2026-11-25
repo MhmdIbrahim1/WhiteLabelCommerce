@@ -36,7 +36,7 @@ import {
 } from "lucide-react";
 import { useLanguage } from "@/components/language-provider";
 import { date, money } from "@/lib/brand";
-import { localizedText } from "@/lib/i18n";
+import { localizedText, translateHomeCopy } from "@/lib/i18n";
 import {
   getFlashSavingsPercent,
   isFlashSaleActive,
@@ -137,20 +137,23 @@ function AndroidPhoneMockup({
 
   const heroTitle =
     (isEn ? preview.heroTitleEn : preview.heroTitleAr).trim() ||
-    (isEn ? preview.heroTitleAr : preview.heroTitleEn).trim() ||
+    (isEn ? store.nameEn : store.nameAr) ||
     appName ||
-    (isEn ? store.nameEn : store.nameAr);
+    (isEn ? preview.heroTitleAr : preview.heroTitleEn).trim();
   const heroSubtitle =
     (isEn ? preview.heroSubtitleEn : preview.heroSubtitleAr).trim() ||
-    (isEn ? preview.heroSubtitleAr : preview.heroSubtitleEn).trim();
+    (isEn
+      ? "Curated pieces blending quiet elegance with everyday craftsmanship."
+      : preview.heroSubtitleAr.trim());
   const heroBadge =
     (isEn ? preview.heroBadgeEn : preview.heroBadgeAr).trim() ||
-    (isEn ? preview.heroBadgeAr : preview.heroBadgeEn).trim() ||
     (isEn ? "Curated Collection" : "تشكيلة مختارة");
   const heroCta =
     (isEn ? preview.heroCtaEn : preview.heroCtaAr).trim() ||
-    (isEn ? preview.heroCtaAr : preview.heroCtaEn).trim() ||
     (isEn ? "Shop Now" : "تسوّق الآن");
+  const announcementDisplay = preview.announcementText
+    ? translateHomeCopy(preview.announcementText, lang)
+    : "";
   const overlayAlpha = Math.max(0.15, Math.min(0.8, (preview.heroOverlayOpacity ?? 45) / 100));
 
   return (
@@ -192,7 +195,7 @@ function AndroidPhoneMockup({
         }}
       >
         {/* Optional Customizer Announcement / Promo Strip */}
-        {preview.announcementText && (
+        {announcementDisplay && (
           <div
             style={{
               background: accent,
@@ -206,7 +209,7 @@ function AndroidPhoneMockup({
               textOverflow: "ellipsis",
             }}
           >
-            {preview.announcementText}
+            {announcementDisplay}
           </div>
         )}
 

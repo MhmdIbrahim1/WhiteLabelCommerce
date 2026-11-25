@@ -14,6 +14,7 @@ import { money, date } from "@/lib/brand";
 import { t, translateColor } from "@/lib/i18n";
 import { getServerLang } from "@/lib/i18n-server";
 import { nextOrder } from "@/lib/workflow";
+import { isSafeHttpUrl, localizeCarrierLabel } from "@/lib/shipping";
 import { normalizeReturnRecord, returnStatusMeta } from "@/lib/returns";
 import { Notice, Status, Empty } from "../../ui";
 import { OrderStatusForm } from "../order-status-form";
@@ -154,7 +155,7 @@ export default async function OrderDetails({
                   <Truck size={15} />
                   <div>
                     <small>{isEn ? "Carrier" : "شركة الشحن"}</small>
-                    <strong>{o.shipping_carrier}</strong>
+                    <strong>{localizeCarrierLabel(o.shipping_carrier, lang)}</strong>
                   </div>
                 </div>
               )}
@@ -195,7 +196,7 @@ export default async function OrderDetails({
                 </div>
               )}
             </div>
-            {o.tracking_url && (
+            {o.tracking_url && isSafeHttpUrl(o.tracking_url) && (
               <a
                 href={o.tracking_url}
                 target="_blank"

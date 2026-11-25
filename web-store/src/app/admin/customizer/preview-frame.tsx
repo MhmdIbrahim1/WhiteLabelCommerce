@@ -57,26 +57,26 @@ export type PreviewCategory = {
 
 const FALLBACK_PRODUCTS: PreviewProduct[] = [
   {
-    id: "p1",
-    name: "حقيبة قماشية عملية يومية",
-    name_en: "Everyday Heavyweight Canvas Tote",
+    id: "sample-1",
+    name: "منتج معاينة ١",
+    name_en: "Sample Product 1",
     description:
-      "خامة قطنية متينة وتصميم عصري مناسب للاستخدام اليومي مع مساحة داخلية واسعة.",
+      "هذا منتج تجريبي للمعاينة فقط — أضف منتجات متجرك الحقيقية من صفحة المنتجات لتظهر هنا.",
     description_en:
-      "Durable cotton canvas crafted for everyday essentials with a spacious interior.",
+      "Sample placeholder product for preview only — add your store products to display your real catalog here.",
     price: 250,
     old_price: 320,
     stock: 12,
     sizes: ["S", "M", "L"],
     colors: ["Navy", "Beige", "Black"],
-    imageUrl: "/store-collection.jpg",
+    imageUrl: null,
   },
   {
-    id: "p2",
-    name: "قميص كتان صيفي مريح",
-    name_en: "Relaxed Summer Linen Shirt",
-    description: "كتان طبيعي خفيف بقصّة أنيقة ومريحة.",
-    description_en: "Breathable natural linen tailored in an effortless modern cut.",
+    id: "sample-2",
+    name: "منتج معاينة ٢",
+    name_en: "Sample Product 2",
+    description: "منتج تجريبي لمعاينة تخطيط بطاقات المنتجات في متجرك.",
+    description_en: "Sample placeholder item to preview your store's product card layout.",
     price: 480,
     old_price: null,
     stock: 8,
@@ -85,11 +85,11 @@ const FALLBACK_PRODUCTS: PreviewProduct[] = [
     imageUrl: null,
   },
   {
-    id: "p3",
-    name: "محفظة جلدية كلاسيكية",
-    name_en: "Classic Genuine Leather Wallet",
-    description: "جلد طبيعي بتفاصيل دقيقة وخياطة متينة.",
-    description_en: "Full-grain leather with crisp stitching and slim profile.",
+    id: "sample-3",
+    name: "منتج معاينة ٣",
+    name_en: "Sample Product 3",
+    description: "منتج تجريبي للمعاينة فقط حتى إضافة منتجات متجرك.",
+    description_en: "Sample placeholder item until your store adds active products.",
     price: 340,
     old_price: 410,
     stock: 15,
@@ -98,11 +98,11 @@ const FALLBACK_PRODUCTS: PreviewProduct[] = [
     imageUrl: null,
   },
   {
-    id: "p4",
-    name: "نظارة شمسية بإطار معدني",
-    name_en: "Polarized Metal Aviator Sunglasses",
-    description: "حماية كاملة من الأشعة فوق البنفسجية وتصميم خفيف الوزن.",
-    description_en: "UV400 glare-free polarized lenses in a lightweight metal frame.",
+    id: "sample-4",
+    name: "منتج معاينة ٤",
+    name_en: "Sample Product 4",
+    description: "منتج تجريبي للمعاينة فقط حتى إضافة منتجات متجرك.",
+    description_en: "Sample placeholder item until your store adds active products.",
     price: 590,
     old_price: 700,
     stock: 5,
@@ -113,10 +113,10 @@ const FALLBACK_PRODUCTS: PreviewProduct[] = [
 ];
 
 const FALLBACK_CATEGORIES: PreviewCategory[] = [
-  { id: "c1", name: "إكسسوارات", name_en: "Accessories" },
-  { id: "c2", name: "أزياء موسمية", name_en: "Men's Fashion" },
-  { id: "c3", name: "حقائب", name_en: "Leather Bags" },
-  { id: "c4", name: "الأكثر مبيعاً", name_en: "Best Sellers" },
+  { id: "sample-c1", name: "قسم تجريبي ١", name_en: "Sample Category 1" },
+  { id: "sample-c2", name: "قسم تجريبي ٢", name_en: "Sample Category 2" },
+  { id: "sample-c3", name: "قسم تجريبي ٣", name_en: "Sample Category 3" },
+  { id: "sample-c4", name: "قسم تجريبي ٤", name_en: "Sample Category 4" },
 ];
 
 export function PreviewFrame({
@@ -170,7 +170,8 @@ export function PreviewFrame({
     return () => clearInterval(timer);
   }, [page, previewBanners.length, config.pages.home.bannerSpeedMs]);
 
-  const items = products.length > 0 ? products : FALLBACK_PRODUCTS;
+  const isSampleCatalog = products.length === 0;
+  const items = isSampleCatalog ? FALLBACK_PRODUCTS : products;
   const cats = categories.length > 0 ? categories : FALLBACK_CATEGORIES;
   const featured = items[0];
   const featuredSizes = featured.sizes.length ? featured.sizes : ["S", "M", "L"];
@@ -222,7 +223,19 @@ export function PreviewFrame({
               )}
             </div>
           </div>
-          {p.old_price && p.old_price > p.price ? (
+          {isSampleCatalog ? (
+            <span
+              className="discount"
+              style={{
+                background: "#0f172a",
+                color: "#f8fafc",
+                fontSize: "0.7rem",
+                letterSpacing: "0.01em",
+              }}
+            >
+              {isEn ? "Sample Preview" : "منتج معاينة تجريبي"}
+            </span>
+          ) : p.old_price && p.old_price > p.price ? (
             <span className="discount">
               -{Math.round(100 * (1 - p.price / p.old_price))}
               {isEn ? "%" : "٪"}

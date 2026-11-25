@@ -28,6 +28,7 @@ import {
 import { orderStatusLabel, translateColor } from "@/lib/i18n";
 import { date } from "@/lib/brand";
 import { useLanguage } from "@/components/language-provider";
+import { isSafeHttpUrl, localizeCarrierLabel } from "@/lib/shipping";
 import { OrderReturnPanel } from "./order-return-panel";
 import {
   clearPendingOnlineOrder,
@@ -494,7 +495,10 @@ export function Timeline({
           <div className="customer-shipping-head">
             <span className="customer-shipping-title">
               <Truck size={15} />
-              <strong>{row.shipping_carrier || t("shippingDetails")}</strong>
+              <strong>
+                {localizeCarrierLabel(row.shipping_carrier, lang) ||
+                  t("shippingDetails")}
+              </strong>
             </span>
             {row.shipped_at && (
               <small>
@@ -524,7 +528,7 @@ export function Timeline({
             </p>
           )}
 
-          {row.tracking_url && (
+          {row.tracking_url && isSafeHttpUrl(row.tracking_url) && (
             <a
               href={row.tracking_url}
               target="_blank"

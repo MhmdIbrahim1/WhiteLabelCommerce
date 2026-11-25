@@ -250,6 +250,10 @@ export async function submitReturnRequestAction(
       msg = isEn
         ? "Returns are available once your order has been delivered."
         : "الإرجاع والاستبدال متاحان فقط بعد تسليم الطلب.";
+    } else if (raw.includes("return_window_expired")) {
+      msg = isEn
+        ? "The return window for this order has expired."
+        : "انتهت نافذة الإرجاع المسموح بها لهذا الطلب.";
     } else if (raw.includes("invalid_return_quantity")) {
       msg = isEn
         ? "Selected item quantity exceeds the ordered quantity."

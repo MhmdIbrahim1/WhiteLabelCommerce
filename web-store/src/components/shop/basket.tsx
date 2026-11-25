@@ -429,7 +429,7 @@ export function Basket({
                 <div className="coupon-input-row">
                   <input
                     type="text"
-                    dir="ltr"
+                    dir={couponInput ? "ltr" : isEn ? "ltr" : "rtl"}
                     value={couponInput}
                     onChange={(e) => setCouponInput(e.target.value)}
                     placeholder={t("couponPlaceholder")}

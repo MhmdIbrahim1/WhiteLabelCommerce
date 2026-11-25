@@ -26,6 +26,18 @@ import { useLanguage } from "@/components/language-provider";
 import { browserDb } from "@/lib/supabase/browser";
 import { syncWebPushSubscription } from "@/lib/notifications/web-push";
 import { safeRelativePath } from "@/lib/security";
+import { CARRIER_PRESETS } from "@/lib/shipping";
+import { storeHref } from "@/lib/tenant-shared";
+
+function normalizeEnglishCarrierText(text: string): string {
+  let out = text;
+  for (const preset of CARRIER_PRESETS) {
+    if (out.includes(preset.label)) {
+      out = out.replaceAll(preset.label, preset.label_en);
+    }
+  }
+  return out;
+}
 
 export type InboxItem = {
   id: string;
@@ -108,10 +120,12 @@ export function NotificationBell({
   storeId,
   userId = null,
   scope = "customer",
+  basePath = "",
 }: {
   storeId: string;
   userId?: string | null;
   scope?: "customer" | "admin";
+  basePath?: string;
 }) {
   const { lang, t } = useLanguage();
   const router = useRouter();
@@ -346,7 +360,11 @@ export function NotificationBell({
     setOpen(false);
     const safeLink = safeRelativePath(item.deep_link, "");
     if (safeLink) {
-      router.push(safeLink);
+      const target =
+        scope === "customer" && basePath && !safeLink.startsWith("/admin")
+          ? storeHref(basePath, safeLink)
+          : safeLink;
+      router.push(target);
     }
   }
 
@@ -410,14 +428,15 @@ export function NotificationBell({
     open && isClient
       ? createPortal(
           <div
-            className="notif-drawer-backdrop fixed inset-0 z-[100] h-dvh"
+            className="notif-drawer-backdrop"
+            dir={lang === "en" ? "ltr" : "rtl"}
             onClick={(e) => {
               if (e.target === e.currentTarget) setOpen(false);
             }}
           >
             <aside
               ref={drawerRef}
-              className="notif-drawer h-dvh"
+              className="notif-drawer"
               role="dialog"
               aria-modal="true"
               aria-label={t("notifTitle")}
@@ -500,8 +519,14 @@ export function NotificationBell({
                   </div>
                 ) : (
                   items.map((item) => {
-                    const title = lang === "en" ? item.title_en : item.title_ar;
-                    const body = lang === "en" ? item.body_en : item.body_ar;
+                    const title =
+                      lang === "en"
+                        ? normalizeEnglishCarrierText(item.title_en)
+                        : item.title_ar;
+                    const body =
+                      lang === "en"
+                        ? normalizeEnglishCarrierText(item.body_en)
+                        : item.body_ar;
                     return (
                       <div
                         key={item.id}

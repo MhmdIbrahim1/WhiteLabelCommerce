@@ -166,7 +166,7 @@ textarea {
   display: grid;
   grid-template-columns: 240px minmax(0, 1fr);
 }
-aside {
+.shell > aside {
   background: var(--primary);
   color: white;
   display: flex;
@@ -174,17 +174,17 @@ aside {
   padding: 1.55rem 1rem;
   gap: 2rem;
 }
-aside .brand {
+.shell > aside .brand {
   padding-inline: 0.6rem;
 }
-aside .mark {
+.shell > aside .mark {
   background: #ffffff21;
 }
-aside nav {
+.shell > aside nav {
   display: grid;
   gap: 0.35rem;
 }
-aside a,
+.shell > aside a,
 .logout button {
   color: white;
   display: flex;
@@ -194,8 +194,8 @@ aside a,
   border-radius: calc(var(--radius) * 0.75);
   font-weight: 500;
 }
-aside a[aria-current="page"],
-aside a:hover {
+.shell > aside a[aria-current="page"],
+.shell > aside a:hover {
   background: #ffffff20;
   text-decoration: none;
 }
@@ -217,12 +217,38 @@ aside a:hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 0.75rem 1rem;
   padding: 0.8rem clamp(1rem, 4vw, 4rem);
+  min-width: 0;
 }
-.top span:last-child {
+.admin-top-brand {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 650;
+}
+.admin-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-width: 0;
+}
+.admin-top-email {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
   font-size: 0.82rem;
   color: var(--muted);
+  min-width: 0;
+  max-width: 240px;
+}
+.admin-top-email svg {
+  flex-shrink: 0;
+}
+.admin-top-email-text {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -395,16 +421,16 @@ details details,
   .shell {
     display: block;
   }
-  aside {
+  .shell > aside {
     display: grid;
     grid-template-columns: 1fr auto;
     gap: 0.8rem;
     padding: 0.85rem 1rem;
   }
-  aside .brand {
+  .shell > aside .brand {
     padding: 0;
   }
-  aside nav {
+  .shell > aside nav {
     grid-row: 2;
     grid-column: 1/-1;
     display: flex;
@@ -413,10 +439,10 @@ details details,
     scrollbar-width: none;
     padding-bottom: 0.15rem;
   }
-  aside nav::-webkit-scrollbar {
+  .shell > aside nav::-webkit-scrollbar {
     display: none;
   }
-  aside nav a {
+  .shell > aside nav a {
     white-space: nowrap;
     flex-shrink: 0;
     font-size: 0.84rem;
@@ -428,7 +454,19 @@ details details,
     margin: 0;
   }
   .top {
-    min-height: 50px;
+    min-height: 54px;
+    padding: 0.65rem 0.85rem;
+    gap: 0.5rem 0.65rem;
+    flex-wrap: wrap;
+  }
+  .admin-top-actions {
+    gap: 0.45rem;
+    flex-wrap: nowrap;
+    max-width: 100%;
+  }
+  .admin-top-email {
+    max-width: 155px;
+    font-size: 0.78rem;
   }
   .metrics {
     gap: 0.55rem;
@@ -445,8 +483,32 @@ details details,
   .row {
     flex-wrap: wrap;
   }
-  .top span:last-child {
-    max-width: 55%;
+}
+@media (max-width: 420px) {
+  .top {
+    padding: 0.55rem 0.75rem;
+  }
+  .admin-top-brand {
+    font-size: 0.88rem;
+    max-width: 100%;
+  }
+  .admin-top-actions {
+    width: 100%;
+    justify-content: space-between;
+    gap: 0.35rem;
+  }
+  .admin-tour-btn {
+    padding: 0.36rem 0.48rem !important;
+    min-width: 34px;
+    height: 34px;
+  }
+  .admin-tour-label {
+    display: none;
+  }
+  .admin-top-email {
+    max-width: 145px;
+    font-size: 0.75rem;
+    gap: 0.28rem;
   }
 }
 .shell .card {
@@ -2280,29 +2342,62 @@ details details,
   inset: 0;
   width: 100vw;
   height: 100dvh;
-  z-index: 100;
-  background: rgba(15, 23, 42, 0.45);
-  backdrop-filter: blur(3px);
+  z-index: 9999;
+  background: rgba(15, 23, 42, 0.52);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   display: flex;
   justify-content: flex-end;
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
 }
+aside.notif-drawer,
 .notif-drawer {
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
   width: min(100vw, 400px);
   height: 100dvh;
   max-height: 100dvh;
-  background: var(--surface, #ffffff);
-  color: var(--ink, #152e36);
+  background: #ffffff;
+  color: #0f172a;
   display: flex;
   flex-direction: column;
   padding: 0;
   gap: 0;
-  box-shadow: -12px 0 40px rgba(0, 0, 0, 0.18);
-  border-inline-start: 1px solid var(--line, #e2e8f0);
+  opacity: 1;
+  visibility: visible;
+  box-shadow: -12px 0 40px rgba(15, 23, 42, 0.24);
+  border-inline-start: 1px solid #e2e8f0;
+  overflow: hidden;
 }
+[data-shop-theme="dark"] aside.notif-drawer,
 [data-shop-theme="dark"] .notif-drawer {
-  background: #14171c;
-  color: #f1f5f9;
-  border-inline-start-color: #272d38;
+  background: #141e24;
+  color: #f4f7f9;
+  border-inline-start-color: rgba(255, 255, 255, 0.14);
+  box-shadow: -12px 0 44px rgba(0, 0, 0, 0.55);
+}
+[data-shop-theme="dark"] .notif-drawer .notif-card {
+  background: rgba(255, 255, 255, 0.05);
+  color: #f4f7f9;
+  border-color: rgba(255, 255, 255, 0.12);
+}
+[data-shop-theme="dark"] .notif-drawer .notif-card.is-read {
+  background: rgba(255, 255, 255, 0.02);
+  opacity: 0.86;
+}
+[data-shop-theme="dark"] .notif-drawer .notif-cat-icon {
+  background: rgba(125, 211, 252, 0.16);
+  color: #7dd3fc;
+}
+[data-shop-theme="dark"] .notif-drawer .notif-push-ok {
+  color: #34d399;
+}
+[data-shop-theme="dark"] .notif-drawer .notif-empty,
+[data-shop-theme="dark"] .notif-drawer .notif-card-top small {
+  color: #cbd5e1;
 }
 .notif-drawer-head {
   display: flex;

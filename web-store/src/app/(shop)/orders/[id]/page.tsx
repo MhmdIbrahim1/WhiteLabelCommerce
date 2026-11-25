@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { ArrowLeft, ArrowRight, MapPin, Phone, Wallet, Sparkles } from "lucide-react";
+import { ArrowLeft, ArrowRight, MapPin, Phone, Wallet, Sparkles, TicketPercent } from "lucide-react";
 import { serverDb, checked } from "@/lib/db";
 import { settings } from "@/lib/shop";
 import { storeHref } from "@/lib/tenant";
@@ -20,6 +20,8 @@ type DetailedOrderRow = Summary & {
   currency: string;
   subtotal: number | null;
   shipping_fee: number;
+  coupon_code?: string | null;
+  discount_amount?: number | null;
   wallet_discount?: number | null;
   cashback_earned?: number | null;
   total: number | null;
@@ -61,7 +63,7 @@ export default async function CustomerOrderDetailPage({
     db
       .from("orders")
       .select(
-        "id,status,created_at,shipping_address,phone,payment_method,payment_status,currency,subtotal,shipping_fee,wallet_discount,cashback_earned,total,shipping_carrier,tracking_number,tracking_url,courier_note,shipped_at,delivered_at,order_items(id,product_id,product_name,quantity,unit_price,size,color)",
+        "id,status,created_at,shipping_address,phone,payment_method,payment_status,currency,subtotal,shipping_fee,coupon_code,discount_amount,wallet_discount,cashback_earned,total,shipping_carrier,tracking_number,tracking_url,courier_note,shipped_at,delivered_at,order_items(id,product_id,product_name,quantity,unit_price,size,color)",
       )
       .eq("id", id)
       .eq("store_id", store.storeId)
@@ -88,6 +90,24 @@ export default async function CustomerOrderDetailPage({
       : null;
 
   const orderItems = order.order_items ?? [];
+  const itemsGrossSubtotal =
+    orderItems.length > 0
+      ? Math.round(
+          orderItems.reduce(
+            (sum, it) => sum + Number(it.unit_price) * Number(it.quantity),
+            0,
+          ) * 100,
+        ) / 100
+      : Number(order.subtotal ?? 0);
+  const recordedDiscount = Number(order.discount_amount ?? 0);
+  const derivedDiscount =
+    order.subtotal !== null && itemsGrossSubtotal > Number(order.subtotal) + 0.005
+      ? Math.round((itemsGrossSubtotal - Number(order.subtotal)) * 100) / 100
+      : 0;
+  const couponDiscount =
+    recordedDiscount > 0 ? recordedDiscount : derivedDiscount;
+  const displayItemsSubtotal =
+    couponDiscount > 0 ? itemsGrossSubtotal : Number(order.subtotal ?? itemsGrossSubtotal);
 
   return (
     <div className="order-detail-page">
@@ -199,11 +219,34 @@ export default async function CustomerOrderDetailPage({
 
           <div className="order-detail-totals">
             <div>
-              <span>{t(lang, "subtotalLabel")}</span>
+              <span>{isEn ? "Items Subtotal" : "قيمة المنتجات"}</span>
               <strong dir="ltr">
-                {money(order.subtotal, order.currency, lang)}
+                {money(displayItemsSubtotal, order.currency, lang)}
               </strong>
             </div>
+            {couponDiscount > 0 && (
+              <div className="order-detail-discount-row">
+                <span style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem" }}>
+                  <TicketPercent size={14} />
+                  {isEn ? "Coupon Discount" : "خصم الكوبون"}
+                  {order.coupon_code ? ` (${order.coupon_code})` : ""}
+                </span>
+                <strong dir="ltr">
+                  -{money(couponDiscount, order.currency, lang)}
+                </strong>
+              </div>
+            )}
+            {Number(order.wallet_discount ?? 0) > 0 && (
+              <div className="order-detail-discount-row">
+                <span style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem" }}>
+                  <Wallet size={14} />
+                  {isEn ? "Wallet Credit" : "خصم محفظة المتجر"}
+                </span>
+                <strong dir="ltr">
+                  -{money(Number(order.wallet_discount), order.currency, lang)}
+                </strong>
+              </div>
+            )}
             <div>
               <span>{t(lang, "shippingLabel")}</span>
               <strong dir="ltr">
@@ -214,19 +257,8 @@ export default async function CustomerOrderDetailPage({
                   : money(order.shipping_fee, order.currency, lang)}
               </strong>
             </div>
-            {Number(order.wallet_discount ?? 0) > 0 && (
-              <div style={{ color: "#15803d" }}>
-                <span style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem" }}>
-                  <Wallet size={14} />
-                  {isEn ? "Wallet Credit Used" : "خصم محفظة المتجر"}
-                </span>
-                <strong dir="ltr">
-                  -{money(Number(order.wallet_discount), order.currency, lang)}
-                </strong>
-              </div>
-            )}
             {Number(order.cashback_earned ?? 0) > 0 && (
-              <div style={{ color: "#0369a1" }}>
+              <div className="order-detail-cashback-row">
                 <span style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem" }}>
                   <Sparkles size={14} />
                   {isEn ? "Cashback Earned" : "الكاش باك المكتسب"}
@@ -237,7 +269,7 @@ export default async function CustomerOrderDetailPage({
               </div>
             )}
             <div className="order-detail-grand-total">
-              <span>{isEn ? "Total" : "الإجمالي"}</span>
+              <span>{isEn ? "Net Total" : "الإجمالي الصافي"}</span>
               <strong dir="ltr">
                 {money(order.total, order.currency, lang)}
               </strong>

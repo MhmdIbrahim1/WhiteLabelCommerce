@@ -30,6 +30,7 @@ import {
 } from "@/lib/returns";
 import {
   processReturnRequestAction,
+  saveReturnWindowDaysAction,
   type ProcessReturnActionType,
 } from "../mutations";
 
@@ -49,16 +50,22 @@ export function AdminReturnsClient({
   initialReturns,
   initialLang,
   currency,
+  initialReturnWindowDays = 14,
 }: {
   initialReturns: AdminReturnCardItem[];
   initialLang: Lang;
   currency: string;
+  initialReturnWindowDays?: number;
 }) {
   const { lang: ctxLang } = useLanguage();
   const lang = ctxLang ?? initialLang;
   const isEn = lang === "en";
 
   const [items, setItems] = useState<AdminReturnCardItem[]>(initialReturns);
+  const [returnWindowInput, setReturnWindowInput] = useState(
+    String(initialReturnWindowDays),
+  );
+  const [savingWindow, setSavingWindow] = useState(false);
   const [filter, setFilter] = useState<FilterTab>("all");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [notesById, setNotesById] = useState<Record<string, string>>(() => {
@@ -176,6 +183,48 @@ export function AdminReturnsClient({
     }
   }
 
+  async function handleSaveReturnWindow(e: React.FormEvent) {
+    e.preventDefault();
+    const parsed = Math.trunc(Number(returnWindowInput));
+    if (!Number.isSafeInteger(parsed) || parsed < 0 || parsed > 365) {
+      setNotice({
+        kind: "err",
+        text: isEn
+          ? "Enter a return window between 0 and 365 days."
+          : "يرجى إدخال نافذة إرجاع بين 0 و 365 يوماً.",
+      });
+      return;
+    }
+    setSavingWindow(true);
+    setNotice(null);
+    try {
+      const res = await saveReturnWindowDaysAction(parsed);
+      if (!res.ok) {
+        setNotice({
+          kind: "err",
+          text: isEn
+            ? "Could not save return window."
+            : "تعذر حفظ نافذة الإرجاع.",
+        });
+        return;
+      }
+      setReturnWindowInput(String(res.days));
+      setNotice({
+        kind: "ok",
+        text:
+          res.days === 0
+            ? isEn
+              ? "Return window updated: unlimited days after delivery."
+              : "تم تحديث نافذة الإرجاع: بدون حد زمني بعد التسليم."
+            : isEn
+              ? `Return window updated to ${res.days} days after delivery.`
+              : `تم تحديث نافذة الإرجاع إلى ${res.days} يوماً بعد التسليم.`,
+      });
+    } finally {
+      setSavingWindow(false);
+    }
+  }
+
   return (
     <div style={{ display: "grid", gap: "1.25rem", minWidth: 0 }}>
       <div
@@ -203,6 +252,57 @@ export function AdminReturnsClient({
               : "راجع طلبات الإرجاع والاستبدال، أعد الكميات للمخزون تلقائياً، وأودع الاسترداد فوراً في محفظة المتجر."}
           </p>
         </div>
+
+        <form
+          onSubmit={handleSaveReturnWindow}
+          className="card"
+          style={{
+            margin: 0,
+            padding: "0.65rem 0.9rem",
+            display: "flex",
+            alignItems: "center",
+            gap: "0.55rem",
+            flexWrap: "wrap",
+          }}
+        >
+          <Clock3 size={16} style={{ color: "var(--primary)", flexShrink: 0 }} />
+          <label
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.45rem",
+              fontSize: "0.84rem",
+              fontWeight: 600,
+              margin: 0,
+            }}
+          >
+            <span>{isEn ? "Return Window (days):" : "نافذة الإرجاع (أيام):"}</span>
+            <input
+              type="number"
+              min={0}
+              max={365}
+              step={1}
+              dir="ltr"
+              value={returnWindowInput}
+              onChange={(e) => setReturnWindowInput(e.target.value)}
+              style={{ width: "74px", padding: "0.32rem 0.5rem" }}
+              aria-label={isEn ? "Return window in days" : "نافذة الإرجاع بالأيام"}
+            />
+          </label>
+          <button
+            type="submit"
+            disabled={savingWindow}
+            className="btn-compact-admin"
+          >
+            {savingWindow
+              ? isEn
+                ? "Saving…"
+                : "جارٍ الحفظ…"
+              : isEn
+                ? "Save"
+                : "حفظ"}
+          </button>
+        </form>
       </div>
 
       {/* Summary KPI Pills */}

@@ -183,19 +183,21 @@ export function SuperAdminPortal({
           : prev,
       );
 
+      const resolvedEmail =
+        res.ownerEmail || res.pendingOwnerEmail || cleanEmail;
       if (res.mode === "assigned_existing") {
         setHandoverResult({
           kind: "ok",
           text: isEn
-            ? `Linked immediately to ${res.ownerEmail}. They can now sign in at /login and manage this store.`
-            : `تم ربط المتجر فوراً بالحساب ${res.ownerEmail}. يمكن للتاجر تسجيل الدخول الآن من /login لإدارة متجره.`,
+            ? `Linked immediately to ${resolvedEmail}. They can now sign in at /login and manage this store.`
+            : `تم ربط المتجر فوراً بالحساب ${resolvedEmail}. يمكن للتاجر تسجيل الدخول الآن من /login لإدارة متجره.`,
         });
       } else {
         setHandoverResult({
           kind: "pending",
           text: isEn
-            ? `Pending signup for ${res.ownerEmail}. Ownership will be claimed automatically as soon as they register.`
-            : `بانتظار تسجيل ${res.ownerEmail}. سيتم نقل ملكية المتجر تلقائياً فور إنشائه الحساب.`,
+            ? `Pending signup for ${resolvedEmail}. Ownership will be claimed automatically as soon as they register.`
+            : `بانتظار تسجيل ${resolvedEmail}. سيتم نقل ملكية المتجر تلقائياً فور إنشائه الحساب.`,
         });
       }
     });

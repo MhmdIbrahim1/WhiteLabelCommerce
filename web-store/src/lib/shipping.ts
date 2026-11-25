@@ -85,6 +85,19 @@ export function resolveCarrierLabel(
   return custom || presetKey.trim() || null;
 }
 
+export function localizeCarrierLabel(
+  raw: string | null | undefined,
+  lang: "ar" | "en",
+): string {
+  const clean = (raw ?? "").trim();
+  if (!clean) return "";
+  const preset = findCarrierPreset(clean);
+  if (preset) {
+    return lang === "en" ? preset.label_en : preset.label;
+  }
+  return clean;
+}
+
 export function isSafeHttpUrl(raw: string): boolean {
   const trimmed = raw.trim();
   if (!trimmed) return false;
