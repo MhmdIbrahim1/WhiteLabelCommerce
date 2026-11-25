@@ -11,8 +11,10 @@ import {
   STORE_SLUG_COOKIE,
   STORE_SLUG_HEADER,
   STORE_SUBDOMAIN_HEADER,
+  computeMobileAppUnlocked,
   storeHref,
   type ManagedStoreSummary,
+  type MobileAppAccess,
   type ResolvedStore,
   type StorePlan,
   type StoreRecord,
@@ -28,8 +30,10 @@ export {
   STORE_SLUG_COOKIE,
   STORE_SLUG_HEADER,
   STORE_SUBDOMAIN_HEADER,
+  computeMobileAppUnlocked,
   storeHref,
   type ManagedStoreSummary,
+  type MobileAppAccess,
   type ResolvedStore,
   type StorePlan,
   type StoreRecord,
@@ -47,12 +51,14 @@ const FALLBACK_NOVA_STORE: ResolvedStore = {
   max_products: 10000,
   owner_user_id: null,
   subscription_expires_at: null,
+  mobile_app_access: "plan",
+  pending_owner_email: null,
   basePath: "",
   isDefault: true,
 };
 
 const STORE_SELECT =
-  "id,slug,name_ar,name_en,custom_domain,plan,status,max_products,owner_user_id,subscription_expires_at";
+  "id,slug,name_ar,name_en,custom_domain,plan,status,max_products,owner_user_id,subscription_expires_at,mobile_app_access,pending_owner_email";
 
 export function normalizeStoreRecord(
   row: StoreRecord,
@@ -196,10 +202,24 @@ export async function getManagedStores(
 ): Promise<ManagedStoreSummary[]> {
   const { data, error } = await db.rpc("get_my_managed_stores");
   if (!error && Array.isArray(data)) {
-    return (data as ManagedStoreSummary[]).map((s) => ({
-      ...s,
-      max_products: Number(s.max_products ?? 50),
-    }));
+    return (data as ManagedStoreSummary[]).map((s) => {
+      const plan: StorePlan =
+        s.plan === "growth" || s.plan === "enterprise" ? s.plan : "starter";
+      const access: MobileAppAccess =
+        s.mobile_app_access === "enabled" || s.mobile_app_access === "disabled"
+          ? s.mobile_app_access
+          : "plan";
+      return {
+        ...s,
+        plan,
+        max_products: Number(s.max_products ?? 50),
+        mobile_app_access: access,
+        mobile_app_unlocked:
+          typeof s.mobile_app_unlocked === "boolean"
+            ? s.mobile_app_unlocked
+            : computeMobileAppUnlocked(plan, access),
+      };
+    });
   }
 
   // Graceful fallback before migration is applied
@@ -223,6 +243,8 @@ export async function getManagedStores(
       status: "active",
       max_products: 10000,
       role: "owner",
+      mobile_app_access: "plan",
+      mobile_app_unlocked: true,
     },
   ];
 }

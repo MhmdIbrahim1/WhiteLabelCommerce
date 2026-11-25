@@ -18,16 +18,24 @@ import {
   LayoutDashboard,
   CheckCircle2,
   AlertTriangle,
+  Smartphone,
+  Lock,
+  UserPlus,
+  Copy,
+  Check,
+  Clock,
 } from "lucide-react";
 import { date, money } from "@/lib/brand";
 import { localizedText } from "@/lib/i18n";
 import {
   DEFAULT_STORE_ID,
+  type MobileAppAccess,
   type StorePlan,
   type StoreStatus,
 } from "@/lib/tenant-shared";
 import { LanguageToggle, useLanguage } from "@/components/language-provider";
 import {
+  assignStoreOwnerAction,
   openStoreInAdminAction,
   updateStorePlanAndStatusAction,
   type SuperAdminStoreOverview,
@@ -60,6 +68,14 @@ export function SuperAdminPortal({
   const [modalMaxProducts, setModalMaxProducts] = useState<string>("50");
   const [modalExpiresAt, setModalExpiresAt] = useState<string>("");
   const [modalClearExpiry, setModalClearExpiry] = useState<boolean>(false);
+  const [modalMobileAccess, setModalMobileAccess] =
+    useState<MobileAppAccess>("plan");
+  const [handoverEmail, setHandoverEmail] = useState<string>("");
+  const [handoverResult, setHandoverResult] = useState<{
+    kind: "ok" | "pending" | "err";
+    text: string;
+  } | null>(null);
+  const [copiedLoginLink, setCopiedLoginLink] = useState<boolean>(false);
 
   const [feedback, setFeedback] = useState<{
     kind: "ok" | "err";
@@ -102,7 +118,101 @@ export function SuperAdminPortal({
         : "",
     );
     setModalClearExpiry(false);
+    setModalMobileAccess(st.mobile_app_access ?? "plan");
+    setHandoverEmail(st.pending_owner_email || "");
+    setHandoverResult(null);
+    setCopiedLoginLink(false);
     setFeedback(null);
+  };
+
+  const handleAssignOwner = () => {
+    if (!editingStore) return;
+    const cleanEmail = handoverEmail.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      setHandoverResult({
+        kind: "err",
+        text: isEn
+          ? "Please enter a valid merchant email address."
+          : "يرجى إدخال بريد إلكتروني صحيح للتاجر.",
+      });
+      return;
+    }
+
+    const targetId = editingStore.store_id;
+    startTransition(async () => {
+      const res = await assignStoreOwnerAction({
+        storeId: targetId,
+        ownerEmail: cleanEmail,
+      });
+      if (!res.ok) {
+        setHandoverResult({
+          kind: "err",
+          text: isEn
+            ? "Could not assign store owner. Please try again."
+            : "تعذر تعيين مالك المتجر. حاول مرة أخرى.",
+        });
+        return;
+      }
+
+      setStores((prev) =>
+        prev.map((row) =>
+          row.store_id === targetId
+            ? {
+                ...row,
+                owner_email:
+                  res.mode === "assigned_existing"
+                    ? res.ownerEmail
+                    : row.owner_email,
+                owner_user_id: res.ownerUserId ?? row.owner_user_id,
+                pending_owner_email: res.pendingOwnerEmail,
+              }
+            : row,
+        ),
+      );
+      setEditingStore((prev) =>
+        prev && prev.store_id === targetId
+          ? {
+              ...prev,
+              owner_email:
+                res.mode === "assigned_existing"
+                  ? res.ownerEmail
+                  : prev.owner_email,
+              owner_user_id: res.ownerUserId ?? prev.owner_user_id,
+              pending_owner_email: res.pendingOwnerEmail,
+            }
+          : prev,
+      );
+
+      if (res.mode === "assigned_existing") {
+        setHandoverResult({
+          kind: "ok",
+          text: isEn
+            ? `Linked immediately to ${res.ownerEmail}. They can now sign in at /login and manage this store.`
+            : `تم ربط المتجر فوراً بالحساب ${res.ownerEmail}. يمكن للتاجر تسجيل الدخول الآن من /login لإدارة متجره.`,
+        });
+      } else {
+        setHandoverResult({
+          kind: "pending",
+          text: isEn
+            ? `Pending signup for ${res.ownerEmail}. Ownership will be claimed automatically as soon as they register.`
+            : `بانتظار تسجيل ${res.ownerEmail}. سيتم نقل ملكية المتجر تلقائياً فور إنشائه الحساب.`,
+        });
+      }
+    });
+  };
+
+  const handleCopyLoginLink = async () => {
+    const loginUrl =
+      typeof window !== "undefined"
+        ? `${window.location.origin}/login`
+        : "/login";
+    try {
+      await navigator.clipboard.writeText(loginUrl);
+      setCopiedLoginLink(true);
+      setTimeout(() => setCopiedLoginLink(false), 2000);
+    } catch {
+      /* ignore clipboard permission issues */
+    }
   };
 
   const handleSaveModal = (e: React.FormEvent) => {
@@ -123,6 +233,7 @@ export function SuperAdminPortal({
             ? `${modalExpiresAt}T23:59:59Z`
             : null,
         clearExpiry: modalClearExpiry,
+        mobileAppAccess: modalMobileAccess,
       });
 
       if (!res.ok) {
@@ -144,6 +255,8 @@ export function SuperAdminPortal({
                 status: res.updated.status,
                 max_products: res.updated.max_products,
                 subscription_expires_at: res.updated.subscription_expires_at,
+                mobile_app_access: res.updated.mobile_app_access,
+                mobile_app_unlocked: res.updated.mobile_app_unlocked,
               }
             : row,
         ),
@@ -152,8 +265,8 @@ export function SuperAdminPortal({
       setFeedback({
         kind: "ok",
         text: isEn
-          ? "Store plan & limits updated successfully."
-          : "تم تحديث باقة وحدود المتجر بنجاح.",
+          ? "Store plan, limits & Mobile App access updated successfully."
+          : "تم تحديث الباقة والحدود وصلاحية تطبيق الموبايل بنجاح.",
       });
     });
   };
@@ -482,6 +595,15 @@ export function SuperAdminPortal({
                         <div dir="ltr" className="text-xs text-slate-700 font-medium">
                           {st.owner_email || "—"}
                         </div>
+                        {st.pending_owner_email && (
+                          <div className="mt-1 inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+                            <Clock size={11} />
+                            <span>
+                              {isEn ? "Pending:" : "تسليم معلق:"}{" "}
+                              <span dir="ltr">{st.pending_owner_email}</span>
+                            </span>
+                          </div>
+                        )}
                         <div className="text-[11px] text-slate-400 mt-0.5">
                           {date(st.created_at, lang)}
                         </div>
@@ -497,6 +619,28 @@ export function SuperAdminPortal({
                             style={statusBadgeStyle(st.status)}
                           >
                             {statusLabel(st.status)}
+                          </span>
+                          <span
+                            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-bold ${
+                              st.mobile_app_unlocked
+                                ? "border-sky-200 bg-sky-50 text-sky-800"
+                                : "border-slate-200 bg-slate-100 text-slate-600"
+                            }`}
+                          >
+                            {st.mobile_app_unlocked ? (
+                              <Smartphone size={11} />
+                            ) : (
+                              <Lock size={11} />
+                            )}
+                            <span>
+                              {st.mobile_app_unlocked
+                                ? isEn
+                                  ? "App On"
+                                  : "تطبيق مفعّل"
+                                : isEn
+                                  ? "Web Only"
+                                  : "ويب فقط"}
+                            </span>
                           </span>
                         </div>
                         {st.subscription_expires_at && (
@@ -632,22 +776,24 @@ export function SuperAdminPortal({
         </section>
       </div>
 
-      {/* Edit Plan & Limits Modal */}
+      {/* Edit Plan, Mobile App & Merchant Handover Modal */}
       {editingStore && (
         <div
           role="dialog"
           aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-xs"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-xs overflow-y-auto"
           onClick={() => setEditingStore(null)}
         >
           <div
-            className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl space-y-5"
+            className="w-full max-w-lg max-h-[92dvh] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-xl space-y-5"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between gap-2">
               <div>
                 <h2 className="text-lg font-bold text-slate-900 m-0">
-                  {isEn ? "Edit Plan & Limits" : "تعديل الباقة والحدود"}
+                  {isEn
+                    ? "Manage Plan, App & Owner"
+                    : "إدارة الباقة والتطبيق وتسليم المالك"}
                 </h2>
                 <p className="text-xs text-slate-500 m-0">
                   {localizedText(lang, editingStore.name_ar, editingStore.name_en)}{" "}
@@ -703,6 +849,68 @@ export function SuperAdminPortal({
                     );
                   })}
                 </div>
+              </div>
+
+              {/* 3-Way Android App Builder Override */}
+              <div className="space-y-2">
+                <span className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
+                  <Smartphone size={14} />
+                  <span>
+                    {isEn
+                      ? "Android App Builder Access"
+                      : "صلاحية مصنع تطبيق الأندرويد"}
+                  </span>
+                </span>
+                <div className="grid grid-cols-3 gap-2">
+                  {(
+                    [
+                      {
+                        value: "plan",
+                        ar: "حسب الباقة",
+                        en: "Follow Plan",
+                      },
+                      {
+                        value: "enabled",
+                        ar: "تفعيل إجباري",
+                        en: "Force Enabled",
+                      },
+                      {
+                        value: "disabled",
+                        ar: "إيقاف إجباري",
+                        en: "Force Disabled",
+                      },
+                    ] as const
+                  ).map((opt) => {
+                    const active = modalMobileAccess === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setModalMobileAccess(opt.value)}
+                        style={{
+                          width: "100%",
+                          justifyContent: "center",
+                          background: active ? "#0f172a" : "#f8fafc",
+                          color: active ? "#ffffff" : "#334155",
+                          border: active
+                            ? "1px solid #0f172a"
+                            : "1px solid #cbd5e1",
+                          borderRadius: "9px",
+                          padding: "0.52rem 0.45rem",
+                          fontSize: "0.78rem",
+                          fontWeight: 650,
+                        }}
+                      >
+                        {isEn ? opt.en : opt.ar}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-[11px] text-slate-500 m-0">
+                  {isEn
+                    ? "Follow Plan unlocks APK Builder on Growth & Enterprise plans and locks Starter."
+                    : "خيار «حسب الباقة» يفعّل بناء التطبيق لباقات النمو والمؤسسي ويقفله لباقة المبتدئ."}
+                </p>
               </div>
 
               <label>
@@ -767,6 +975,88 @@ export function SuperAdminPortal({
                 </button>
               </div>
             </form>
+
+            {/* Assign Store Owner / Merchant Handover */}
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
+                  <UserPlus size={15} />
+                  <span>
+                    {isEn
+                      ? "Assign Store Owner (Merchant Handover)"
+                      : "تعيين مالك المتجر (تسليم للتاجر)"}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  onClick={handleCopyLoginLink}
+                  style={{
+                    background: "#ffffff",
+                    color: "#0f172a",
+                    border: "1px solid #cbd5e1",
+                    padding: "0.28rem 0.6rem",
+                    borderRadius: "8px",
+                    fontSize: "0.74rem",
+                    fontWeight: 600,
+                  }}
+                >
+                  {copiedLoginLink ? <Check size={13} /> : <Copy size={13} />}
+                  <span>
+                    {copiedLoginLink
+                      ? isEn
+                        ? "Copied /login"
+                        : "تم النسخ"
+                      : isEn
+                        ? "Copy Login Link"
+                        : "نسخ رابط الدخول"}
+                  </span>
+                </button>
+              </div>
+              <p className="text-[11px] text-slate-500 m-0">
+                {isEn
+                  ? "Enter the merchant's email. Existing accounts gain immediate owner access; new emails automatically claim this store on signup."
+                  : "أدخل بريد التاجر الإلكتروني. إذا كان مسجلاً يحصل على ملكية المتجر فوراً، وإلا تُنقل الملكية تلقائياً فور إنشائه الحساب."}
+              </p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="email"
+                  dir="ltr"
+                  value={handoverEmail}
+                  onChange={(e) => setHandoverEmail(e.target.value)}
+                  placeholder="merchant@brand.com"
+                  style={{ flex: 1, fontSize: "0.84rem", background: "#ffffff" }}
+                />
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={handleAssignOwner}
+                  style={{
+                    background: "#0284c7",
+                    color: "#ffffff",
+                    padding: "0.52rem 0.85rem",
+                    borderRadius: "9px",
+                    fontSize: "0.8rem",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {isEn ? "Assign Owner" : "تسليم المتجر"}
+                </button>
+              </div>
+              {handoverResult && (
+                <div
+                  role="status"
+                  className={`rounded-lg border px-3 py-2 text-xs font-semibold ${
+                    handoverResult.kind === "ok"
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                      : handoverResult.kind === "pending"
+                        ? "border-amber-200 bg-amber-50 text-amber-800"
+                        : "border-rose-200 bg-rose-50 text-rose-800"
+                  }`}
+                >
+                  {handoverResult.text}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

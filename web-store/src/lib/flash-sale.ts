@@ -138,6 +138,90 @@ export function filterActiveFlashDeals<
     });
 }
 
+export type CatalogSortKey =
+  | "relevance"
+  | "price_asc"
+  | "price_desc"
+  | "rating"
+  | "newest";
+
+export function filterAndSortCatalogProducts<
+  T extends FlashSalePriceInput & {
+    stock: number;
+    avg_rating?: number | null;
+    review_count?: number | null;
+    created_at?: string | null;
+  },
+>(
+  products: T[],
+  options: {
+    flashOnly?: boolean;
+    inStockOnly?: boolean;
+    minPrice?: number | null;
+    maxPrice?: number | null;
+    sort?: CatalogSortKey;
+  },
+  nowMs: number = Date.now(),
+): T[] {
+  const {
+    flashOnly = false,
+    inStockOnly = false,
+    minPrice = null,
+    maxPrice = null,
+    sort = "relevance",
+  } = options;
+
+  const filtered = products.filter((p) => {
+    if (inStockOnly && Number(p.stock) <= 0) return false;
+    if (flashOnly && !isFlashSaleActive(p, nowMs)) return false;
+    const eff = resolveEffectivePrice(p, nowMs);
+    if (minPrice !== null && Number.isFinite(minPrice) && eff < minPrice) {
+      return false;
+    }
+    if (maxPrice !== null && Number.isFinite(maxPrice) && eff > maxPrice) {
+      return false;
+    }
+    return true;
+  });
+
+  if (sort === "price_asc") {
+    return [...filtered].sort(
+      (a, b) => resolveEffectivePrice(a, nowMs) - resolveEffectivePrice(b, nowMs),
+    );
+  }
+  if (sort === "price_desc") {
+    return [...filtered].sort(
+      (a, b) => resolveEffectivePrice(b, nowMs) - resolveEffectivePrice(a, nowMs),
+    );
+  }
+  if (sort === "rating") {
+    return [...filtered].sort((a, b) => {
+      const rDiff = Number(b.avg_rating ?? 0) - Number(a.avg_rating ?? 0);
+      if (Math.abs(rDiff) > 0.001) return rDiff;
+      return Number(b.review_count ?? 0) - Number(a.review_count ?? 0);
+    });
+  }
+  if (sort === "newest") {
+    return [...filtered].sort((a, b) => {
+      const aTs = a.created_at ? Date.parse(a.created_at) : 0;
+      const bTs = b.created_at ? Date.parse(b.created_at) : 0;
+      return bTs - aTs;
+    });
+  }
+  if (flashOnly) {
+    return [...filtered].sort((a, b) => {
+      const aEnd = a.flash_sale_ends_at
+        ? Date.parse(a.flash_sale_ends_at)
+        : Infinity;
+      const bEnd = b.flash_sale_ends_at
+        ? Date.parse(b.flash_sale_ends_at)
+        : Infinity;
+      return aEnd - bEnd;
+    });
+  }
+  return filtered;
+}
+
 /**
  * Converts an ISO timestamp string to local `YYYY-MM-DDTHH:mm` for `<input type="datetime-local">`.
  */

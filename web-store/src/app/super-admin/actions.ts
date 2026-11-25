@@ -6,6 +6,8 @@ import { revalidatePath } from "next/cache";
 import { requireSuperAdmin } from "@/lib/db";
 import {
   ADMIN_STORE_COOKIE,
+  computeMobileAppUnlocked,
+  type MobileAppAccess,
   type StorePlan,
   type StoreStatus,
 } from "@/lib/tenant-shared";
@@ -21,6 +23,9 @@ export type SuperAdminStoreOverview = {
   max_products: number;
   owner_user_id: string | null;
   owner_email: string;
+  pending_owner_email: string | null;
+  mobile_app_access: MobileAppAccess;
+  mobile_app_unlocked: boolean;
   subscription_expires_at: string | null;
   created_at: string;
   products_count: number;
@@ -40,6 +45,8 @@ export type UpdateStorePlanResult =
         status: StoreStatus;
         max_products: number;
         subscription_expires_at: string | null;
+        mobile_app_access: MobileAppAccess;
+        mobile_app_unlocked: boolean;
       };
     }
   | { ok: false; error: string };
@@ -51,6 +58,7 @@ export async function updateStorePlanAndStatusAction(input: {
   maxProducts?: number | null;
   subscriptionExpiresAt?: string | null;
   clearExpiry?: boolean;
+  mobileAppAccess?: MobileAppAccess | null;
 }): Promise<UpdateStorePlanResult> {
   const { db } = await requireSuperAdmin();
 
@@ -81,6 +89,7 @@ export async function updateStorePlanAndStatusAction(input: {
       p_max_products: parsedMax,
       p_subscription_expires_at: parsedExpiry,
       p_clear_expiry: Boolean(input.clearExpiry),
+      p_mobile_app_access: input.mobileAppAccess ?? null,
     })
     .single<{
       store_id: string;
@@ -89,14 +98,22 @@ export async function updateStorePlanAndStatusAction(input: {
       status: StoreStatus;
       max_products: number;
       subscription_expires_at: string | null;
+      mobile_app_access: MobileAppAccess;
+      mobile_app_unlocked: boolean;
     }>();
 
   if (error || !data) {
     return { ok: false, error: error?.message || "update_failed" };
   }
 
+  const access: MobileAppAccess =
+    data.mobile_app_access === "enabled" || data.mobile_app_access === "disabled"
+      ? data.mobile_app_access
+      : "plan";
+
   revalidatePath("/super-admin");
   revalidatePath("/admin", "layout");
+  revalidatePath("/admin/mobile-app");
   revalidatePath("/", "layout");
 
   return {
@@ -104,7 +121,70 @@ export async function updateStorePlanAndStatusAction(input: {
     updated: {
       ...data,
       max_products: Number(data.max_products ?? 50),
+      mobile_app_access: access,
+      mobile_app_unlocked:
+        typeof data.mobile_app_unlocked === "boolean"
+          ? data.mobile_app_unlocked
+          : computeMobileAppUnlocked(data.plan, access),
     },
+  };
+}
+
+export type AssignStoreOwnerResult =
+  | {
+      ok: true;
+      mode: "assigned_existing" | "pending_signup";
+      ownerEmail: string;
+      ownerUserId: string | null;
+      pendingOwnerEmail: string | null;
+    }
+  | { ok: false; error: string };
+
+export async function assignStoreOwnerAction(input: {
+  storeId: string;
+  ownerEmail: string;
+}): Promise<AssignStoreOwnerResult> {
+  const { db } = await requireSuperAdmin();
+
+  const cleanStoreId = (input.storeId ?? "").trim();
+  const cleanEmail = (input.ownerEmail ?? "").trim().toLowerCase();
+  if (
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      cleanStoreId,
+    )
+  ) {
+    return { ok: false, error: "invalid_store_id" };
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+    return { ok: false, error: "invalid_email" };
+  }
+
+  const { data, error } = await db
+    .rpc("super_admin_assign_store_owner", {
+      p_store_id: cleanStoreId,
+      p_owner_email: cleanEmail,
+    })
+    .single<{
+      store_id: string;
+      owner_email: string;
+      owner_user_id: string | null;
+      pending_owner_email: string | null;
+      mode: "assigned_existing" | "pending_signup";
+    }>();
+
+  if (error || !data) {
+    return { ok: false, error: error?.message || "assign_failed" };
+  }
+
+  revalidatePath("/super-admin");
+  revalidatePath("/admin", "layout");
+
+  return {
+    ok: true,
+    mode: data.mode,
+    ownerEmail: data.owner_email,
+    ownerUserId: data.owner_user_id,
+    pendingOwnerEmail: data.pending_owner_email,
   };
 }
 

@@ -94,7 +94,7 @@ class MainActivity : ComponentActivity() {
             }
 
             LaunchedEffect(Unit) {
-                if (!BuildConfig.ENABLE_GITHUB_UPDATER) {
+                if (!BuildConfig.ENABLE_GITHUB_UPDATER && !BuildConfig.IS_WHITE_LABEL_TENANT) {
                     PlayStoreUpdater.checkAndPromptIfAvailable(context, playStoreUpdateLauncher)
                 }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -151,10 +151,10 @@ class MainActivity : ComponentActivity() {
                     pendingDeepLink = pendingDeepLinkState.value,
                     onConsumeDeepLink = { pendingDeepLinkState.value = null },
                     isDarkTheme = useDarkTheme,
+                    darkThemeOverride = uiState.darkThemeOverride,
                     isSignedIn = uiState.isSignedIn,
-                    onToggleTheme = { mainViewModel.toggleDarkTheme(currentlyDark = useDarkTheme) },
-                    onLanguage = {
-                        val next = if (settings.isRtl) "en" else "ar"
+                    onSetDarkThemePreference = mainViewModel::setDarkThemePreference,
+                    onSelectLanguage = { next ->
                         prefs.edit().putString("language", next).apply()
                         language.value = next
                         mainViewModel.syncPushToken(next)
@@ -162,7 +162,7 @@ class MainActivity : ComponentActivity() {
                     onRefreshStore = mainViewModel::refreshStoreSettings,
                 )
 
-                if (BuildConfig.ENABLE_GITHUB_UPDATER) {
+                if (BuildConfig.ENABLE_GITHUB_UPDATER && !BuildConfig.IS_WHITE_LABEL_TENANT) {
                     AppUpdateDialog(
                         state = updateState,
                         onUpdateNow = {

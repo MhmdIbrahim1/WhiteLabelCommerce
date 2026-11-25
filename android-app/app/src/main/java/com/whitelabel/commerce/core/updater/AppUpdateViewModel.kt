@@ -44,7 +44,7 @@ class AppUpdateViewModel @Inject constructor(
         viewModelScope.launch {
             // Always clean up leftover cached APKs from completed/abandoned updates
             updater.cleanupStaleUpdateFiles()
-            if (BuildConfig.ENABLE_GITHUB_UPDATER) {
+            if (BuildConfig.ENABLE_GITHUB_UPDATER && !BuildConfig.IS_WHITE_LABEL_TENANT) {
                 checkForUpdates()
             }
         }
@@ -91,7 +91,7 @@ class AppUpdateViewModel @Inject constructor(
     }
 
     fun checkForUpdates() {
-        if (!BuildConfig.ENABLE_GITHUB_UPDATER) return
+        if (!BuildConfig.ENABLE_GITHUB_UPDATER || BuildConfig.IS_WHITE_LABEL_TENANT) return
         viewModelScope.launch {
             val release = updater.checkForUpdate()
             if (release != null) {

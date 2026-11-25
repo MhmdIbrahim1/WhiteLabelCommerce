@@ -116,6 +116,12 @@ class MainViewModel @Inject constructor(
         }
     }
 
+    fun setDarkThemePreference(isDark: Boolean?) {
+        viewModelScope.launch {
+            storeRepository.setDarkThemePreference(isDark = isDark)
+        }
+    }
+
     private data class Quad<A, B, C, D>(
         val first: A,
         val second: B,

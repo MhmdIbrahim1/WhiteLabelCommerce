@@ -1,18 +1,20 @@
 package com.whitelabel.commerce.app.navigation
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Notifications
-import androidx.compose.material.icons.rounded.AccountCircle
-import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Favorite
-import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.Notifications
-import androidx.compose.material.icons.rounded.SupportAgent
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Storefront
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -28,8 +30,8 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -39,6 +41,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -79,9 +82,10 @@ fun WhiteLabelAppShell(
     pendingDeepLink: String? = null,
     onConsumeDeepLink: () -> Unit = {},
     isDarkTheme: Boolean,
+    darkThemeOverride: Boolean? = null,
     isSignedIn: Boolean,
-    onToggleTheme: () -> Unit,
-    onLanguage: () -> Unit,
+    onSetDarkThemePreference: (Boolean?) -> Unit,
+    onSelectLanguage: (String) -> Unit,
     onRefreshStore: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -97,6 +101,8 @@ fun WhiteLabelAppShell(
 
     // Cross-tab handoff states
     var pendingCategoryId by remember { mutableStateOf<String?>(null) }
+    var pendingFlashDealsOnly by remember { mutableStateOf(false) }
+    var pendingFocusSearch by remember { mutableStateOf(false) }
     var pendingTrackOrder by remember { mutableStateOf<Triple<String, String, PaymentFlowOutcome?>?>(null) }
 
     fun navigateToTab(route: String) {
@@ -121,11 +127,16 @@ fun WhiteLabelAppShell(
                 pendingCategoryId = categoryPathMatch.groupValues[1]
                 navigateToTab(AppRoutes.CATEGORIES)
             }
+            clean.contains("flash=1", ignoreCase = true) || clean.contains("flash=true", ignoreCase = true) -> {
+                pendingCategoryId = null
+                pendingFlashDealsOnly = true
+                navigateToTab(AppRoutes.CATEGORIES)
+            }
             clean.startsWith("/wishlist") -> navController.navigate(AppRoutes.WISHLIST)
             clean.startsWith("/cart") -> navigateToTab(AppRoutes.CART)
             clean.startsWith("/orders") -> navigateToTab(AppRoutes.ORDERS)
             clean.startsWith("/account") || clean.startsWith("/login") ->
-                navController.navigate(AppRoutes.ACCOUNT)
+                navigateToTab(AppRoutes.ACCOUNT)
             clean.startsWith("/contact") || clean.startsWith("/support") ->
                 navController.navigate(AppRoutes.support())
             else -> {
@@ -176,7 +187,7 @@ fun WhiteLabelAppShell(
                 "Sign in to save items to your wishlist",
             ),
             actionLabel = localized("تسجيل الدخول", "Sign In"),
-            onAction = { navController.navigate(AppRoutes.ACCOUNT) },
+            onAction = { navigateToTab(AppRoutes.ACCOUNT) },
         )
     }
 
@@ -188,19 +199,44 @@ fun WhiteLabelAppShell(
             if (isTopLevelRoute) {
                 TopAppBar(
                     title = {
-                        Text(
-                            text = storeSettings.storeName,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.size(28.dp),
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Storefront,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                }
+                            }
+                            Text(
+                                text = storeSettings.storeName,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     },
                     actions = {
-                        TextButton(onClick = onLanguage) {
-                            Text(
-                                text = if (storeSettings.isRtl) "EN" else "عربي",
-                                fontWeight = FontWeight.Bold,
+                        IconButton(
+                            onClick = {
+                                pendingFocusSearch = true
+                                navigateToTab(AppRoutes.CATEGORIES)
+                            },
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Search,
+                                contentDescription = localized("بحث", "Search"),
                             )
                         }
                         IconButton(onClick = { navController.navigate(AppRoutes.WISHLIST) }) {
@@ -257,32 +293,6 @@ fun WhiteLabelAppShell(
                                     contentDescription = localized("الإشعارات", "Notifications"),
                                 )
                             }
-                        }
-                        IconButton(onClick = { navController.navigate(AppRoutes.ACCOUNT) }) {
-                            Icon(
-                                imageVector = if (isSignedIn) {
-                                    Icons.Rounded.AccountCircle
-                                } else {
-                                    Icons.Outlined.AccountCircle
-                                },
-                                contentDescription = localized("حسابي", "Account"),
-                            )
-                        }
-                        IconButton(onClick = { navController.navigate(AppRoutes.support()) }) {
-                            Icon(
-                                imageVector = Icons.Rounded.SupportAgent,
-                                contentDescription = localized("الدعم الفني", "Support"),
-                            )
-                        }
-                        IconButton(onClick = onToggleTheme) {
-                            Icon(
-                                imageVector = if (isDarkTheme) Icons.Rounded.LightMode else Icons.Rounded.DarkMode,
-                                contentDescription = if (isDarkTheme) {
-                                    localized("الوضع النهاري", "Light mode")
-                                } else {
-                                    localized("الوضع الليلي", "Dark mode")
-                                },
-                            )
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
@@ -372,6 +382,12 @@ fun WhiteLabelAppShell(
                     },
                     onCategoryClick = { categoryId ->
                         pendingCategoryId = categoryId
+                        pendingFlashDealsOnly = false
+                        navigateToTab(AppRoutes.CATEGORIES)
+                    },
+                    onViewAllFlashDeals = {
+                        pendingCategoryId = null
+                        pendingFlashDealsOnly = true
                         navigateToTab(AppRoutes.CATEGORIES)
                     },
                     onHeroRoute = ::handleHeroRoute,
@@ -384,6 +400,10 @@ fun WhiteLabelAppShell(
                 CatalogScreen(
                     initialCategoryId = pendingCategoryId,
                     onConsumeInitialCategory = { pendingCategoryId = null },
+                    initialFlashDealsOnly = pendingFlashDealsOnly,
+                    onConsumeInitialFlashDeals = { pendingFlashDealsOnly = false },
+                    focusSearchRequest = pendingFocusSearch,
+                    onConsumeFocusSearch = { pendingFocusSearch = false },
                     onProductClick = { productId ->
                         navController.navigate(AppRoutes.productDetail(productId))
                     },
@@ -416,7 +436,7 @@ fun WhiteLabelAppShell(
                         navController.navigate(AppRoutes.support(orderId))
                     },
                     onOpenAccount = {
-                        navController.navigate(AppRoutes.ACCOUNT)
+                        navigateToTab(AppRoutes.ACCOUNT)
                     },
                     onShowMessage = { msg -> showSnackbar(msg) },
                     onShowActionMessage = { msg, actionLabel, onAction ->
@@ -435,7 +455,7 @@ fun WhiteLabelAppShell(
                     onProductClick = { nextId ->
                         navController.navigate(AppRoutes.productDetail(nextId))
                     },
-                    onOpenAccount = { navController.navigate(AppRoutes.ACCOUNT) },
+                    onOpenAccount = { navigateToTab(AppRoutes.ACCOUNT) },
                     onShowMessage = { msg -> showSnackbar(msg) },
                     onWishlistSignInPrompt = ::promptSignInForWishlist,
                 )
@@ -444,7 +464,7 @@ fun WhiteLabelAppShell(
             composable(AppRoutes.CHECKOUT) {
                 CheckoutScreen(
                     onBack = { navController.popBackStack() },
-                    onOpenAccount = { navController.navigate(AppRoutes.ACCOUNT) },
+                    onOpenAccount = { navigateToTab(AppRoutes.ACCOUNT) },
                     onTrackOrder = { orderNumber, phone, paymentOutcome ->
                         pendingTrackOrder = Triple(orderNumber, phone, paymentOutcome)
                         navController.popBackStack()
@@ -460,14 +480,21 @@ fun WhiteLabelAppShell(
 
             composable(AppRoutes.ACCOUNT) {
                 AccountScreen(
-                    onBack = { navController.popBackStack() },
+                    onBack = { navigateToTab(AppRoutes.HOME) },
+                    showBackButton = false,
                     onOpenOrders = {
-                        navController.popBackStack()
                         navigateToTab(AppRoutes.ORDERS)
                     },
                     onOpenWishlist = {
                         navController.navigate(AppRoutes.WISHLIST)
                     },
+                    onOpenSupport = {
+                        navController.navigate(AppRoutes.support())
+                    },
+                    darkThemeOverride = darkThemeOverride,
+                    onSetDarkThemePreference = onSetDarkThemePreference,
+                    isRtl = storeSettings.isRtl,
+                    onSelectLanguage = onSelectLanguage,
                     onShowMessage = { msg -> showSnackbar(msg) },
                 )
             }
@@ -483,7 +510,8 @@ fun WhiteLabelAppShell(
                         navigateToTab(AppRoutes.CATEGORIES)
                     },
                     onOpenAccount = {
-                        navController.navigate(AppRoutes.ACCOUNT)
+                        navController.popBackStack()
+                        navigateToTab(AppRoutes.ACCOUNT)
                     },
                     onShowMessage = { msg -> showSnackbar(msg, showCartAction = true) },
                 )

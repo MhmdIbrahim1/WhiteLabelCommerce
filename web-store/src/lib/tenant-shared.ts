@@ -9,6 +9,16 @@ export const STORE_BASE_PATH_HEADER = "x-store-base-path";
 
 export type StorePlan = "starter" | "growth" | "enterprise";
 export type StoreStatus = "active" | "trial" | "suspended";
+export type MobileAppAccess = "plan" | "enabled" | "disabled";
+
+export function computeMobileAppUnlocked(
+  plan: StorePlan,
+  access?: MobileAppAccess | null,
+): boolean {
+  if (access === "enabled") return true;
+  if (access === "disabled") return false;
+  return plan === "growth" || plan === "enterprise";
+}
 
 export type StoreRecord = {
   id: string;
@@ -21,6 +31,8 @@ export type StoreRecord = {
   max_products: number;
   owner_user_id: string | null;
   subscription_expires_at: string | null;
+  mobile_app_access?: MobileAppAccess;
+  pending_owner_email?: string | null;
 };
 
 export type ResolvedStore = StoreRecord & {
@@ -37,6 +49,8 @@ export type ManagedStoreSummary = {
   status: StoreStatus;
   max_products: number;
   role: string;
+  mobile_app_access?: MobileAppAccess;
+  mobile_app_unlocked?: boolean;
 };
 
 const PLATFORM_PREFIXES = [

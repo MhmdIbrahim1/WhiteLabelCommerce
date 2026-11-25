@@ -33,7 +33,10 @@ export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
           managedStores={managedStores}
           isSuperAdmin={isSuperAdmin}
         />
-        <Navigation isSuperAdmin={isSuperAdmin} />
+        <Navigation
+          isSuperAdmin={isSuperAdmin}
+          mobileAppUnlocked={activeStore.mobile_app_unlocked !== false}
+        />
         <form action={logout} className="logout">
           <button>
             <LogOut size={18} /> {t(lang, "navLogout")}

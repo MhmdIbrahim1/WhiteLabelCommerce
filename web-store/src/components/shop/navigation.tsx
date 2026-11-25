@@ -27,6 +27,10 @@ import {
   ShieldCheck,
   PlusCircle,
   Heart,
+  Menu,
+  Headphones,
+  Zap,
+  Check,
 } from "lucide-react";
 import { money } from "@/lib/brand";
 import { localizedText } from "@/lib/i18n";
@@ -67,6 +71,7 @@ export function Navigation({
   const { count: wishlistCount, isSignedIn: wishlistSignedIn } = useWishlist();
   const [searchOpen, setSearchOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<SmartSearchHit[]>([]);
   const [searching, setSearching] = useState(false);
@@ -74,6 +79,22 @@ export function Navigation({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchBoxRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMobileMenuOpen(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [mobileMenuOpen]);
+
+  const toggleTheme = () => {
+    const next =
+      document.documentElement.dataset.shopTheme === "dark" ? "light" : "dark";
+    document.documentElement.dataset.shopTheme = next;
+    localStorage.setItem("shop.theme", next);
+  };
 
   useEffect(() => {
     if (!userMenuOpen) return;
@@ -305,6 +326,34 @@ export function Navigation({
                   role="listbox"
                   aria-label={t("navSearch")}
                 >
+                  <div className="suggest-quick-filters">
+                    <Link
+                      href={href(
+                        `/products?q=${encodeURIComponent(trimmedQuery)}&flash=1`,
+                      )}
+                      className="suggest-hint-chip is-flash"
+                      onClick={() => {
+                        setSearchOpen(false);
+                        setHasSearched(false);
+                      }}
+                    >
+                      <Zap size={11} aria-hidden="true" />
+                      <span>{isEn ? "Flash Deals" : "عروض مؤقتة"}</span>
+                    </Link>
+                    <Link
+                      href={href(
+                        `/products?q=${encodeURIComponent(trimmedQuery)}&in_stock=1`,
+                      )}
+                      className="suggest-hint-chip"
+                      onClick={() => {
+                        setSearchOpen(false);
+                        setHasSearched(false);
+                      }}
+                    >
+                      <Check size={11} aria-hidden="true" />
+                      <span>{isEn ? "In Stock" : "متوفر فقط"}</span>
+                    </Link>
+                  </div>
                   {instantHints.length > 0 && (
                     <div
                       className="suggest-hints"
@@ -428,154 +477,149 @@ export function Navigation({
               )}
             </div>
 
-            <LanguageToggle className="lang-toggle-pill" />
+            <div className="nav-desktop-only">
+              <LanguageToggle className="lang-toggle-pill" />
 
-            {superAdmin === true && (
-              <Link
-                href="/super-admin"
-                className="admin-subtle-link"
-                title={isEn ? "Super Admin" : "إدارة المنصة"}
-              >
-                <ShieldCheck size={15} />
-                <span>{isEn ? "Super Admin" : "إدارة المنصة"}</span>
-              </Link>
-            )}
-
-            {admin === true && (
-              <Link
-                href="/admin"
-                className="admin-subtle-link"
-                title={t("footerAdmin")}
-              >
-                <SlidersHorizontal size={15} />
-                <span>{t("navAdmin")}</span>
-              </Link>
-            )}
-
-            {user ? (
-              <div className="user-menu-wrap" ref={userMenuRef}>
-                <button
-                  type="button"
-                  className="user-menu-trigger"
-                  aria-expanded={userMenuOpen}
-                  aria-haspopup="menu"
-                  onClick={() => setUserMenuOpen((v) => !v)}
+              {superAdmin === true && (
+                <Link
+                  href="/super-admin"
+                  className="admin-subtle-link"
+                  title={isEn ? "Super Admin" : "إدارة المنصة"}
                 >
-                  <UserRound size={15} />
-                  <span className="user-menu-name">{user.name}</span>
-                  <ChevronDown size={13} />
-                </button>
-                {userMenuOpen && (
-                  <div className="user-menu-dropdown" role="menu">
-                    <div className="user-menu-head">
-                      <strong>{user.name}</strong>
-                      <small dir="ltr">{user.email}</small>
-                    </div>
-                    <Link
-                      href={href("/account")}
-                      role="menuitem"
-                      onClick={() => setUserMenuOpen(false)}
-                    >
-                      <UserRound size={15} /> {t("navAccount")}
-                    </Link>
-                    <Link
-                      href={href("/orders")}
-                      role="menuitem"
-                      onClick={() => setUserMenuOpen(false)}
-                    >
-                      <ClipboardList size={15} /> {t("navOrders")}
-                    </Link>
-                    <Link
-                      href={href("/wishlist")}
-                      role="menuitem"
-                      onClick={() => setUserMenuOpen(false)}
-                    >
-                      <Heart size={15} /> {t("navWishlist")}
-                      {wishlistCount > 0 && (
-                        <span className="user-menu-pill-count">
-                          {wishlistCount}
-                        </span>
-                      )}
-                    </Link>
-                    <Link
-                      href="/create-store"
-                      role="menuitem"
-                      onClick={() => setUserMenuOpen(false)}
-                    >
-                      <PlusCircle size={15} />{" "}
-                      {isEn ? "Create Store" : "إنشاء متجر جديد"}
-                    </Link>
-                    {superAdmin === true && (
+                  <ShieldCheck size={15} />
+                  <span>{isEn ? "Super Admin" : "إدارة المنصة"}</span>
+                </Link>
+              )}
+
+              {admin === true && (
+                <Link
+                  href="/admin"
+                  className="admin-subtle-link"
+                  title={t("footerAdmin")}
+                >
+                  <SlidersHorizontal size={15} />
+                  <span>{t("navAdmin")}</span>
+                </Link>
+              )}
+
+              {user ? (
+                <div className="user-menu-wrap" ref={userMenuRef}>
+                  <button
+                    type="button"
+                    className="user-menu-trigger"
+                    aria-expanded={userMenuOpen}
+                    aria-haspopup="menu"
+                    onClick={() => setUserMenuOpen((v) => !v)}
+                  >
+                    <UserRound size={15} />
+                    <span className="user-menu-name">{user.name}</span>
+                    <ChevronDown size={13} />
+                  </button>
+                  {userMenuOpen && (
+                    <div className="user-menu-dropdown" role="menu">
+                      <div className="user-menu-head">
+                        <strong>{user.name}</strong>
+                        <small dir="ltr">{user.email}</small>
+                      </div>
                       <Link
-                        href="/super-admin"
+                        href={href("/account")}
                         role="menuitem"
                         onClick={() => setUserMenuOpen(false)}
                       >
-                        <ShieldCheck size={15} />{" "}
-                        {isEn ? "Super Admin" : "إدارة المنصة"}
+                        <UserRound size={15} /> {t("navAccount")}
                       </Link>
-                    )}
-                    <form action={logout} className="user-menu-logout">
-                      <button type="submit" role="menuitem">
-                        <LogOut size={15} /> {t("navLogout")}
-                      </button>
-                    </form>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <Link
-                href="/login"
-                className="login-nav-pill"
-                aria-label={t("navLogin")}
-              >
-                <LogIn size={15} />
-                <span>{t("navLogin")}</span>
-              </Link>
-            )}
-
-            <button
-              type="button"
-              className="theme-btn icon-ghost-btn"
-              aria-label={t("navThemeToggle")}
-              onClick={() => {
-                const next =
-                  document.documentElement.dataset.shopTheme === "dark"
-                    ? "light"
-                    : "dark";
-                document.documentElement.dataset.shopTheme = next;
-                localStorage.setItem("shop.theme", next);
-              }}
-            >
-              <Sun className="light-icon" size={17} />
-              <Moon className="dark-icon" size={17} />
-            </button>
-
-            <NotificationBell
-              storeId={storeId}
-              userId={user?.id ?? null}
-              scope="customer"
-            />
-
-            <Link
-              href={href("/wishlist")}
-              className="wishlist-nav-btn icon-ghost-btn"
-              aria-label={
-                wishlistSignedIn && wishlistCount > 0
-                  ? `${t("navWishlist")} · ${wishlistCount}`
-                  : t("navWishlist")
-              }
-              title={t("navWishlist")}
-            >
-              <Heart
-                size={18}
-                fill={wishlistSignedIn && wishlistCount > 0 ? "#E11D48" : "none"}
-                stroke={wishlistSignedIn && wishlistCount > 0 ? "#E11D48" : "currentColor"}
-              />
-              {wishlistSignedIn && wishlistCount > 0 && (
-                <span className="wishlist-nav-badge">{wishlistCount}</span>
+                      <Link
+                        href={href("/orders")}
+                        role="menuitem"
+                        onClick={() => setUserMenuOpen(false)}
+                      >
+                        <ClipboardList size={15} /> {t("navOrders")}
+                      </Link>
+                      <Link
+                        href={href("/wishlist")}
+                        role="menuitem"
+                        onClick={() => setUserMenuOpen(false)}
+                      >
+                        <Heart size={15} /> {t("navWishlist")}
+                        {wishlistCount > 0 && (
+                          <span className="user-menu-pill-count">
+                            {wishlistCount}
+                          </span>
+                        )}
+                      </Link>
+                      <Link
+                        href="/create-store"
+                        role="menuitem"
+                        onClick={() => setUserMenuOpen(false)}
+                      >
+                        <PlusCircle size={15} />{" "}
+                        {isEn ? "Create Store" : "إنشاء متجر جديد"}
+                      </Link>
+                      {superAdmin === true && (
+                        <Link
+                          href="/super-admin"
+                          role="menuitem"
+                          onClick={() => setUserMenuOpen(false)}
+                        >
+                          <ShieldCheck size={15} />{" "}
+                          {isEn ? "Super Admin" : "إدارة المنصة"}
+                        </Link>
+                      )}
+                      <form action={logout} className="user-menu-logout">
+                        <button type="submit" role="menuitem">
+                          <LogOut size={15} /> {t("navLogout")}
+                        </button>
+                      </form>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <Link
+                  href="/login"
+                  className="login-nav-pill"
+                  aria-label={t("navLogin")}
+                >
+                  <LogIn size={15} />
+                  <span>{t("navLogin")}</span>
+                </Link>
               )}
-            </Link>
+
+              <button
+                type="button"
+                className="theme-btn icon-ghost-btn"
+                aria-label={t("navThemeToggle")}
+                onClick={toggleTheme}
+              >
+                <Sun className="light-icon" size={17} />
+                <Moon className="dark-icon" size={17} />
+              </button>
+
+              <NotificationBell
+                storeId={storeId}
+                userId={user?.id ?? null}
+                scope="customer"
+              />
+
+              <Link
+                href={href("/wishlist")}
+                className="wishlist-nav-btn icon-ghost-btn"
+                aria-label={
+                  wishlistSignedIn && wishlistCount > 0
+                    ? `${t("navWishlist")} · ${wishlistCount}`
+                    : t("navWishlist")
+                }
+                title={t("navWishlist")}
+              >
+                <Heart
+                  size={18}
+                  fill={wishlistSignedIn && wishlistCount > 0 ? "#E11D48" : "none"}
+                  stroke={wishlistSignedIn && wishlistCount > 0 ? "#E11D48" : "currentColor"}
+                />
+                {wishlistSignedIn && wishlistCount > 0 && (
+                  <span className="wishlist-nav-badge">{wishlistCount}</span>
+                )}
+              </Link>
+            </div>
 
             <Link
               href={href("/cart")}
@@ -590,9 +634,161 @@ export function Navigation({
                 {count}
               </span>
             </Link>
+
+            <button
+              type="button"
+              className="mobile-menu-btn icon-ghost-btn"
+              aria-label={isEn ? "Open menu" : "فتح القائمة"}
+              aria-expanded={mobileMenuOpen}
+              onClick={() => setMobileMenuOpen(true)}
+            >
+              <Menu size={20} />
+            </button>
           </div>
         </div>
       </header>
+
+      {mobileMenuOpen && (
+        <div
+          className="mobile-drawer-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label={isEn ? "Store menu" : "قائمة المتجر"}
+          onClick={() => setMobileMenuOpen(false)}
+        >
+          <div
+            className="mobile-drawer"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mobile-drawer-head">
+              <div className="mobile-drawer-brand">
+                <Store size={17} />
+                <strong>{name}</strong>
+              </div>
+              <button
+                type="button"
+                className="icon-ghost-btn"
+                aria-label={isEn ? "Close menu" : "إغلاق القائمة"}
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {user ? (
+              <div className="mobile-drawer-user">
+                <strong>{user.name}</strong>
+                <small dir="ltr">{user.email}</small>
+              </div>
+            ) : (
+              <Link
+                href="/login"
+                className="mobile-drawer-login-cta"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                <LogIn size={16} />
+                <span>{t("navLogin")}</span>
+              </Link>
+            )}
+
+            <div className="mobile-drawer-section">
+              <Link
+                href={href("/products?flash=1")}
+                className="mobile-drawer-link"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                <Zap size={17} />
+                <span>{isEn ? "Flash Deals" : "العروض المؤقتة"}</span>
+              </Link>
+              <Link
+                href={href("/wishlist")}
+                className="mobile-drawer-link"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                <Heart size={17} />
+                <span>{t("navWishlist")}</span>
+                {wishlistSignedIn && wishlistCount > 0 && (
+                  <span className="user-menu-pill-count">{wishlistCount}</span>
+                )}
+              </Link>
+              {user && (
+                <Link
+                  href={href("/account")}
+                  className="mobile-drawer-link"
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  <UserRound size={17} />
+                  <span>{t("navAccount")}</span>
+                </Link>
+              )}
+              <Link
+                href={href("/orders")}
+                className="mobile-drawer-link"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                <ClipboardList size={17} />
+                <span>{t("navOrders")}</span>
+              </Link>
+              <Link
+                href={href("/contact")}
+                className="mobile-drawer-link"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                <Headphones size={17} />
+                <span>{t("footerContact")}</span>
+              </Link>
+              {admin === true && (
+                <Link
+                  href="/admin"
+                  className="mobile-drawer-link"
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  <SlidersHorizontal size={17} />
+                  <span>{t("footerAdmin")}</span>
+                </Link>
+              )}
+              {superAdmin === true && (
+                <Link
+                  href="/super-admin"
+                  className="mobile-drawer-link"
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  <ShieldCheck size={17} />
+                  <span>{isEn ? "Super Admin" : "إدارة المنصة"}</span>
+                </Link>
+              )}
+            </div>
+
+            <div className="mobile-drawer-prefs">
+              <div className="mobile-drawer-pref-row">
+                <span>{isEn ? "Language" : "اللغة"}</span>
+                <LanguageToggle className="lang-toggle-pill" />
+              </div>
+              <div className="mobile-drawer-pref-row">
+                <span>{isEn ? "Appearance" : "المظهر"}</span>
+                <button
+                  type="button"
+                  className="theme-btn mobile-drawer-theme-btn"
+                  onClick={toggleTheme}
+                >
+                  <Sun className="light-icon" size={15} />
+                  <Moon className="dark-icon" size={15} />
+                  <span>{t("navThemeToggle")}</span>
+                </button>
+              </div>
+            </div>
+
+            {user && (
+              <form action={logout} className="mobile-drawer-logout">
+                <button type="submit">
+                  <LogOut size={16} />
+                  <span>{t("navLogout")}</span>
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
 
       <nav className="bottom" aria-label={t("navHome")}>
         {mobileNav.map(({ href, label, Icon }) => {

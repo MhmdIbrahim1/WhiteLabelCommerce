@@ -42,8 +42,9 @@ class StoreRepositoryImpl @Inject constructor(
         val remoteDto = supabase
             .from("store_settings")
             .select {
-                filter { eq("id", true)
-                    eq("store_id", com.whitelabel.commerce.BuildConfig.STORE_ID) }
+                filter {
+                    eq("store_id", com.whitelabel.commerce.BuildConfig.STORE_ID)
+                }
                 limit(1)
             }
             .decodeList<StoreSettingsDto>()

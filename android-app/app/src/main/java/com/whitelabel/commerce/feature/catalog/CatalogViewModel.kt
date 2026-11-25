@@ -21,19 +21,25 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import kotlin.math.ceil
+import kotlin.math.floor
 
 enum class CatalogSortOption(private val arabicText: String) {
-    NEWEST("الأحدث"),
+    RELEVANCE("الأكثر صلة"),
     PRICE_LOW_TO_HIGH("الأقل سعراً"),
-    PRICE_HIGH_TO_LOW("الأعلى سعراً");
+    PRICE_HIGH_TO_LOW("الأعلى سعراً"),
+    TOP_RATED("الأعلى تقييماً"),
+    NEWEST("الأحدث");
 
     val labelAr: String
         get() = localized(
             arabicText,
             when (this) {
+                RELEVANCE -> "Relevance"
+                PRICE_LOW_TO_HIGH -> "Price: Low to High"
+                PRICE_HIGH_TO_LOW -> "Price: High to Low"
+                TOP_RATED -> "Top Rated"
                 NEWEST -> "Newest"
-                PRICE_LOW_TO_HIGH -> "Lowest price"
-                PRICE_HIGH_TO_LOW -> "Highest price"
             },
         )
 }
@@ -46,17 +52,73 @@ data class CatalogUiState(
     val searchQuery: String = "",
     val instantHints: List<InstantSearchHint> = emptyList(),
     val isClosestSmartMatch: Boolean = false,
-    val sortOption: CatalogSortOption = CatalogSortOption.NEWEST,
+    val sortOption: CatalogSortOption = CatalogSortOption.RELEVANCE,
+    val inStockOnly: Boolean = false,
+    val flashDealsOnly: Boolean = false,
+    val minRating: Double? = null,
+    val priceMin: Double? = null,
+    val priceMax: Double? = null,
     val isLoading: Boolean = true,
     val isRefreshing: Boolean = false,
     val errorMessage: String? = null,
 ) {
-    val displayedProducts: List<Product>
-        get() = when (sortOption) {
-            CatalogSortOption.NEWEST -> rawProducts
-            CatalogSortOption.PRICE_LOW_TO_HIGH -> rawProducts.sortedBy { it.price }
-            CatalogSortOption.PRICE_HIGH_TO_LOW -> rawProducts.sortedByDescending { it.price }
+    val catalogMinPrice: Double
+        get() = rawProducts.minOfOrNull { it.effectivePrice() }?.let { floor(it) } ?: 0.0
+
+    val catalogMaxPrice: Double
+        get() = rawProducts.maxOfOrNull { it.effectivePrice() }?.let { ceil(it) } ?: 0.0
+
+    val hasPriceFilter: Boolean
+        get() = (priceMin != null && priceMin > catalogMinPrice + 0.01) ||
+            (priceMax != null && catalogMaxPrice > 0.0 && priceMax < catalogMaxPrice - 0.01)
+
+    val activeFilterCount: Int
+        get() {
+            var count = 0
+            if (selectedCategoryId != null) count++
+            if (inStockOnly) count++
+            if (flashDealsOnly) count++
+            if (minRating != null) count++
+            if (hasPriceFilter) count++
+            if (sortOption != CatalogSortOption.RELEVANCE) count++
+            return count
         }
+
+    fun filterAndSort(
+        inStock: Boolean = inStockOnly,
+        flashOnly: Boolean = flashDealsOnly,
+        ratingFloor: Double? = minRating,
+        minPrice: Double? = priceMin,
+        maxPrice: Double? = priceMax,
+        sort: CatalogSortOption = sortOption,
+        categoryOverride: String? = selectedCategoryId,
+        nowMillis: Long = System.currentTimeMillis(),
+    ): List<Product> {
+        val filtered = rawProducts.filter { product ->
+            if (categoryOverride != null && selectedCategoryId == null && product.categoryId != categoryOverride) {
+                return@filter false
+            }
+            if (inStock && !product.isInStock) return@filter false
+            if (flashOnly && !product.isFlashSaleActive(nowMillis)) return@filter false
+            if (ratingFloor != null && product.avgRating < ratingFloor) return@filter false
+            val effPrice = product.effectivePrice(nowMillis)
+            if (minPrice != null && effPrice < minPrice - 0.001) return@filter false
+            if (maxPrice != null && effPrice > maxPrice + 0.001) return@filter false
+            true
+        }
+        return when (sort) {
+            CatalogSortOption.RELEVANCE -> filtered
+            CatalogSortOption.PRICE_LOW_TO_HIGH -> filtered.sortedBy { it.effectivePrice(nowMillis) }
+            CatalogSortOption.PRICE_HIGH_TO_LOW -> filtered.sortedByDescending { it.effectivePrice(nowMillis) }
+            CatalogSortOption.TOP_RATED -> filtered.sortedWith(
+                compareByDescending<Product> { it.avgRating }.thenByDescending { it.reviewCount },
+            )
+            CatalogSortOption.NEWEST -> filtered.sortedByDescending { it.createdAt.orEmpty() }
+        }
+    }
+
+    val displayedProducts: List<Product>
+        get() = filterAndSort()
 }
 
 @HiltViewModel
@@ -105,8 +167,26 @@ class CatalogViewModel @Inject constructor(
                     it.slug.equals(categoryIdOrSlug, ignoreCase = true)
             }?.id ?: categoryIdOrSlug
         }
-        if (_uiState.value.selectedCategoryId != resolvedId) {
-            _uiState.update { it.copy(selectedCategoryId = resolvedId) }
+        if (_uiState.value.selectedCategoryId != resolvedId || _uiState.value.flashDealsOnly) {
+            _uiState.update {
+                it.copy(
+                    selectedCategoryId = resolvedId,
+                    flashDealsOnly = false,
+                )
+            }
+            fetchProducts(isPullRefresh = false)
+        }
+    }
+
+    fun applyExternalFlashDealsOnly() {
+        val categoryChanged = _uiState.value.selectedCategoryId != null
+        _uiState.update {
+            it.copy(
+                selectedCategoryId = null,
+                flashDealsOnly = true,
+            )
+        }
+        if (categoryChanged || _uiState.value.rawProducts.isEmpty()) {
             fetchProducts(isPullRefresh = false)
         }
     }
@@ -170,12 +250,74 @@ class CatalogViewModel @Inject constructor(
 
     fun onCategorySelect(categoryId: String?) {
         if (_uiState.value.selectedCategoryId == categoryId) return
-        _uiState.update { it.copy(selectedCategoryId = categoryId) }
+        _uiState.update {
+            it.copy(
+                selectedCategoryId = categoryId,
+                priceMin = null,
+                priceMax = null,
+            )
+        }
         fetchProducts(isPullRefresh = false)
     }
 
     fun onSortSelect(sortOption: CatalogSortOption) {
         _uiState.update { it.copy(sortOption = sortOption) }
+    }
+
+    fun toggleInStockOnly() {
+        _uiState.update { it.copy(inStockOnly = !it.inStockOnly) }
+    }
+
+    fun toggleFlashDealsOnly() {
+        _uiState.update { it.copy(flashDealsOnly = !it.flashDealsOnly) }
+    }
+
+    fun toggleFourStarPlus() {
+        _uiState.update { it.copy(minRating = if (it.minRating != null) null else 4.0) }
+    }
+
+    fun applyBottomSheetFilters(
+        sortOption: CatalogSortOption,
+        categoryId: String?,
+        inStockOnly: Boolean,
+        flashDealsOnly: Boolean,
+        minRating: Double?,
+        priceMin: Double?,
+        priceMax: Double?,
+    ) {
+        val categoryChanged = _uiState.value.selectedCategoryId != categoryId
+        _uiState.update {
+            it.copy(
+                sortOption = sortOption,
+                selectedCategoryId = categoryId,
+                inStockOnly = inStockOnly,
+                flashDealsOnly = flashDealsOnly,
+                minRating = minRating,
+                priceMin = priceMin,
+                priceMax = priceMax,
+            )
+        }
+        if (categoryChanged) {
+            fetchProducts(isPullRefresh = false)
+        }
+    }
+
+    fun resetAllFilters() {
+        val hadCategory = _uiState.value.selectedCategoryId != null
+        _uiState.update {
+            it.copy(
+                selectedCategoryId = null,
+                sortOption = CatalogSortOption.RELEVANCE,
+                inStockOnly = false,
+                flashDealsOnly = false,
+                minRating = null,
+                priceMin = null,
+                priceMax = null,
+            )
+        }
+        if (hadCategory) {
+            fetchProducts(isPullRefresh = false)
+        }
     }
 
     fun quickAddToCart(product: Product) {

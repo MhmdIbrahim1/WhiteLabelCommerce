@@ -63,7 +63,13 @@ import com.whitelabel.commerce.core.designsystem.localized
 @Composable
 fun AuthScreen(
     form: AuthFormState,
+    showBackButton: Boolean = true,
     onBack: () -> Unit,
+    onOpenSupport: () -> Unit = {},
+    darkThemeOverride: Boolean? = null,
+    onSetDarkThemePreference: (Boolean?) -> Unit = {},
+    isRtl: Boolean = true,
+    onSelectLanguage: (String) -> Unit = {},
     onSelectTab: (AuthTab) -> Unit,
     onSelectPasswordMode: (PasswordAuthMode) -> Unit,
     onOtpEmailChange: (String) -> Unit,
@@ -86,27 +92,29 @@ fun AuthScreen(
         modifier = modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = localized("تسجيل الدخول / حسابي", "Sign In / Account"),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                            contentDescription = localized("رجوع", "Back"),
+            if (showBackButton) {
+                TopAppBar(
+                    title = {
+                        Text(
+                            text = localized("تسجيل الدخول / حسابي", "Sign In / Account"),
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
                         )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    titleContentColor = MaterialTheme.colorScheme.onSurface,
-                ),
-            )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                contentDescription = localized("رجوع", "Back"),
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        titleContentColor = MaterialTheme.colorScheme.onSurface,
+                    ),
+                )
+            }
         },
     ) { innerPadding ->
         Column(
@@ -442,6 +450,15 @@ fun AuthScreen(
                     }
                 }
             }
+
+            // Preferences & Support available to guests without signing in
+            PreferencesAndSupportCard(
+                darkThemeOverride = darkThemeOverride,
+                onSetDarkThemePreference = onSetDarkThemePreference,
+                isRtl = isRtl,
+                onSelectLanguage = onSelectLanguage,
+                onOpenSupport = onOpenSupport,
+            )
 
             // Reassurance note keeping Guest Checkout 100% open
             Surface(

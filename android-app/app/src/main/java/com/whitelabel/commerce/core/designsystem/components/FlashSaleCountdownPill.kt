@@ -115,6 +115,7 @@ fun FlashSaleCountdownPill(
                     ),
                     color = Color(0xFFF8FAFC),
                     maxLines = 1,
+                    softWrap = false,
                 )
             }
         }

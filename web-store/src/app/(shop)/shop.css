@@ -4423,3 +4423,241 @@
     flex: 0 0 232px;
   }
 }
+
+/* =========================================================
+   Phase 11B: Mobile Header Declutter, Slide-Over Drawer & Catalog Quick Pills
+   ========================================================= */
+.shop .nav-desktop-only {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.shop .mobile-menu-btn {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .shop .nav-desktop-only {
+    display: none !important;
+  }
+
+  .shop .mobile-menu-btn {
+    display: inline-grid;
+  }
+
+  .shop .search-trigger-label {
+    display: none;
+  }
+
+  .shop .search-trigger-pill {
+    width: 38px;
+    padding: 0;
+    justify-content: center;
+  }
+}
+
+.shop .mobile-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(4px);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.shop .mobile-drawer {
+  width: min(320px, 86vw);
+  height: 100dvh;
+  background: var(--surface);
+  color: var(--ink);
+  border-inline-start: 1px solid var(--line);
+  padding: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  overflow-y: auto;
+  box-shadow: -12px 0 36px rgba(15, 23, 42, 0.18);
+}
+
+.shop .mobile-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.shop .mobile-drawer-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1rem;
+}
+
+.shop .mobile-drawer-user {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--primary) 8%, var(--wash));
+  border: 1px solid var(--line);
+}
+
+.shop .mobile-drawer-user small {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.shop .mobile-drawer-login-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.72rem 1rem;
+  border-radius: 12px;
+  background: var(--primary);
+  color: var(--primary-ink, #fff);
+  font-weight: 650;
+  font-size: 0.92rem;
+}
+
+.shop .mobile-drawer-section {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.shop .mobile-drawer-link {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.68rem 0.75rem;
+  border-radius: 10px;
+  color: var(--ink);
+  font-weight: 550;
+  font-size: 0.93rem;
+}
+
+.shop .mobile-drawer-link:hover {
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+}
+
+.shop .mobile-drawer-prefs {
+  margin-top: auto;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 0.75rem;
+}
+
+.shop .mobile-drawer-pref-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.shop .mobile-drawer-theme-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.42rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--wash);
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.shop .mobile-drawer-logout button {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0.68rem 1rem;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, #e11d48 28%, var(--line));
+  background: color-mix(in srgb, #e11d48 8%, transparent);
+  color: #be123c;
+  font-weight: 650;
+  font-size: 0.88rem;
+}
+
+.shop .suggest-quick-filters {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  padding: 0.35rem 0.55rem 0.45rem;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 0.25rem;
+}
+
+.shop .suggest-quick-filters .suggest-hint-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.76rem;
+}
+
+.shop .suggest-quick-filters .suggest-hint-chip.is-flash {
+  color: #be123c;
+  border-color: rgba(225, 29, 72, 0.3);
+  background: rgba(225, 29, 72, 0.08);
+}
+
+.shop .catalog-quick-pills {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding-bottom: 0.35rem;
+  margin-bottom: 0.9rem;
+  scrollbar-width: thin;
+}
+
+.shop .catalog-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.42rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 0.84rem;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+.shop .catalog-pill:hover {
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--line));
+}
+
+.shop .catalog-pill.is-active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-ink, #fff);
+}
+
+.shop .catalog-pill.is-active.is-flash {
+  background: #be123c;
+  border-color: #be123c;
+  color: #ffffff;
+}
+
+.shop .catalog-pill.is-clear {
+  background: transparent;
+  color: var(--muted);
+  border-style: dashed;
+}

@@ -63,7 +63,7 @@ class GitHubReleaseUpdater @Inject constructor(
         currentVersionCode: Int = BuildConfig.VERSION_CODE,
         currentVersionName: String = BuildConfig.VERSION_NAME,
     ): AvailableUpdate? = withContext(Dispatchers.IO) {
-        if (!BuildConfig.ENABLE_GITHUB_UPDATER) return@withContext null
+        if (!BuildConfig.ENABLE_GITHUB_UPDATER || BuildConfig.IS_WHITE_LABEL_TENANT) return@withContext null
 
         val cleanRepo = githubRepo.trim().trim('/')
         if (cleanRepo.isEmpty() ||

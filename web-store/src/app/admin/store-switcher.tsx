@@ -188,27 +188,29 @@ export function AdminStoreSwitcher({
           <ExternalLink size={13} />
           <span>{isEn ? "View Store" : "معاينة المتجر"}</span>
         </Link>
-        <Link
-          href="/create-store"
-          style={{
-            flex: 1,
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: "0.3rem",
-            fontSize: "0.76rem",
-            padding: "0.42rem 0.55rem",
-            borderRadius: "8px",
-            border: "1px solid rgba(255, 255, 255, 0.35)",
-            background: "rgba(255, 255, 255, 0.22)",
-            color: "#ffffff",
-            textDecoration: "none",
-            whiteSpace: "nowrap",
-          }}
-        >
-          <PlusCircle size={13} />
-          <span>{isEn ? "Create Store" : "متجر جديد"}</span>
-        </Link>
+        {canSwitch && (
+          <Link
+            href="/create-store"
+            style={{
+              flex: 1,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "0.3rem",
+              fontSize: "0.76rem",
+              padding: "0.42rem 0.55rem",
+              borderRadius: "8px",
+              border: "1px solid rgba(255, 255, 255, 0.35)",
+              background: "rgba(255, 255, 255, 0.22)",
+              color: "#ffffff",
+              textDecoration: "none",
+              whiteSpace: "nowrap",
+            }}
+          >
+            <PlusCircle size={13} />
+            <span>{isEn ? "Create Store" : "متجر جديد"}</span>
+          </Link>
+        )}
       </div>
     </div>
   );

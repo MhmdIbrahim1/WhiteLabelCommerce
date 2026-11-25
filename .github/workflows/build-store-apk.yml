@@ -1,0 +1,301 @@
+name: White-Label Store APK Builder
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_id:
+        description: "UUID row in public.store_app_builds"
+        required: true
+        type: string
+      store_id:
+        description: "Tenant store UUID"
+        required: true
+        type: string
+      store_slug:
+        description: "Tenant store URL slug"
+        required: true
+        type: string
+      app_name:
+        description: "Android launcher display name"
+        required: true
+        type: string
+      app_id_suffix:
+        description: "Application ID suffix (e.g. .myshop)"
+        required: true
+        type: string
+      icon_url:
+        description: "Optional HTTPS app icon URL (PNG/JPG/WEBP)"
+        required: false
+        default: ""
+        type: string
+      version_code:
+        description: "Build versionCode (integer >= 1)"
+        required: false
+        default: "1"
+        type: string
+      version_name:
+        description: "Build versionName (e.g. 1.0.0)"
+        required: false
+        default: "1.0.0"
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: store-apk-build-${{ inputs.store_id }}
+  cancel-in-progress: false
+
+jobs:
+  build-store-apk:
+    name: Build White-Label APK (${{ inputs.store_slug }})
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Mark build as building in Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          BUILD_ID: ${{ inputs.build_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "::warning::SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY secret missing; skipping status PATCH."
+            exit 0
+          fi
+          python3 - << 'PY'
+          import json, os, urllib.request
+          url = f"{os.environ['SUPABASE_URL'].rstrip('/')}/rest/v1/store_app_builds?id=eq.{os.environ['BUILD_ID']}"
+          payload = json.dumps({
+              "status": "building",
+              "github_run_url": os.environ["RUN_URL"],
+              "error_message": None,
+          }).encode("utf-8")
+          req = urllib.request.Request(
+              url,
+              data=payload,
+              method="PATCH",
+              headers={
+                  "apikey": os.environ["SUPABASE_SERVICE_ROLE_KEY"],
+                  "Authorization": f"Bearer {os.environ['SUPABASE_SERVICE_ROLE_KEY']}",
+                  "Content-Type": "application/json",
+                  "Prefer": "return=minimal",
+              },
+          )
+          with urllib.request.urlopen(req, timeout=20) as resp:
+              print("Marked build as building:", resp.status)
+          PY
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        run: |
+          SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" --install "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-home-cache-cleanup: true
+
+      - name: Decode permanent release keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 secret is required."
+            exit 1
+          fi
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android-app/release.keystore
+          echo "KEYSTORE_FILE=release.keystore" >> "$GITHUB_ENV"
+
+      - name: Prepare custom launcher icon (optional)
+        env:
+          ICON_URL: ${{ inputs.icon_url }}
+        run: |
+          if [ -z "$ICON_URL" ]; then
+            echo "No custom icon URL provided; using default launcher icon."
+            exit 0
+          fi
+          python3 -m pip install --quiet pillow || true
+          python3 - << 'PY'
+          import io, os, urllib.request
+          url = os.environ.get("ICON_URL", "").strip()
+          if not url.startswith("https://"):
+              print("Skipping non-HTTPS icon URL.")
+              raise SystemExit(0)
+          try:
+              from PIL import Image
+              req = urllib.request.Request(url, headers={"User-Agent": "WhiteLabelCommerce-Builder/1.0"})
+              with urllib.request.urlopen(req, timeout=20) as resp:
+                  data = resp.read()
+              img = Image.open(io.BytesIO(data)).convert("RGBA")
+              # Center-crop to square
+              side = min(img.width, img.height)
+              left = (img.width - side) // 2
+              top = (img.height - side) // 2
+              img = img.crop((left, top, left + side, top + side))
+
+              densities = {
+                  "mipmap-mdpi": 48,
+                  "mipmap-hdpi": 72,
+                  "mipmap-xhdpi": 96,
+                  "mipmap-xxhdpi": 144,
+                  "mipmap-xxxhdpi": 192,
+              }
+              res_root = "android-app/app/src/main/res"
+              # Remove adaptive XML overrides so PNG launcher icons take effect cleanly
+              for xml_name in ("ic_launcher.xml", "ic_launcher_round.xml"):
+                  xml_path = os.path.join(res_root, "mipmap-anydpi-v26", xml_name)
+                  if os.path.exists(xml_path):
+                      os.remove(xml_path)
+              for folder, px in densities.items():
+                  out_dir = os.path.join(res_root, folder)
+                  os.makedirs(out_dir, exist_ok=True)
+                  resized = img.resize((px, px), Image.Resampling.LANCZOS)
+                  resized.save(os.path.join(out_dir, "ic_launcher.png"), "PNG")
+                  resized.save(os.path.join(out_dir, "ic_launcher_round.png"), "PNG")
+              print("Applied custom merchant launcher icon across all mipmap densities.")
+          except Exception as e:
+              print(f"::warning::Failed to apply custom icon (falling back to default): {e}")
+          PY
+
+      - name: Build Signed White-Label Tenant APK
+        working-directory: android-app
+        env:
+          CI: "true"
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          GITHUB_REPO: ${{ github.repository }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          WEB_STORE_BASE_URL: ${{ secrets.WEB_STORE_BASE_URL || vars.WEB_STORE_BASE_URL }}
+          STORE_ID_INPUT: ${{ inputs.store_id }}
+          APP_NAME_INPUT: ${{ inputs.app_name }}
+          APP_SUFFIX_INPUT: ${{ inputs.app_id_suffix }}
+          VERSION_CODE_INPUT: ${{ inputs.version_code }}
+          VERSION_NAME_INPUT: ${{ inputs.version_name }}
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleGithubRelease \
+            -PstoreId="$STORE_ID_INPUT" \
+            -PstoreName="$APP_NAME_INPUT" \
+            -PappIdSuffix="$APP_SUFFIX_INPUT" \
+            -PVERSION_CODE="$VERSION_CODE_INPUT" \
+            -PVERSION_NAME="$VERSION_NAME_INPUT" \
+            --no-daemon
+
+      - name: Package & verify signed white-label APK
+        env:
+          STORE_SLUG: ${{ inputs.store_slug }}
+          VERSION_CODE_INPUT: ${{ inputs.version_code }}
+          VERSION_NAME_INPUT: ${{ inputs.version_name }}
+        run: |
+          APK_SOURCE=$(find android-app/app/build/outputs/apk/github/release -maxdepth 1 -name "*.apk" | head -n 1)
+          if [ -z "$APK_SOURCE" ]; then
+            echo "::error::No release APK generated."
+            exit 1
+          fi
+          mkdir -p dist
+          APK_FILENAME="${STORE_SLUG}-v${VERSION_NAME_INPUT}-b${VERSION_CODE_INPUT}-release.apk"
+          RELEASE_APK="dist/${APK_FILENAME}"
+          cp "$APK_SOURCE" "$RELEASE_APK"
+          RELEASE_TAG="store-${STORE_SLUG}-b${VERSION_CODE_INPUT}"
+          echo "RELEASE_APK=${RELEASE_APK}" >> "$GITHUB_ENV"
+          echo "APK_FILENAME=${APK_FILENAME}" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=${RELEASE_TAG}" >> "$GITHUB_ENV"
+          ls -lh "$RELEASE_APK"
+
+      - name: Publish isolated prerelease (NEVER overwrites main Latest)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: "${{ inputs.app_name }} (${{ inputs.store_slug }}) v${{ inputs.version_name }} #${{ inputs.version_code }}"
+          prerelease: true
+          make_latest: false
+          files: |
+            ${{ env.RELEASE_APK }}
+
+      - name: Mark build succeeded in Supabase
+        if: success()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          BUILD_ID: ${{ inputs.build_id }}
+          DOWNLOAD_URL: https://github.com/${{ github.repository }}/releases/download/${{ env.RELEASE_TAG }}/${{ env.APK_FILENAME }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            exit 0
+          fi
+          python3 - << 'PY'
+          import datetime, json, os, urllib.request
+          now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+          url = f"{os.environ['SUPABASE_URL'].rstrip('/')}/rest/v1/store_app_builds?id=eq.{os.environ['BUILD_ID']}"
+          payload = json.dumps({
+              "status": "succeeded",
+              "apk_download_url": os.environ["DOWNLOAD_URL"],
+              "error_message": None,
+              "updated_at": now_iso,
+              "completed_at": now_iso,
+          }).encode("utf-8")
+          req = urllib.request.Request(
+              url,
+              data=payload,
+              method="PATCH",
+              headers={
+                  "apikey": os.environ["SUPABASE_SERVICE_ROLE_KEY"],
+                  "Authorization": f"Bearer {os.environ['SUPABASE_SERVICE_ROLE_KEY']}",
+                  "Content-Type": "application/json",
+                  "Prefer": "return=minimal",
+              },
+          )
+          with urllib.request.urlopen(req, timeout=20) as resp:
+              print("Marked build succeeded:", resp.status)
+          PY
+
+      - name: Mark build failed in Supabase
+        if: failure()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          BUILD_ID: ${{ inputs.build_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            exit 0
+          fi
+          python3 - << 'PY'
+          import datetime, json, os, urllib.request
+          now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+          url = f"{os.environ['SUPABASE_URL'].rstrip('/')}/rest/v1/store_app_builds?id=eq.{os.environ['BUILD_ID']}"
+          payload = json.dumps({
+              "status": "failed",
+              "github_run_url": os.environ["RUN_URL"],
+              "error_message": "APK build failed in GitHub Actions. Check run logs for details.",
+              "updated_at": now_iso,
+              "completed_at": now_iso,
+          }).encode("utf-8")
+          req = urllib.request.Request(
+              url,
+              data=payload,
+              method="PATCH",
+              headers={
+                  "apikey": os.environ["SUPABASE_SERVICE_ROLE_KEY"],
+                  "Authorization": f"Bearer {os.environ['SUPABASE_SERVICE_ROLE_KEY']}",
+                  "Content-Type": "application/json",
+                  "Prefer": "return=minimal",
+              },
+          )
+          with urllib.request.urlopen(req, timeout=20) as resp:
+              print("Marked build failed:", resp.status)
+          PY

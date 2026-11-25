@@ -13,6 +13,8 @@ import {
   Palette,
   Settings,
   ShieldCheck,
+  Smartphone,
+  Lock,
   Star,
 } from "lucide-react";
 import { useLanguage } from "@/components/language-provider";
@@ -23,6 +25,7 @@ const sections: {
   key: DictKey;
   icon: typeof LayoutDashboard;
   tourId?: string;
+  isMobileApp?: boolean;
 }[] = [
   { url: "/admin", key: "adminOverview", icon: LayoutDashboard },
   { url: "/admin/products", key: "adminProducts", icon: Boxes, tourId: "nav-products" },
@@ -33,20 +36,23 @@ const sections: {
   { url: "/admin/notifications", key: "adminNotifications", icon: BellRing },
   { url: "/admin/tickets", key: "adminTickets", icon: MessagesSquare },
   { url: "/admin/customizer", key: "adminCustomizer", icon: Palette, tourId: "nav-customizer" },
+  { url: "/admin/mobile-app", key: "adminMobileApp", icon: Smartphone, isMobileApp: true },
   { url: "/admin/settings", key: "adminSettings", icon: Settings, tourId: "nav-settings" },
 ];
 
 export default function Navigation({
   isSuperAdmin = false,
+  mobileAppUnlocked = true,
 }: {
   isSuperAdmin?: boolean;
+  mobileAppUnlocked?: boolean;
 }) {
   const path = usePathname();
   const { lang, t } = useLanguage();
   const isEn = lang === "en";
   return (
     <nav aria-label="Admin navigation">
-      {sections.map(({ url, key, icon: Icon, tourId }) => {
+      {sections.map(({ url, key, icon: Icon, tourId, isMobileApp }) => {
         const active =
           path === url || (url !== "/admin" && path.startsWith(url + "/"));
         return (
@@ -57,7 +63,26 @@ export default function Navigation({
             aria-current={active ? "page" : undefined}
           >
             <Icon size={19} />
-            {t(key)}
+            <span style={{ flex: 1 }}>{t(key)}</span>
+            {isMobileApp && !mobileAppUnlocked && (
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "0.2rem",
+                  fontSize: "0.66rem",
+                  fontWeight: 700,
+                  padding: "0.12rem 0.42rem",
+                  borderRadius: "999px",
+                  background: "rgba(251, 191, 36, 0.2)",
+                  color: "#fde68a",
+                  border: "1px solid rgba(251, 191, 36, 0.38)",
+                }}
+              >
+                <Lock size={10} />
+                PRO
+              </span>
+            )}
           </Link>
         );
       })}

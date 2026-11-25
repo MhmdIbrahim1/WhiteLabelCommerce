@@ -17,24 +17,32 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.rounded.LightMode
+import androidx.compose.material.icons.rounded.NorthEast
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Phone
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Save
+import androidx.compose.material.icons.rounded.SettingsBrightness
 import androidx.compose.material.icons.rounded.SouthWest
-import androidx.compose.material.icons.rounded.NorthEast
+import androidx.compose.material.icons.rounded.SupportAgent
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -72,6 +80,12 @@ fun AccountScreen(
     onBack: () -> Unit,
     onOpenOrders: () -> Unit,
     onOpenWishlist: () -> Unit = {},
+    onOpenSupport: () -> Unit = {},
+    darkThemeOverride: Boolean? = null,
+    onSetDarkThemePreference: (Boolean?) -> Unit = {},
+    isRtl: Boolean = true,
+    onSelectLanguage: (String) -> Unit = {},
+    showBackButton: Boolean = true,
     onShowMessage: (String) -> Unit,
     modifier: Modifier = Modifier,
     viewModel: AccountViewModel = hiltViewModel(),
@@ -93,7 +107,13 @@ fun AccountScreen(
         AuthSessionState.SignedOut -> {
             AuthScreen(
                 form = state.authForm,
+                showBackButton = showBackButton,
                 onBack = onBack,
+                onOpenSupport = onOpenSupport,
+                darkThemeOverride = darkThemeOverride,
+                onSetDarkThemePreference = onSetDarkThemePreference,
+                isRtl = isRtl,
+                onSelectLanguage = onSelectLanguage,
                 onSelectTab = viewModel::selectAuthTab,
                 onSelectPasswordMode = viewModel::selectPasswordMode,
                 onOtpEmailChange = viewModel::onOtpEmailChange,
@@ -126,42 +146,44 @@ fun AccountScreen(
                 modifier = modifier.fillMaxSize(),
                 containerColor = MaterialTheme.colorScheme.background,
                 topBar = {
-                    TopAppBar(
-                        title = {
-                            Text(
-                                text = localized("حسابي", "My Account"),
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold,
-                            )
-                        },
-                        navigationIcon = {
-                            IconButton(onClick = onBack) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                                    contentDescription = localized("رجوع", "Back"),
+                    if (showBackButton) {
+                        TopAppBar(
+                            title = {
+                                Text(
+                                    text = localized("حسابي", "My Account"),
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold,
                                 )
-                            }
-                        },
-                        actions = {
-                            IconButton(
-                                onClick = {
-                                    viewModel.signOut {
-                                        onShowMessage(localized("تم تسجيل الخروج", "Signed out"))
-                                    }
-                                },
-                            ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Rounded.Logout,
-                                    contentDescription = localized("تسجيل الخروج", "Sign Out"),
-                                    tint = MaterialTheme.colorScheme.error,
-                                )
-                            }
-                        },
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.surface,
-                            titleContentColor = MaterialTheme.colorScheme.onSurface,
-                        ),
-                    )
+                            },
+                            navigationIcon = {
+                                IconButton(onClick = onBack) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                        contentDescription = localized("رجوع", "Back"),
+                                    )
+                                }
+                            },
+                            actions = {
+                                IconButton(
+                                    onClick = {
+                                        viewModel.signOut {
+                                            onShowMessage(localized("تم تسجيل الخروج", "Signed out"))
+                                        }
+                                    },
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Rounded.Logout,
+                                        contentDescription = localized("تسجيل الخروج", "Sign Out"),
+                                        tint = MaterialTheme.colorScheme.error,
+                                    )
+                                }
+                            },
+                            colors = TopAppBarDefaults.topAppBarColors(
+                                containerColor = MaterialTheme.colorScheme.surface,
+                                titleContentColor = MaterialTheme.colorScheme.onSurface,
+                            ),
+                        )
+                    }
                 },
             ) { innerPadding ->
                 Column(
@@ -230,7 +252,16 @@ fun AccountScreen(
                         }
                     }
 
-                    // 1a. Cloud Wishlist Shortcut Card
+                    // 1a. Preferences & Support Card (Appearance, Language, Customer Support)
+                    PreferencesAndSupportCard(
+                        darkThemeOverride = darkThemeOverride,
+                        onSetDarkThemePreference = onSetDarkThemePreference,
+                        isRtl = isRtl,
+                        onSelectLanguage = onSelectLanguage,
+                        onOpenSupport = onOpenSupport,
+                    )
+
+                    // 1b. Cloud Wishlist Shortcut Card
                     Card(
                         onClick = onOpenWishlist,
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -502,6 +533,206 @@ fun AccountScreen(
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun PreferencesAndSupportCard(
+    darkThemeOverride: Boolean?,
+    onSetDarkThemePreference: (Boolean?) -> Unit,
+    isRtl: Boolean,
+    onSelectLanguage: (String) -> Unit,
+    onOpenSupport: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val brandColors = LocalBrandColors.current
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, brandColors.hairline),
+        shape = MaterialTheme.shapes.medium,
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text(
+                text = localized("التفضيلات والدعم", "Preferences & Support"),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+
+            // Appearance (Light / Dark / System)
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = localized("المظهر", "Appearance"),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    FilterChip(
+                        selected = darkThemeOverride == false,
+                        onClick = { onSetDarkThemePreference(false) },
+                        label = { Text(localized("فاتح", "Light"), maxLines = 1) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.LightMode,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            selectedLabelColor = MaterialTheme.colorScheme.primary,
+                            selectedLeadingIconColor = MaterialTheme.colorScheme.primary,
+                        ),
+                        modifier = Modifier.weight(1f),
+                    )
+                    FilterChip(
+                        selected = darkThemeOverride == true,
+                        onClick = { onSetDarkThemePreference(true) },
+                        label = { Text(localized("داكن", "Dark"), maxLines = 1) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.DarkMode,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            selectedLabelColor = MaterialTheme.colorScheme.primary,
+                            selectedLeadingIconColor = MaterialTheme.colorScheme.primary,
+                        ),
+                        modifier = Modifier.weight(1f),
+                    )
+                    FilterChip(
+                        selected = darkThemeOverride == null,
+                        onClick = { onSetDarkThemePreference(null) },
+                        label = { Text(localized("تلقائي", "System"), maxLines = 1) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.SettingsBrightness,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            selectedLabelColor = MaterialTheme.colorScheme.primary,
+                            selectedLeadingIconColor = MaterialTheme.colorScheme.primary,
+                        ),
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+
+            // Language (Arabic / English)
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = localized("اللغة", "Language"),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    FilterChip(
+                        selected = isRtl,
+                        onClick = { onSelectLanguage("ar") },
+                        label = { Text("العربية", maxLines = 1) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.Language,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            selectedLabelColor = MaterialTheme.colorScheme.primary,
+                            selectedLeadingIconColor = MaterialTheme.colorScheme.primary,
+                        ),
+                        modifier = Modifier.weight(1f),
+                    )
+                    FilterChip(
+                        selected = !isRtl,
+                        onClick = { onSelectLanguage("en") },
+                        label = { Text("English", maxLines = 1) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.Language,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            selectedLabelColor = MaterialTheme.colorScheme.primary,
+                            selectedLeadingIconColor = MaterialTheme.colorScheme.primary,
+                        ),
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+
+            HorizontalDivider(color = brandColors.hairline)
+
+            // Customer Support Row
+            Surface(
+                onClick = onOpenSupport,
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                shape = MaterialTheme.shapes.small,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.size(38.dp),
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Rounded.SupportAgent,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = localized("خدمة العملاء والدعم", "Customer Support"),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            text = localized(
+                                "تواصل معنا لمتابعة طلباتك أو أي استفسار",
+                                "Reach us for order help or inquiries",
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
         }

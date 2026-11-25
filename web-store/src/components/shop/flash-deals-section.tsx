@@ -40,7 +40,7 @@ export function FlashDealsSection({
           <h2>{isEn ? "Flash Deals" : "عروض مؤقتة"}</h2>
         </div>
         <Link
-          href={storeHref(basePath, "/products")}
+          href={storeHref(basePath, "/products?flash=1")}
           className="section-more-link"
         >
           <span>{isEn ? "View All" : "عرض الكل"}</span>

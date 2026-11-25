@@ -103,6 +103,7 @@ import kotlin.math.absoluteValue
 fun HomeScreen(
     onProductClick: (String) -> Unit,
     onCategoryClick: (String?) -> Unit,
+    onViewAllFlashDeals: () -> Unit = { onCategoryClick(null) },
     onHeroRoute: (String) -> Unit,
     onShowMessage: (String) -> Unit,
     onWishlistSignInPrompt: () -> Unit = {},
@@ -310,7 +311,7 @@ fun HomeScreen(
                                             )
                                         }
                                     }
-                                    TextButton(onClick = { onCategoryClick(null) }) {
+                                    TextButton(onClick = onViewAllFlashDeals) {
                                         Text(localized("عرض الكل", "View all"))
                                     }
                                 }

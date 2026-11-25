@@ -11,7 +11,14 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
-if (file("google-services.json").exists()) {
+val resolvedAppIdSuffix = (
+    (project.findProperty("appIdSuffix") as? String)
+        ?: (project.findProperty("APP_ID_SUFFIX") as? String)
+)?.trim()?.trim('"')?.takeIf { it.isNotEmpty() }?.let { raw ->
+    if (raw.startsWith(".")) raw else ".$raw"
+}
+
+if (file("google-services.json").exists() && resolvedAppIdSuffix == null) {
     apply(plugin = "com.google.gms.google-services")
 }
 
@@ -102,13 +109,6 @@ val resolvedStoreName = (
         ?: (project.findProperty("STORE_NAME") as? String)
 )?.trim()?.trim('"')?.takeIf { it.isNotEmpty() } ?: "Nova Store"
 
-val resolvedAppIdSuffix = (
-    (project.findProperty("appIdSuffix") as? String)
-        ?: (project.findProperty("APP_ID_SUFFIX") as? String)
-)?.trim()?.trim('"')?.takeIf { it.isNotEmpty() }?.let { raw ->
-    if (raw.startsWith(".")) raw else ".$raw"
-}
-
 android {
     namespace = "com.whitelabel.commerce"
     compileSdk = 35
@@ -132,6 +132,7 @@ android {
         }
 
         buildConfigField("String", "STORE_ID", "\"$resolvedStoreId\"")
+        buildConfigField("Boolean", "IS_WHITE_LABEL_TENANT", if (resolvedAppIdSuffix != null) "true" else "false")
         buildConfigField("String", "WEB_STORE_BASE_URL", "\"${resolveConfigValue("WEB_STORE_BASE_URL", "http://10.0.2.2:3000")}\"")
         buildConfigField(
             type = "String",
