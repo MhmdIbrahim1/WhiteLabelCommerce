@@ -64,12 +64,14 @@ jobs:
             exit 0
           fi
           python3 - << 'PY'
-          import json, os, urllib.request
+          import datetime, json, os, urllib.request
+          now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
           url = f"{os.environ['SUPABASE_URL'].rstrip('/')}/rest/v1/store_app_builds?id=eq.{os.environ['BUILD_ID']}"
           payload = json.dumps({
               "status": "building",
               "github_run_url": os.environ["RUN_URL"],
               "error_message": None,
+              "updated_at": now_iso,
           }).encode("utf-8")
           req = urllib.request.Request(
               url,
@@ -80,6 +82,7 @@ jobs:
                   "Authorization": f"Bearer {os.environ['SUPABASE_SERVICE_ROLE_KEY']}",
                   "Content-Type": "application/json",
                   "Prefer": "return=minimal",
+                  "User-Agent": "WhiteLabelCommerce-CI/1.0",
               },
           )
           with urllib.request.urlopen(req, timeout=20) as resp:
@@ -257,6 +260,7 @@ jobs:
                   "Authorization": f"Bearer {os.environ['SUPABASE_SERVICE_ROLE_KEY']}",
                   "Content-Type": "application/json",
                   "Prefer": "return=minimal",
+                  "User-Agent": "WhiteLabelCommerce-CI/1.0",
               },
           )
           with urllib.request.urlopen(req, timeout=20) as resp:
@@ -294,6 +298,7 @@ jobs:
                   "Authorization": f"Bearer {os.environ['SUPABASE_SERVICE_ROLE_KEY']}",
                   "Content-Type": "application/json",
                   "Prefer": "return=minimal",
+                  "User-Agent": "WhiteLabelCommerce-CI/1.0",
               },
           )
           with urllib.request.urlopen(req, timeout=20) as resp:

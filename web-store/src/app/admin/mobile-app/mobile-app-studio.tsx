@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Smartphone,
@@ -25,12 +26,40 @@ import {
   Upload,
   Link2,
   Trash2,
+  Sun,
+  Moon,
+  Palette,
+  Zap,
+  Star,
+  Plus,
+  Package,
 } from "lucide-react";
 import { useLanguage } from "@/components/language-provider";
-import { date } from "@/lib/brand";
+import { date, money } from "@/lib/brand";
+import { localizedText } from "@/lib/i18n";
+import {
+  getFlashSavingsPercent,
+  isFlashSaleActive,
+  resolveEffectivePrice,
+} from "@/lib/flash-sale";
 import { generateQrSvg } from "@/lib/qr-svg";
 import type { MobileAppAccess, StorePlan } from "@/lib/tenant-shared";
 import type { StoreAppBuildRow } from "@/app/api/admin/mobile-builds/route";
+
+export type PreviewProduct = {
+  id: string;
+  name: string;
+  name_en: string | null;
+  price: number;
+  old_price: number | null;
+  flash_sale_price: number | null;
+  flash_sale_starts_at: string | null;
+  flash_sale_ends_at: string | null;
+  stock: number;
+  imageUrl: string | null;
+  avg_rating: number;
+  review_count: number;
+};
 
 type StudioStoreProps = {
   storeId: string;
@@ -41,86 +70,166 @@ type StudioStoreProps = {
   mobileAppAccess: MobileAppAccess;
   logoUrl: string;
   primaryColor: string;
+  primaryText: string;
   secondaryColor: string;
+  pageBg: string;
+  cardSurface: string;
+  borderRadius: number;
+  currency: string;
   packageId: string;
   whatsappNumber: string;
   supportEmail: string;
 };
 
-function formatFileSize(bytes: number | null): string {
-  if (!bytes || bytes <= 0) return "";
-  const mb = bytes / (1024 * 1024);
-  return `${mb.toFixed(1)} MB`;
+type StorePreviewProps = {
+  heroVisible: boolean;
+  heroImageUrl: string | null;
+  heroOverlayOpacity: number;
+  heroGradientStart: string;
+  heroGradientEnd: string;
+  heroTextColor: string;
+  heroBadgeVisible: boolean;
+  heroBadgeAr: string;
+  heroBadgeEn: string;
+  heroTitleAr: string;
+  heroTitleEn: string;
+  heroSubtitleAr: string;
+  heroSubtitleEn: string;
+  heroCtaVisible: boolean;
+  heroCtaAr: string;
+  heroCtaEn: string;
+  announcementText: string;
+  products: PreviewProduct[];
+};
+
+function safeHex(color: string | null | undefined, fallback: string): string {
+  return color && /^#[0-9a-fA-F]{6}$/.test(color) ? color : fallback;
 }
 
 function AndroidPhoneMockup({
   appName,
   iconUrl,
-  primaryColor,
+  store,
+  preview,
   isEn,
+  darkMode,
   locked = false,
 }: {
   appName: string;
   iconUrl: string;
-  primaryColor: string;
+  store: StudioStoreProps;
+  preview: StorePreviewProps;
   isEn: boolean;
+  darkMode: boolean;
   locked?: boolean;
 }) {
-  const safeAccent = /^#[0-9a-fA-F]{6}$/.test(primaryColor)
-    ? primaryColor
-    : "#0f172a";
+  const lang = isEn ? "en" : "ar";
+  const primary = safeHex(store.primaryColor, "#0f172a");
+  const primaryText = safeHex(store.primaryText, "#ffffff");
+  const accent = safeHex(store.secondaryColor, "#0284c7");
+  const radius = Math.max(6, Math.min(20, Number(store.borderRadius ?? 12)));
+
+  const screenBg = darkMode ? "#0b1120" : safeHex(store.pageBg, "#f8fafc");
+  const surfaceBg = darkMode ? "#131c31" : safeHex(store.cardSurface, "#ffffff");
+  const ink = darkMode ? "#f8fafc" : "#0f172a";
+  const muted = darkMode ? "#94a3b8" : "#64748b";
+  const hairline = darkMode ? "rgba(148, 163, 184, 0.18)" : "#e2e8f0";
+
+  const heroTitle =
+    (isEn ? preview.heroTitleEn : preview.heroTitleAr).trim() ||
+    (isEn ? preview.heroTitleAr : preview.heroTitleEn).trim() ||
+    appName ||
+    (isEn ? store.nameEn : store.nameAr);
+  const heroSubtitle =
+    (isEn ? preview.heroSubtitleEn : preview.heroSubtitleAr).trim() ||
+    (isEn ? preview.heroSubtitleAr : preview.heroSubtitleEn).trim();
+  const heroBadge =
+    (isEn ? preview.heroBadgeEn : preview.heroBadgeAr).trim() ||
+    (isEn ? preview.heroBadgeAr : preview.heroBadgeEn).trim() ||
+    (isEn ? "Curated Collection" : "تشكيلة مختارة");
+  const heroCta =
+    (isEn ? preview.heroCtaEn : preview.heroCtaAr).trim() ||
+    (isEn ? preview.heroCtaAr : preview.heroCtaEn).trim() ||
+    (isEn ? "Shop Now" : "تسوّق الآن");
+  const overlayAlpha = Math.max(0.15, Math.min(0.8, (preview.heroOverlayOpacity ?? 45) / 100));
+
   return (
     <div
       style={{
-        width: "268px",
+        width: "296px",
+        maxWidth: "100%",
         marginInline: "auto",
-        borderRadius: "34px",
+        borderRadius: "36px",
         padding: "10px",
-        background: "linear-gradient(145deg, #0f172a, #1e293b)",
-        boxShadow: "0 20px 50px rgba(15, 23, 42, 0.22)",
+        background: "linear-gradient(155deg, #0f172a, #1e293b)",
+        boxShadow: "0 22px 54px rgba(15, 23, 42, 0.24)",
         position: "relative",
       }}
     >
-      {/* Notch / Camera pill */}
+      {/* Top Speaker / Camera Pill */}
       <div
         style={{
-          width: "74px",
-          height: "14px",
+          width: "76px",
+          height: "13px",
           borderRadius: "999px",
           background: "#020617",
           margin: "2px auto 8px",
         }}
       />
-      {/* Phone Screen */}
+
+      {/* Screen Container */}
       <div
+        dir={isEn ? "ltr" : "rtl"}
         style={{
-          borderRadius: "24px",
-          background: "#f8fafc",
-          overflow: "hidden",
-          minHeight: "430px",
+          borderRadius: "26px",
+          background: screenBg,
+          color: ink,
+          height: "510px",
           display: "flex",
           flexDirection: "column",
-          border: "1px solid rgba(15, 23, 42, 0.08)",
+          overflow: "hidden",
+          border: `1px solid ${hairline}`,
         }}
       >
-        {/* Clean Decluttered Top App Bar Preview */}
+        {/* Optional Customizer Announcement / Promo Strip */}
+        {preview.announcementText && (
+          <div
+            style={{
+              background: accent,
+              color: "#ffffff",
+              fontSize: "0.64rem",
+              fontWeight: 700,
+              textAlign: "center",
+              padding: "4px 8px",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {preview.announcementText}
+          </div>
+        )}
+
+        {/* Decluttered Android Top App Bar */}
         <div
           style={{
-            background: "#ffffff",
-            padding: "11px 12px",
+            background: surfaceBg,
+            padding: "10px 12px",
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
             gap: "8px",
-            borderBottom: "1px solid #e2e8f0",
+            borderBottom: `1px solid ${hairline}`,
+            flexShrink: 0,
           }}
         >
           <div
             style={{
               display: "flex",
               alignItems: "center",
-              gap: "7px",
+              gap: "8px",
               minWidth: 0,
+              flex: 1,
             }}
           >
             {iconUrl ? (
@@ -129,9 +238,9 @@ function AndroidPhoneMockup({
                 src={iconUrl}
                 alt={appName}
                 style={{
-                  width: "24px",
-                  height: "24px",
-                  borderRadius: "7px",
+                  width: "26px",
+                  height: "26px",
+                  borderRadius: "8px",
                   objectFit: "cover",
                   flexShrink: 0,
                 }}
@@ -139,12 +248,12 @@ function AndroidPhoneMockup({
             ) : (
               <span
                 style={{
-                  width: "24px",
-                  height: "24px",
-                  borderRadius: "7px",
-                  background: safeAccent,
-                  color: "#ffffff",
-                  fontSize: "0.72rem",
+                  width: "26px",
+                  height: "26px",
+                  borderRadius: "8px",
+                  background: primary,
+                  color: primaryText,
+                  fontSize: "0.75rem",
                   fontWeight: 800,
                   display: "inline-grid",
                   placeItems: "center",
@@ -156,22 +265,22 @@ function AndroidPhoneMockup({
             )}
             <strong
               style={{
-                fontSize: "0.82rem",
-                color: "#0f172a",
+                fontSize: "0.84rem",
+                color: ink,
                 whiteSpace: "nowrap",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
               }}
             >
-              {appName || (isEn ? "Your Store" : "متجرك")}
+              {appName || (isEn ? store.nameEn : store.nameAr)}
             </strong>
           </div>
           <div
             style={{
               display: "flex",
               alignItems: "center",
-              gap: "8px",
-              color: safeAccent,
+              gap: "9px",
+              color: darkMode ? "#e2e8f0" : primary,
               flexShrink: 0,
             }}
           >
@@ -181,99 +290,334 @@ function AndroidPhoneMockup({
           </div>
         </div>
 
-        {/* Hero Banner Preview */}
-        <div style={{ padding: "12px", display: "grid", gap: "10px", flex: 1 }}>
+        {/* Scrollable Storefront Body */}
+        <div
+          style={{
+            flex: 1,
+            overflowY: "auto",
+            padding: "10px",
+            display: "grid",
+            gap: "10px",
+            alignContent: "start",
+          }}
+        >
+          {/* Real Customizer Hero Banner */}
+          {preview.heroVisible && (
+            <div
+              style={{
+                position: "relative",
+                borderRadius: `${radius}px`,
+                overflow: "hidden",
+                minHeight: "136px",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "flex-end",
+                padding: "12px",
+                background: `linear-gradient(135deg, ${safeHex(preview.heroGradientStart, primary)}, ${safeHex(preview.heroGradientEnd, accent)})`,
+                color: safeHex(preview.heroTextColor, "#ffffff"),
+              }}
+            >
+              {preview.heroImageUrl && (
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={preview.heroImageUrl}
+                    alt={heroTitle}
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      width: "100%",
+                      height: "100%",
+                      objectFit: "cover",
+                    }}
+                  />
+                  <div
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      background: `linear-gradient(180deg, rgba(10,15,28,${(overlayAlpha * 0.65).toFixed(2)}), rgba(10,15,28,${overlayAlpha.toFixed(2)}))`,
+                    }}
+                  />
+                </>
+              )}
+              <div style={{ position: "relative", zIndex: 1, display: "grid", gap: "5px" }}>
+                {preview.heroBadgeVisible && heroBadge && (
+                  <span
+                    style={{
+                      display: "inline-block",
+                      width: "fit-content",
+                      background: "rgba(255,255,255,0.2)",
+                      backdropFilter: "blur(4px)",
+                      fontSize: "0.62rem",
+                      fontWeight: 700,
+                      padding: "2px 8px",
+                      borderRadius: "999px",
+                    }}
+                  >
+                    {heroBadge}
+                  </span>
+                )}
+                <strong style={{ fontSize: "0.92rem", lineHeight: 1.25 }}>
+                  {heroTitle}
+                </strong>
+                {heroSubtitle && (
+                  <span
+                    style={{
+                      fontSize: "0.66rem",
+                      opacity: 0.9,
+                      lineHeight: 1.35,
+                      display: "-webkit-box",
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: "vertical",
+                      overflow: "hidden",
+                    }}
+                  >
+                    {heroSubtitle}
+                  </span>
+                )}
+                {preview.heroCtaVisible && (
+                  <span
+                    style={{
+                      display: "inline-block",
+                      width: "fit-content",
+                      background: "#ffffff",
+                      color: primary,
+                      fontSize: "0.67rem",
+                      fontWeight: 750,
+                      padding: "4px 10px",
+                      borderRadius: `${Math.min(radius, 999)}px`,
+                      marginTop: "2px",
+                    }}
+                  >
+                    {heroCta}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Real Products Header */}
           <div
             style={{
-              borderRadius: "14px",
-              padding: "14px",
-              background: `linear-gradient(135deg, ${safeAccent}, #1e293b)`,
-              color: "#ffffff",
-              display: "grid",
-              gap: "6px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              paddingInline: "2px",
             }}
           >
-            <span
-              style={{
-                fontSize: "0.65rem",
-                fontWeight: 700,
-                opacity: 0.85,
-                textTransform: "uppercase",
-              }}
-            >
-              {isEn ? "Native Android App" : "تطبيق أندرويد أصلي"}
-            </span>
-            <strong style={{ fontSize: "0.95rem", lineHeight: 1.25 }}>
-              {appName || (isEn ? "Your Brand" : "علامتك التجارية")}
+            <strong style={{ fontSize: "0.76rem", color: ink }}>
+              {isEn ? "Latest Products" : "أحدث المنتجات"}
             </strong>
-            <span
-              style={{
-                display: "inline-block",
-                width: "fit-content",
-                background: "#ffffff",
-                color: safeAccent,
-                fontSize: "0.68rem",
-                fontWeight: 700,
-                padding: "4px 10px",
-                borderRadius: "999px",
-                marginTop: "2px",
-              }}
-            >
-              {isEn ? "Shop Now" : "تسوّق الآن"}
+            <span style={{ fontSize: "0.64rem", color: muted, fontWeight: 600 }}>
+              {preview.products.length > 0
+                ? isEn
+                  ? `${preview.products.length} live`
+                  : `${preview.products.length} منتجات`
+                : isEn
+                  ? "Live catalog"
+                  : "الكتالوج"}
             </span>
           </div>
 
-          {/* Product Grid Skeleton Preview */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
-            {[0, 1].map((idx) => (
-              <div
-                key={idx}
-                style={{
-                  borderRadius: "12px",
-                  background: "#ffffff",
-                  border: "1px solid #e2e8f0",
-                  padding: "8px",
-                  display: "grid",
-                  gap: "6px",
-                }}
-              >
-                <div
-                  style={{
-                    height: "68px",
-                    borderRadius: "8px",
-                    background:
-                      idx === 0
-                        ? "linear-gradient(135deg, #f1f5f9, #e2e8f0)"
-                        : "linear-gradient(135deg, #fef2f2, #ffe4e6)",
-                  }}
-                />
-                <div
-                  style={{
-                    height: "8px",
-                    width: "75%",
-                    borderRadius: "4px",
-                    background: "#cbd5e1",
-                  }}
-                />
-                <div
-                  style={{
-                    height: "8px",
-                    width: "45%",
-                    borderRadius: "4px",
-                    background: safeAccent,
-                    opacity: 0.75,
-                  }}
-                />
-              </div>
-            ))}
-          </div>
+          {/* Real 2-Column Store Products Grid */}
+          {preview.products.length > 0 ? (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: "8px",
+              }}
+            >
+              {preview.products.map((p) => {
+                const title = localizedText(lang, p.name, p.name_en);
+                const flashOn = isFlashSaleActive(p);
+                const flashPct = flashOn ? getFlashSavingsPercent(p) : null;
+                const effPrice = resolveEffectivePrice(p);
+                const strikePrice = flashOn
+                  ? p.price
+                  : p.old_price && p.old_price > p.price
+                    ? p.old_price
+                    : null;
 
-          {/* App Launcher Icon Pill */}
+                return (
+                  <div
+                    key={p.id}
+                    style={{
+                      borderRadius: `${Math.min(radius, 14)}px`,
+                      background: surfaceBg,
+                      border: `1px solid ${hairline}`,
+                      overflow: "hidden",
+                      display: "flex",
+                      flexDirection: "column",
+                    }}
+                  >
+                    <div
+                      style={{
+                        position: "relative",
+                        aspectRatio: "4 / 4.2",
+                        background: darkMode ? "#1e293b" : "#f1f5f9",
+                        display: "grid",
+                        placeItems: "center",
+                        overflow: "hidden",
+                      }}
+                    >
+                      {p.imageUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={p.imageUrl}
+                          alt={title}
+                          style={{
+                            width: "100%",
+                            height: "100%",
+                            objectFit: "cover",
+                          }}
+                        />
+                      ) : (
+                        <Package size={20} style={{ color: muted, opacity: 0.6 }} />
+                      )}
+
+                      {flashPct && (
+                        <span
+                          style={{
+                            position: "absolute",
+                            top: "5px",
+                            insetInlineStart: "5px",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "2px",
+                            background: "#be123c",
+                            color: "#ffffff",
+                            fontSize: "0.58rem",
+                            fontWeight: 800,
+                            padding: "2px 5px",
+                            borderRadius: "999px",
+                          }}
+                        >
+                          <Zap size={9} />-{flashPct}%
+                        </span>
+                      )}
+
+                      {p.review_count > 0 && (
+                        <span
+                          style={{
+                            position: "absolute",
+                            bottom: "5px",
+                            insetInlineStart: "5px",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "2px",
+                            background: "rgba(15, 23, 42, 0.78)",
+                            color: "#fbbf24",
+                            fontSize: "0.58rem",
+                            fontWeight: 700,
+                            padding: "1px 5px",
+                            borderRadius: "999px",
+                          }}
+                        >
+                          <Star size={8} fill="#fbbf24" />
+                          {p.avg_rating.toFixed(1)}
+                        </span>
+                      )}
+                    </div>
+
+                    <div
+                      style={{
+                        padding: "7px",
+                        display: "grid",
+                        gap: "4px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: "0.68rem",
+                          fontWeight: 700,
+                          color: ink,
+                          lineHeight: 1.25,
+                          display: "-webkit-box",
+                          WebkitLineClamp: 1,
+                          WebkitBoxOrient: "vertical",
+                          overflow: "hidden",
+                        }}
+                      >
+                        {title}
+                      </div>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: "4px",
+                        }}
+                      >
+                        <div style={{ display: "grid", lineHeight: 1.15 }}>
+                          <span
+                            style={{
+                              fontSize: "0.68rem",
+                              fontWeight: 800,
+                              color: flashOn
+                                ? "#e11d48"
+                                : darkMode
+                                  ? "#38bdf8"
+                                  : primary,
+                            }}
+                          >
+                            {money(effPrice, store.currency, lang)}
+                          </span>
+                          {strikePrice && (
+                            <del
+                              style={{
+                                fontSize: "0.56rem",
+                                color: muted,
+                              }}
+                            >
+                              {money(strikePrice, store.currency, lang)}
+                            </del>
+                          )}
+                        </div>
+                        <span
+                          style={{
+                            width: "20px",
+                            height: "20px",
+                            borderRadius: "999px",
+                            background: primary,
+                            color: primaryText,
+                            display: "inline-grid",
+                            placeItems: "center",
+                            flexShrink: 0,
+                          }}
+                        >
+                          <Plus size={11} />
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div
+              style={{
+                borderRadius: `${Math.min(radius, 12)}px`,
+                background: surfaceBg,
+                border: `1px dashed ${hairline}`,
+                padding: "14px 10px",
+                textAlign: "center",
+                fontSize: "0.7rem",
+                color: muted,
+              }}
+            >
+              {isEn
+                ? "Add products in Catalog to see them live inside your app preview."
+                : "أضف منتجاتك في قسم المنتجات لتظهر مباشرةً داخل معاينة التطبيق."}
+            </div>
+          )}
+
+          {/* Launcher Identity Card */}
           <div
             style={{
-              borderRadius: "12px",
-              background: "#ffffff",
-              border: "1px solid #e2e8f0",
+              borderRadius: `${Math.min(radius, 12)}px`,
+              background: surfaceBg,
+              border: `1px solid ${hairline}`,
               padding: "8px 10px",
               display: "flex",
               alignItems: "center",
@@ -285,11 +629,11 @@ function AndroidPhoneMockup({
                 width: "32px",
                 height: "32px",
                 borderRadius: "9px",
-                background: safeAccent,
+                background: primary,
                 overflow: "hidden",
                 display: "grid",
                 placeItems: "center",
-                color: "#fff",
+                color: primaryText,
                 flexShrink: 0,
               }}
             >
@@ -309,41 +653,44 @@ function AndroidPhoneMockup({
                 style={{
                   fontSize: "0.72rem",
                   fontWeight: 700,
-                  color: "#0f172a",
+                  color: ink,
                   whiteSpace: "nowrap",
                   overflow: "hidden",
                   textOverflow: "ellipsis",
                 }}
               >
-                {appName}
+                {appName || (isEn ? store.nameEn : store.nameAr)}
               </div>
-              <div style={{ fontSize: "0.64rem", color: "#64748b" }}>
+              <div style={{ fontSize: "0.62rem", color: muted }}>
                 {locked
                   ? isEn
                     ? "Preview · Upgrade to build APK"
                     : "معاينة · قم بالترقية لبناء التطبيق"
                   : isEn
-                    ? "Live synced with your catalog"
-                    : "متزامن لحظياً مع منتجات متجرك"}
+                    ? "Synced live with Customizer & Catalog"
+                    : "متزامن مع التصميم ومنتجات متجرك"}
               </div>
             </div>
           </div>
         </div>
 
-        {/* Bottom Nav Bar Preview */}
+        {/* Bottom 5-Tab Navigation Bar */}
         <div
           style={{
-            background: "#ffffff",
-            borderTop: "1px solid #e2e8f0",
-            padding: "8px 14px",
+            background: surfaceBg,
+            borderTop: `1px solid ${hairline}`,
+            padding: "8px 12px",
             display: "flex",
             justifyContent: "space-between",
             fontSize: "0.62rem",
-            color: "#64748b",
-            fontWeight: 600,
+            color: muted,
+            fontWeight: 650,
+            flexShrink: 0,
           }}
         >
-          <span style={{ color: safeAccent }}>{isEn ? "Home" : "الرئيسية"}</span>
+          <span style={{ color: darkMode ? "#38bdf8" : primary }}>
+            {isEn ? "Home" : "الرئيسية"}
+          </span>
           <span>{isEn ? "Shop" : "الأقسام"}</span>
           <span>{isEn ? "Bag" : "السلة"}</span>
           <span>{isEn ? "Orders" : "طلباتي"}</span>
@@ -400,12 +747,14 @@ function QrCodeCard({ url, isEn }: { url: string; isEn: boolean }) {
 
 export function MobileAppStudio({
   store,
+  preview,
   unlocked,
   isSuperAdmin,
   githubConfigured,
   initialBuilds,
 }: {
   store: StudioStoreProps;
+  preview: StorePreviewProps;
   unlocked: boolean;
   isSuperAdmin: boolean;
   githubConfigured: boolean;
@@ -422,6 +771,7 @@ export function MobileAppStudio({
   const [uploadedIconPath, setUploadedIconPath] = useState<string | null>(null);
   const [showUrlInput, setShowUrlInput] = useState(false);
   const [uploadingIcon, setUploadingIcon] = useState(false);
+  const [previewDarkMode, setPreviewDarkMode] = useState(false);
   const [iconFeedback, setIconFeedback] = useState<{
     kind: "ok" | "err";
     text: string;
@@ -584,9 +934,10 @@ export function MobileAppStudio({
           kind: resp.status === 503 ? "warn" : "err",
           text:
             (isEn ? json.message_en : json.message_ar) ||
+            json.error ||
             (isEn
-              ? "Could not start the APK build. Please try again."
-              : "تعذر بدء بناء ملف APK. حاول مرة أخرى."),
+              ? `Could not start the APK build (HTTP ${resp.status}).`
+              : `تعذر بدء بناء ملف APK (HTTP ${resp.status}).`),
         });
         return;
       }
@@ -625,12 +976,104 @@ export function MobileAppStudio({
           : "مبتدئ";
 
   const whatsappUpgradeHref = (() => {
-    const cleanNum = (store.whatsappNumber || "201000000000").replace(/[^\d]/g, "");
+    const cleanNum = (store.whatsappNumber || "201000000000").replace(
+      /[^\d]/g,
+      "",
+    );
     const msg = isEn
       ? `Hello! I would like to upgrade my store "${store.nameEn}" (/${store.slug}) to unlock the Branded Android Mobile App.`
       : `مرحباً! أرغب في ترقية باقة متجري "${store.nameAr}" (/${store.slug}) لتفعيل تطبيق الأندرويد الخاص بمتجري.`;
     return `https://wa.me/${cleanNum}?text=${encodeURIComponent(msg)}`;
   })();
+
+  const PreviewControlsBar = (
+    <div
+      style={{
+        width: "100%",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: "0.5rem",
+        flexWrap: "wrap",
+      }}
+    >
+      <div
+        role="group"
+        aria-label={isEn ? "Preview theme mode" : "وضع معاينة المظهر"}
+        style={{
+          display: "inline-flex",
+          padding: "3px",
+          borderRadius: "999px",
+          background: "#f1f5f9",
+          border: "1px solid #e2e8f0",
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setPreviewDarkMode(false)}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "0.3rem",
+            padding: "0.28rem 0.65rem",
+            borderRadius: "999px",
+            fontSize: "0.74rem",
+            fontWeight: 700,
+            background: !previewDarkMode ? "#ffffff" : "transparent",
+            color: !previewDarkMode ? "#0f172a" : "#64748b",
+            boxShadow: !previewDarkMode
+              ? "0 1px 3px rgba(15, 23, 42, 0.1)"
+              : "none",
+          }}
+        >
+          <Sun size={12} />
+          <span>{isEn ? "Light" : "فاتح"}</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setPreviewDarkMode(true)}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "0.3rem",
+            padding: "0.28rem 0.65rem",
+            borderRadius: "999px",
+            fontSize: "0.74rem",
+            fontWeight: 700,
+            background: previewDarkMode ? "#0f172a" : "transparent",
+            color: previewDarkMode ? "#ffffff" : "#64748b",
+          }}
+        >
+          <Moon size={12} />
+          <span>{isEn ? "Dark" : "داكن"}</span>
+        </button>
+      </div>
+
+      <Link
+        href="/admin/customizer"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: "0.32rem",
+          fontSize: "0.75rem",
+          fontWeight: 700,
+          color: "#0284c7",
+          textDecoration: "none",
+          padding: "0.32rem 0.65rem",
+          borderRadius: "999px",
+          background: "#f0f9ff",
+          border: "1px solid #bae6fd",
+        }}
+      >
+        <Palette size={13} />
+        <span>
+          {isEn
+            ? "Edit Design in Customizer"
+            : "تعديل التصميم في استوديو المظهر"}
+        </span>
+      </Link>
+    </div>
+  );
 
   // =========================================================================
   // LOCKED STATE (Starter Plan / Disabled Override) — Flagship Upsell Screen
@@ -671,7 +1114,13 @@ export function MobileAppStudio({
                 ? "Launch Your Store's Branded Android App"
                 : "أطلق تطبيق أندرويد خاصاً بعلامتك التجارية"}
             </h1>
-            <p style={{ margin: "0.35rem 0 0", color: "#64748b", fontSize: "0.92rem" }}>
+            <p
+              style={{
+                margin: "0.35rem 0 0",
+                color: "#64748b",
+                fontSize: "0.92rem",
+              }}
+            >
               {isEn
                 ? "Your current plan covers your web storefront. Upgrade to Growth or Enterprise to generate ready-to-install branded APKs in one click."
                 : "باقتك الحالية تشمل المتجر الإلكتروني (الويب) فقط. قم بالترقية إلى باقة النمو أو المؤسسي لبناء تطبيق أندرويد باسم متجرك وأيقونتك بضغطة زر."}
@@ -719,7 +1168,9 @@ export function MobileAppStudio({
                 }}
               >
                 <Sparkles size={14} />
-                {isEn ? "White-Label Native Android Experience" : "تجربة تطبيق أصلي باسم متجرك"}
+                {isEn
+                  ? "White-Label Native Android Experience"
+                  : "تجربة تطبيق أصلي باسم متجرك"}
               </span>
               <h2 style={{ margin: 0, fontSize: "1.3rem", fontWeight: 800 }}>
                 {isEn
@@ -755,7 +1206,11 @@ export function MobileAppStudio({
               ).map((item) => (
                 <li
                   key={item}
-                  style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem" }}
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: "0.5rem",
+                  }}
                 >
                   <CheckCircle2
                     size={17}
@@ -766,7 +1221,6 @@ export function MobileAppStudio({
               ))}
             </ul>
 
-            {/* Compact Plan Comparison */}
             <div
               style={{
                 display: "grid",
@@ -782,14 +1236,34 @@ export function MobileAppStudio({
                   padding: "0.85rem",
                 }}
               >
-                <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "#64748b" }}>
+                <div
+                  style={{
+                    fontSize: "0.78rem",
+                    fontWeight: 700,
+                    color: "#64748b",
+                  }}
+                >
                   {isEn ? "Starter" : "باقة المبتدئ"}
                 </div>
-                <div style={{ fontSize: "0.88rem", fontWeight: 800, marginTop: "0.2rem" }}>
+                <div
+                  style={{
+                    fontSize: "0.88rem",
+                    fontWeight: 800,
+                    marginTop: "0.2rem",
+                  }}
+                >
                   {isEn ? "Web Storefront Only" : "متجر إلكتروني فقط"}
                 </div>
-                <div style={{ fontSize: "0.76rem", color: "#64748b", marginTop: "0.25rem" }}>
-                  {isEn ? "Up to 50 products · Mobile web" : "حتى 50 منتجاً · ويب متجاوب"}
+                <div
+                  style={{
+                    fontSize: "0.76rem",
+                    color: "#64748b",
+                    marginTop: "0.25rem",
+                  }}
+                >
+                  {isEn
+                    ? "Up to 50 products · Mobile web"
+                    : "حتى 50 منتجاً · ويب متجاوب"}
                 </div>
               </div>
               <div
@@ -800,14 +1274,37 @@ export function MobileAppStudio({
                   padding: "0.85rem",
                 }}
               >
-                <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "#0369a1" }}>
+                <div
+                  style={{
+                    fontSize: "0.78rem",
+                    fontWeight: 700,
+                    color: "#0369a1",
+                  }}
+                >
                   {isEn ? "Growth & Enterprise" : "النمو والمؤسسي"}
                 </div>
-                <div style={{ fontSize: "0.88rem", fontWeight: 800, marginTop: "0.2rem", color: "#0f172a" }}>
-                  {isEn ? "Web + Branded Android APK" : "متجر ويب + تطبيق أندرويد"}
+                <div
+                  style={{
+                    fontSize: "0.88rem",
+                    fontWeight: 800,
+                    marginTop: "0.2rem",
+                    color: "#0f172a",
+                  }}
+                >
+                  {isEn
+                    ? "Web + Branded Android APK"
+                    : "متجر ويب + تطبيق أندرويد"}
                 </div>
-                <div style={{ fontSize: "0.76rem", color: "#0369a1", marginTop: "0.25rem" }}>
-                  {isEn ? "500–10,000 products · 1-Click APK" : "500–10,000 منتج · بناء APK فوري"}
+                <div
+                  style={{
+                    fontSize: "0.76rem",
+                    color: "#0369a1",
+                    marginTop: "0.25rem",
+                  }}
+                >
+                  {isEn
+                    ? "500–10,000 products · 1-Click APK"
+                    : "500–10,000 منتج · بناء APK فوري"}
                 </div>
               </div>
             </div>
@@ -838,12 +1335,15 @@ export function MobileAppStudio({
             </div>
           </div>
 
-          <div>
+          <div style={{ display: "grid", gap: "0.85rem", justifyItems: "center" }}>
+            {PreviewControlsBar}
             <AndroidPhoneMockup
               appName={isEn ? store.nameEn : store.nameAr}
               iconUrl={store.logoUrl}
-              primaryColor={store.primaryColor}
+              store={store}
+              preview={preview}
               isEn={isEn}
+              darkMode={previewDarkMode}
               locked
             />
           </div>
@@ -879,20 +1379,39 @@ export function MobileAppStudio({
                 boxShadow: "0 24px 60px rgba(15, 23, 42, 0.25)",
               }}
             >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
                 <strong style={{ fontSize: "1.08rem" }}>
-                  {isEn ? "Upgrade to Unlock Mobile App" : "ترقية الباقة لتفعيل التطبيق"}
+                  {isEn
+                    ? "Upgrade to Unlock Mobile App"
+                    : "ترقية الباقة لتفعيل التطبيق"}
                 </strong>
                 <button
                   type="button"
                   onClick={() => setUpgradeModalOpen(false)}
-                  style={{ background: "transparent", color: "#64748b", padding: "0.25rem" }}
+                  style={{
+                    background: "transparent",
+                    color: "#64748b",
+                    padding: "0.25rem",
+                  }}
                   aria-label="Close"
                 >
                   <X size={18} />
                 </button>
               </div>
-              <p style={{ margin: 0, fontSize: "0.88rem", color: "#475569", lineHeight: 1.6 }}>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: "0.88rem",
+                  color: "#475569",
+                  lineHeight: 1.6,
+                }}
+              >
                 {isEn
                   ? `Contact our platform team to upgrade "${store.nameEn}" (/${store.slug}) to Growth or Enterprise. Once activated, the Android APK Builder unlocks immediately.`
                   : `تواصل مع فريق المنصة لترقية متجر "${store.nameAr}" (/${store.slug}) إلى باقة النمو أو المؤسسي، وسيتم فتح مصنع تطبيق الأندرويد فور التفعيل.`}
@@ -917,7 +1436,11 @@ export function MobileAppStudio({
                   }}
                 >
                   <MessageCircle size={17} />
-                  <span>{isEn ? "Request Upgrade via WhatsApp" : "طلب الترقية عبر واتساب"}</span>
+                  <span>
+                    {isEn
+                      ? "Request Upgrade via WhatsApp"
+                      : "طلب الترقية عبر واتساب"}
+                  </span>
                 </a>
                 {store.supportEmail && (
                   <a
@@ -942,7 +1465,9 @@ export function MobileAppStudio({
                     }}
                   >
                     <Mail size={16} />
-                    <span>{isEn ? "Email Support" : "مراسلة الدعم عبر البريد"}</span>
+                    <span>
+                      {isEn ? "Email Support" : "مراسلة الدعم عبر البريد"}
+                    </span>
                   </a>
                 )}
               </div>
@@ -956,7 +1481,9 @@ export function MobileAppStudio({
   // =========================================================================
   // UNLOCKED STATE (Growth / Enterprise / Force Enabled) — Live APK Studio
   // =========================================================================
-  const latestSucceeded = builds.find((b) => b.status === "succeeded" && b.apk_url);
+  const latestSucceeded = builds.find(
+    (b) => b.status === "succeeded" && b.apk_download_url,
+  );
 
   const statusMeta = (status: StoreAppBuildRow["status"]) => {
     if (status === "succeeded") {
@@ -1024,12 +1551,20 @@ export function MobileAppStudio({
             }}
           >
             <Smartphone size={12} />
-            {isEn ? "Self-Serve White-Label APK Factory" : "مصنع تطبيقات الأندرويد الذاتي"}
+            {isEn
+              ? "Self-Serve White-Label APK Factory"
+              : "مصنع تطبيقات الأندرويد الذاتي"}
           </span>
           <h1 style={{ margin: 0, fontSize: "1.55rem", fontWeight: 800 }}>
             {isEn ? "Android Mobile App Studio" : "استوديو تطبيق الموبايل (APK)"}
           </h1>
-          <p style={{ margin: "0.3rem 0 0", color: "#64748b", fontSize: "0.9rem" }}>
+          <p
+            style={{
+              margin: "0.3rem 0 0",
+              color: "#64748b",
+              fontSize: "0.9rem",
+            }}
+          >
             {isEn
               ? "Customize your branded Android app name & icon and generate a ready-to-install APK connected directly to your store."
               : "خصّص اسم وأيقونة تطبيق متجرك وأنشئ ملف APK جاهز للتثبيت ومرتبط مباشرةً بمتجرك."}
@@ -1134,7 +1669,11 @@ export function MobileAppStudio({
           <button
             type="button"
             onClick={() => setBanner(null)}
-            style={{ background: "transparent", color: "inherit", padding: "0.2rem" }}
+            style={{
+              background: "transparent",
+              color: "inherit",
+              padding: "0.2rem",
+            }}
             aria-label="Dismiss"
           >
             <X size={15} />
@@ -1142,11 +1681,11 @@ export function MobileAppStudio({
         </div>
       )}
 
-      {/* Main Split: Configuration Form + Live Phone Preview */}
+      {/* Main Split: Configuration Form + Real Customizer-Synced Phone Preview */}
       <section
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(290px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
           gap: "1.5rem",
           alignItems: "start",
         }}
@@ -1165,7 +1704,9 @@ export function MobileAppStudio({
           }}
         >
           <h2 style={{ margin: 0, fontSize: "1.08rem", fontWeight: 800 }}>
-            {isEn ? "App Identity & Build Settings" : "هوية التطبيق وإعدادات البناء"}
+            {isEn
+              ? "App Identity & Build Settings"
+              : "هوية التطبيق وإعدادات البناء"}
           </h2>
 
           <label style={{ display: "grid", gap: "0.35rem" }}>
@@ -1206,17 +1747,14 @@ export function MobileAppStudio({
                   flexWrap: "wrap",
                 }}
               >
-                {/* Live 64x64 Rounded-Square Preview */}
                 <div
                   style={{
                     width: "64px",
                     height: "64px",
                     borderRadius: "16px",
                     overflow: "hidden",
-                    background: /^#[0-9a-fA-F]{6}$/.test(store.primaryColor)
-                      ? store.primaryColor
-                      : "#0f172a",
-                    color: "#ffffff",
+                    background: safeHex(store.primaryColor, "#0f172a"),
+                    color: safeHex(store.primaryText, "#ffffff"),
                     display: "grid",
                     placeItems: "center",
                     fontSize: "1.45rem",
@@ -1242,7 +1780,14 @@ export function MobileAppStudio({
                   )}
                 </div>
 
-                <div style={{ flex: 1, minWidth: "180px", display: "grid", gap: "0.45rem" }}>
+                <div
+                  style={{
+                    flex: 1,
+                    minWidth: "180px",
+                    display: "grid",
+                    gap: "0.45rem",
+                  }}
+                >
                   <input
                     ref={fileInputRef}
                     type="file"
@@ -1250,10 +1795,19 @@ export function MobileAppStudio({
                     onChange={handleIconFileChange}
                     style={{ display: "none" }}
                     aria-label={
-                      isEn ? "Upload app icon from device" : "رفع أيقونة التطبيق من الجهاز"
+                      isEn
+                        ? "Upload app icon from device"
+                        : "رفع أيقونة التطبيق من الجهاز"
                     }
                   />
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.45rem", flexWrap: "wrap" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.45rem",
+                      flexWrap: "wrap",
+                    }}
+                  >
                     <button
                       type="button"
                       disabled={uploadingIcon}
@@ -1390,7 +1944,13 @@ export function MobileAppStudio({
               fontSize: "0.8rem",
             }}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem" }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: "0.5rem",
+              }}
+            >
               <span style={{ color: "#64748b", fontWeight: 600 }}>
                 {isEn ? "Android Package ID" : "معرّف الحزمة (Package ID)"}
               </span>
@@ -1398,7 +1958,13 @@ export function MobileAppStudio({
                 {store.packageId}
               </code>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem" }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: "0.5rem",
+              }}
+            >
               <span style={{ color: "#64748b", fontWeight: 600 }}>
                 {isEn ? "Tenant Store ID" : "معرّف المتجر"}
               </span>
@@ -1441,29 +2007,29 @@ export function MobileAppStudio({
           </button>
         </form>
 
-        {/* Live Android Preview + Latest QR */}
+        {/* Live Customizer-Synced Android Preview + Latest QR */}
         <div
           style={{
             background: "#ffffff",
             borderRadius: "18px",
             border: "1px solid #e2e8f0",
-            padding: "1.4rem",
+            padding: "1.25rem",
             display: "grid",
-            gap: "1rem",
+            gap: "0.95rem",
             justifyItems: "center",
           }}
         >
-          <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "#475569" }}>
-            {isEn ? "Live App Preview" : "معاينة فورية للتطبيق"}
-          </span>
+          {PreviewControlsBar}
           <AndroidPhoneMockup
             appName={appName}
             iconUrl={iconUrl}
-            primaryColor={store.primaryColor}
+            store={store}
+            preview={preview}
             isEn={isEn}
+            darkMode={previewDarkMode}
           />
-          {latestSucceeded?.apk_url && (
-            <QrCodeCard url={latestSucceeded.apk_url} isEn={isEn} />
+          {latestSucceeded?.apk_download_url && (
+            <QrCodeCard url={latestSucceeded.apk_download_url} isEn={isEn} />
           )}
         </div>
       </section>
@@ -1493,7 +2059,13 @@ export function MobileAppStudio({
               {isEn ? "Build History" : "سجل إصدارات التطبيق"}
             </h2>
             {hasActiveBuild && (
-              <p style={{ margin: "0.2rem 0 0", fontSize: "0.78rem", color: "#0284c7" }}>
+              <p
+                style={{
+                  margin: "0.2rem 0 0",
+                  fontSize: "0.78rem",
+                  color: "#0284c7",
+                }}
+              >
                 {isEn
                   ? "Auto-refreshing every 10 seconds while build is running…"
                   : "يتم التحديث تلقائياً كل 10 ثوانٍ أثناء بناء التطبيق…"}
@@ -1557,9 +2129,25 @@ export function MobileAppStudio({
                     gap: "0.85rem",
                   }}
                 >
-                  <div style={{ display: "grid", gap: "0.3rem", minWidth: "200px", flex: 1 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
-                      <strong style={{ fontSize: "0.95rem" }}>{b.app_name}</strong>
+                  <div
+                    style={{
+                      display: "grid",
+                      gap: "0.3rem",
+                      minWidth: "200px",
+                      flex: 1,
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "0.5rem",
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <strong style={{ fontSize: "0.95rem" }}>
+                        {b.app_name}
+                      </strong>
                       <span
                         dir="ltr"
                         style={{
@@ -1591,24 +2179,42 @@ export function MobileAppStudio({
                         {meta.label}
                       </span>
                     </div>
-                    <div style={{ fontSize: "0.76rem", color: "#64748b", display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+                    <div
+                      style={{
+                        fontSize: "0.76rem",
+                        color: "#64748b",
+                        display: "flex",
+                        gap: "0.75rem",
+                        flexWrap: "wrap",
+                      }}
+                    >
                       <span dir="ltr">{b.package_id}</span>
                       <span>{date(b.created_at, lang)}</span>
-                      {b.apk_size_bytes ? (
-                        <span dir="ltr">{formatFileSize(b.apk_size_bytes)}</span>
-                      ) : null}
                     </div>
                     {b.error_message && (
-                      <div style={{ fontSize: "0.78rem", color: "#b91c1c", marginTop: "0.2rem" }}>
+                      <div
+                        style={{
+                          fontSize: "0.78rem",
+                          color: "#b91c1c",
+                          marginTop: "0.2rem",
+                        }}
+                      >
                         {b.error_message}
                       </div>
                     )}
                   </div>
 
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
-                    {b.apk_url && b.status === "succeeded" && (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.5rem",
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    {b.apk_download_url && b.status === "succeeded" && (
                       <a
-                        href={b.apk_url}
+                        href={b.apk_download_url}
                         target="_blank"
                         rel="noreferrer"
                         style={{
