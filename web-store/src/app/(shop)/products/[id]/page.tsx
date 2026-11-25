@@ -48,7 +48,7 @@ export default async function Details({ params }: PageProps<"/products/[id]">) {
     db
       .from("product_reviews")
       .select(
-        "id,store_id,product_id,user_id,order_id,author_name,rating,comment,is_verified_purchase,status,admin_reply,admin_replied_at,created_at,updated_at",
+        "id,store_id,product_id,author_name,rating,comment,is_verified_purchase,status,admin_reply,admin_replied_at,created_at,updated_at",
       )
       .eq("store_id", s.storeId)
       .eq("product_id", p.id)

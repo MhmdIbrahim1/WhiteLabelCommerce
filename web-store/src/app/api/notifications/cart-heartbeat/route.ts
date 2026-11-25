@@ -20,15 +20,20 @@ export async function POST(req: Request) {
     typeof body.guest_session_id === "string"
       ? body.guest_session_id.trim().slice(0, 80)
       : "";
-  const itemCount = Math.max(0, Math.trunc(Number(body.item_count) || 0));
-  const subtotal = Math.max(0, Number(body.subtotal) || 0);
+  const itemCount = Math.min(
+    500,
+    Math.max(0, Math.trunc(Number(body.item_count) || 0)),
+  );
+  const subtotal = Math.min(10_000_000, Math.max(0, Number(body.subtotal) || 0));
   const locale = body.locale === "en" ? "en" : "ar";
   const pushToken =
-    typeof body.push_token === "string" && body.push_token.trim().length >= 16
+    typeof body.push_token === "string" &&
+    body.push_token.trim().length >= 16 &&
+    body.push_token.trim().length <= 512
       ? body.push_token.trim()
       : null;
 
-  if (!guestId) {
+  if (guestId.length < 24) {
     return Response.json({ ok: false }, { status: 400 });
   }
 
@@ -39,10 +44,22 @@ export async function POST(req: Request) {
     } = await db.auth.getUser();
 
     const srv = adminDb();
+    const { data: existing } = await srv
+      .from("cart_sessions")
+      .select("id,user_id")
+      .eq("store_id", store.storeId)
+      .eq("guest_session_id", guestId)
+      .maybeSingle<{ id: string; user_id: string | null }>();
+
+    // Never allow an unauthenticated caller or another user to mutate or null out an authenticated session's user_id
+    if (existing?.user_id && (!user || existing.user_id !== user.id)) {
+      return Response.json({ ok: false }, { status: 403 });
+    }
+
     await srv.from("cart_sessions").upsert(
       {
         store_id: store.storeId,
-        user_id: user?.id ?? null,
+        user_id: user?.id ?? existing?.user_id ?? null,
         guest_session_id: guestId,
         push_token: pushToken,
         locale,

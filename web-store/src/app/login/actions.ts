@@ -4,22 +4,14 @@ import { revalidatePath } from "next/cache";
 import { serverDb } from "@/lib/db";
 import { adminUser, superAdminUser } from "@/lib/access";
 import { normalizePhone } from "@/lib/phone";
+import { safeRelativePath } from "@/lib/security";
 import { resolveActiveStoreOrDefault } from "@/lib/tenant";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const OTP_RE = /^[0-9]{6}$/;
 
 function safeNext(raw: FormDataEntryValue | string | null | undefined): string {
-  const s = typeof raw === "string" ? raw.trim() : "";
-  if (
-    s.startsWith("/") &&
-    !s.startsWith("//") &&
-    !s.includes("\r") &&
-    !s.includes("\n")
-  ) {
-    return s;
-  }
-  return "";
+  return safeRelativePath(raw, "");
 }
 
 async function syncProfileForUser(

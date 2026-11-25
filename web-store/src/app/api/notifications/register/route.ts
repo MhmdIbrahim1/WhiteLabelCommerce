@@ -6,7 +6,6 @@ type RegisterBody = {
   platform?: unknown;
   locale?: unknown;
   guest_session_id?: unknown;
-  phone?: unknown;
 };
 
 export async function POST(req: Request) {
@@ -28,10 +27,12 @@ export async function POST(req: Request) {
     typeof body.guest_session_id === "string"
       ? body.guest_session_id.trim().slice(0, 80)
       : null;
-  const phone =
-    typeof body.phone === "string" ? body.phone.trim().slice(0, 24) : null;
 
-  if (token.length < 16 || (platform !== "android" && platform !== "web")) {
+  if (
+    token.length < 16 ||
+    token.length > 512 ||
+    (platform !== "android" && platform !== "web")
+  ) {
     return Response.json({ error: "Invalid push token." }, { status: 400 });
   }
 
@@ -42,7 +43,7 @@ export async function POST(req: Request) {
     p_token: token,
     p_locale: locale,
     p_guest_session_id: guestSessionId,
-    p_phone: phone,
+    p_phone: null,
   });
 
   if (error) {

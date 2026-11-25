@@ -67,6 +67,12 @@ export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const requestHeaders = new Headers(request.headers);
 
+  // Unconditionally strip spoofable internal tenant routing headers before computing trusted values
+  requestHeaders.delete(STORE_HOST_HEADER);
+  requestHeaders.delete(STORE_SUBDOMAIN_HEADER);
+  requestHeaders.delete(STORE_SLUG_HEADER);
+  requestHeaders.delete(STORE_BASE_PATH_HEADER);
+
   let rewriteUrl: URL | null = null;
   let cookieToSet: { name: string; value: string } | null = null;
   let clearSlugCookie = false;
@@ -93,13 +99,14 @@ export async function proxy(request: NextRequest) {
       requestHeaders.set(STORE_SUBDOMAIN_HEADER, subdomain);
     }
 
-    // Bare root storefront route (not /s/*, not /api/*, not /admin/*, not /super-admin/*, not /create-store)
+    // Bare root storefront route (not /s/*, not /api/*, not /admin/*, not /super-admin/*, not /create-store, not /delivery/*)
     // resets active store back to default Nova Store so localhost:3000/ always loads Nova Store cleanly.
     const isStorefrontRootRoute =
       !pathname.startsWith("/api/") &&
       !pathname.startsWith("/admin") &&
       !pathname.startsWith("/super-admin") &&
-      !pathname.startsWith("/create-store");
+      !pathname.startsWith("/create-store") &&
+      !pathname.startsWith("/delivery");
 
     if (!customHost && !subdomain && isStorefrontRootRoute) {
       requestHeaders.set(STORE_SLUG_HEADER, DEFAULT_STORE_SLUG);
@@ -218,26 +225,6 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/admin/:path*",
-    "/super-admin",
-    "/super-admin/:path*",
-    "/create-store",
-    "/create-store/:path*",
-    "/s/:path*",
-    "/",
-    "/products/:path*",
-    "/orders",
-    "/orders/:path*",
-    "/wishlist",
-    "/account",
-    "/login",
-    "/register",
-    "/cart",
-    "/checkout",
-    "/contact",
-    "/support",
-    "/api/catalog-search",
-    "/api/abandoned-cart",
-    "/api/notifications/:path*",
+    "/((?!_next/static|_next/image|favicon\\.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|map|woff2?|ttf|eot)$).*)",
   ],
 };

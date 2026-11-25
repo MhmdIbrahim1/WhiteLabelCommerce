@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { serverDb } from "@/lib/db";
 import { adminUser } from "@/lib/access";
 import { settings } from "@/lib/shop";
@@ -23,6 +24,19 @@ export type InboxNotificationRow = {
 const SELECT_FIELDS =
   "id,user_id,target_role,category,title_ar,title_en,body_ar,body_en,deep_link,is_read,read_at,created_at";
 
+async function resolveActiveAdminStoreId(
+  db: SupabaseClient,
+): Promise<string | null> {
+  const [jar, managed] = await Promise.all([cookies(), getManagedStores(db)]);
+  if (managed.length === 0) return null;
+  const cookieStoreId = jar.get(ADMIN_STORE_COOKIE)?.value?.trim() || "";
+  return (
+    managed.find((m) => m.store_id === cookieStoreId)?.store_id ??
+    managed[0]?.store_id ??
+    null
+  );
+}
+
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const scope = searchParams.get("scope") === "admin" ? "admin" : "customer";
@@ -37,12 +51,10 @@ export async function GET(req: Request) {
     if (!admin) {
       return Response.json({ items: [], unreadCount: 0 }, { status: 401 });
     }
-    const [jar, managed] = await Promise.all([cookies(), getManagedStores(db)]);
-    const cookieStoreId = jar.get(ADMIN_STORE_COOKIE)?.value?.trim() || "";
-    const activeAdminStoreId =
-      managed.find((m) => m.store_id === cookieStoreId)?.store_id ??
-      managed[0]?.store_id ??
-      store.storeId;
+    const activeAdminStoreId = await resolveActiveAdminStoreId(db);
+    if (!activeAdminStoreId) {
+      return Response.json({ items: [], unreadCount: 0 }, { status: 403 });
+    }
 
     const { data, error } = await db
       .from("notifications")
@@ -55,10 +67,12 @@ export async function GET(req: Request) {
     if (error) {
       return Response.json({ items: [], unreadCount: 0 }, { status: 200 });
     }
-    const items = ((data ?? []) as unknown as InboxNotificationRow[]).map((n) => ({
-      ...n,
-      is_read: Boolean(n.is_read || n.read_at),
-    }));
+    const items = ((data ?? []) as unknown as InboxNotificationRow[]).map(
+      (n) => ({
+        ...n,
+        is_read: Boolean(n.is_read || n.read_at),
+      }),
+    );
     return Response.json(
       { items, unreadCount: items.filter((n) => !n.is_read).length },
       { status: 200, headers: { "Cache-Control": "no-store" } },
@@ -74,7 +88,9 @@ export async function GET(req: Request) {
     .limit(30);
 
   if (user) {
-    q = q.or(`user_id.eq.${user.id},user_id.is.null`);
+    q = q.or(
+      `user_id.eq.${user.id},and(user_id.is.null,category.eq.promo_campaign)`,
+    );
   } else {
     q = q.is("user_id", null).eq("category", "promo_campaign");
   }
@@ -83,9 +99,30 @@ export async function GET(req: Request) {
   if (error) {
     return Response.json({ items: [], unreadCount: 0 }, { status: 200 });
   }
-  const items = ((data ?? []) as unknown as InboxNotificationRow[]).map((n) => ({
+
+  const rawRows = (data ?? []) as unknown as InboxNotificationRow[];
+  const broadcastIds = rawRows
+    .filter((n) => n.user_id === null)
+    .map((n) => n.id);
+
+  const readBroadcastIds = new Set<string>();
+  if (user && broadcastIds.length > 0) {
+    const { data: reads } = await db
+      .from("notification_reads")
+      .select("notification_id")
+      .eq("user_id", user.id)
+      .in("notification_id", broadcastIds);
+    for (const r of (reads ?? []) as { notification_id: string }[]) {
+      readBroadcastIds.add(r.notification_id);
+    }
+  }
+
+  const items = rawRows.map((n) => ({
     ...n,
-    is_read: Boolean(n.is_read || n.read_at),
+    is_read:
+      n.user_id === null
+        ? readBroadcastIds.has(n.id)
+        : Boolean(n.is_read || n.read_at),
   }));
   return Response.json(
     {
@@ -110,14 +147,30 @@ export async function PATCH(req: Request) {
     return Response.json({ error: "Invalid JSON." }, { status: 400 });
   }
 
+  const scope = body.scope === "admin" ? "admin" : "customer";
   const [db, store] = await Promise.all([serverDb(), settings()]);
+
+  let targetStoreId = store.storeId;
+  if (scope === "admin") {
+    const admin = await adminUser(db);
+    if (!admin) {
+      return Response.json({ error: "Unauthorized." }, { status: 401 });
+    }
+    const activeAdminStoreId = await resolveActiveAdminStoreId(db);
+    if (!activeAdminStoreId) {
+      return Response.json({ error: "Forbidden." }, { status: 403 });
+    }
+    targetStoreId = activeAdminStoreId;
+  }
+
   const markAllRequested = body.mark_all === true || body.markAll === true;
 
   if (markAllRequested) {
     const { data, error } = await db.rpc("mark_notifications_read", {
-      p_store_id: store.storeId,
+      p_store_id: targetStoreId,
       p_notification_ids: null,
       p_mark_all: true,
+      p_scope: scope,
     });
     if (error) {
       return Response.json(
@@ -136,7 +189,7 @@ export async function PATCH(req: Request) {
     rawIds.push(body.id.trim());
   }
   if (Array.isArray(body.ids)) {
-    for (const item of body.ids) {
+    for (const item of body.ids.slice(0, 100)) {
       if (typeof item === "string" && UUID_RE.test(item.trim())) {
         rawIds.push(item.trim());
       }
@@ -148,9 +201,10 @@ export async function PATCH(req: Request) {
   }
 
   const { data, error } = await db.rpc("mark_notifications_read", {
-    p_store_id: store.storeId,
+    p_store_id: targetStoreId,
     p_notification_ids: uniqueIds,
     p_mark_all: false,
+    p_scope: scope,
   });
 
   if (error) {
@@ -190,18 +244,29 @@ export async function DELETE(req: Request) {
     return Response.json({ ok: true, deletedCount: 0 }, { status: 200 });
   }
 
-  const isAdminScope = scope === "admin" && Boolean(admin);
+  let targetStoreId = store.storeId;
+  const isAdminScope = scope === "admin";
+  if (isAdminScope) {
+    if (!admin) {
+      return Response.json({ error: "Unauthorized." }, { status: 401 });
+    }
+    const activeAdminStoreId = await resolveActiveAdminStoreId(db);
+    if (!activeAdminStoreId) {
+      return Response.json({ error: "Forbidden." }, { status: 403 });
+    }
+    targetStoreId = activeAdminStoreId;
+  }
 
   if (clearAll) {
     let q = db
       .from("notifications")
       .delete()
-      .eq("store_id", store.storeId);
+      .eq("store_id", targetStoreId);
 
     if (isAdminScope) {
       q = q.eq("target_role", "admin");
     } else {
-      q = q.eq("user_id", user.id);
+      q = q.eq("user_id", user.id).eq("target_role", "customer");
     }
 
     const { data, error } = await q.select("id");
@@ -221,10 +286,12 @@ export async function DELETE(req: Request) {
     .from("notifications")
     .delete()
     .eq("id", id)
-    .eq("store_id", store.storeId);
+    .eq("store_id", targetStoreId);
 
-  if (!isAdminScope) {
-    q = q.eq("user_id", user.id);
+  if (isAdminScope) {
+    q = q.eq("target_role", "admin");
+  } else {
+    q = q.eq("user_id", user.id).eq("target_role", "customer");
   }
 
   const { data, error } = await q.select("id");

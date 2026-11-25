@@ -25,6 +25,7 @@ import {
 import { useLanguage } from "@/components/language-provider";
 import { browserDb } from "@/lib/supabase/browser";
 import { syncWebPushSubscription } from "@/lib/notifications/web-push";
+import { safeRelativePath } from "@/lib/security";
 
 export type InboxItem = {
   id: string;
@@ -343,8 +344,9 @@ export function NotificationBell({
       body: JSON.stringify({ id: item.id, scope }),
     }).catch(() => {});
     setOpen(false);
-    if (item.deep_link && item.deep_link.startsWith("/")) {
-      router.push(item.deep_link);
+    const safeLink = safeRelativePath(item.deep_link, "");
+    if (safeLink) {
+      router.push(safeLink);
     }
   }
 

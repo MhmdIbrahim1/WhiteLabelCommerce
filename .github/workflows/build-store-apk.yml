@@ -52,11 +52,68 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Validate workflow inputs strictly
+        env:
+          BUILD_ID: ${{ inputs.build_id }}
+          STORE_ID: ${{ inputs.store_id }}
+          STORE_SLUG: ${{ inputs.store_slug }}
+          APP_NAME: ${{ inputs.app_name }}
+          APP_ID_SUFFIX: ${{ inputs.app_id_suffix }}
+          VERSION_CODE: ${{ inputs.version_code }}
+          VERSION_NAME: ${{ inputs.version_name }}
+        run: |
+          python3 - << 'PY'
+          import os, re, sys, xml.sax.saxutils as saxutils
+
+          uuid_re = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
+          slug_re = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$")
+          suffix_re = re.compile(r"^\.[a-z][a-z0-9_]{0,29}$")
+          vcode_re = re.compile(r"^[1-9][0-9]{0,8}$")
+          vname_re = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[a-z0-9.-]+)?$", re.I)
+
+          build_id = os.environ["BUILD_ID"].strip()
+          store_id = os.environ["STORE_ID"].strip()
+          store_slug = os.environ["STORE_SLUG"].strip()
+          app_name = os.environ["APP_NAME"].strip()
+          app_suffix = os.environ["APP_ID_SUFFIX"].strip()
+          version_code = os.environ["VERSION_CODE"].strip()
+          version_name = os.environ["VERSION_NAME"].strip()
+
+          if not uuid_re.match(build_id):
+              sys.exit("::error::Invalid build_id UUID.")
+          if not uuid_re.match(store_id):
+              sys.exit("::error::Invalid store_id UUID.")
+          if not slug_re.match(store_slug):
+              sys.exit("::error::Invalid store_slug.")
+          if not suffix_re.match(app_suffix):
+              sys.exit("::error::Invalid app_id_suffix.")
+          if not vcode_re.match(version_code):
+              sys.exit("::error::Invalid version_code.")
+          if not vname_re.match(version_name):
+              sys.exit("::error::Invalid version_name.")
+
+          # Strip control characters/newlines and XML-escape app_name for safe AndroidManifest placeholder injection
+          clean_name = re.sub(r"[\x00-\x1f\x7f]+", " ", app_name).strip()[:60]
+          if len(clean_name) < 2:
+              sys.exit("::error::Invalid app_name.")
+          escaped_name = saxutils.escape(clean_name, {'"': "&quot;", "'": "\\'"})
+
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as fh:
+              fh.write(f"SAFE_BUILD_ID={build_id}\n")
+              fh.write(f"SAFE_STORE_ID={store_id}\n")
+              fh.write(f"SAFE_STORE_SLUG={store_slug}\n")
+              fh.write(f"SAFE_APP_NAME={escaped_name}\n")
+              fh.write(f"SAFE_APP_ID_SUFFIX={app_suffix}\n")
+              fh.write(f"SAFE_VERSION_CODE={version_code}\n")
+              fh.write(f"SAFE_VERSION_NAME={version_name}\n")
+          print("All workflow inputs validated cleanly.")
+          PY
+
       - name: Mark build as building in Supabase
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          BUILD_ID: ${{ inputs.build_id }}
+          BUILD_ID: ${{ env.SAFE_BUILD_ID }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
@@ -64,9 +121,13 @@ jobs:
             exit 0
           fi
           python3 - << 'PY'
-          import datetime, json, os, urllib.request
+          import datetime, json, os, re, sys, urllib.parse, urllib.request
+          build_id = os.environ["BUILD_ID"].strip()
+          if not re.match(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", build_id, re.I):
+              sys.exit("::error::Invalid BUILD_ID UUID.")
           now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
-          url = f"{os.environ['SUPABASE_URL'].rstrip('/')}/rest/v1/store_app_builds?id=eq.{os.environ['BUILD_ID']}"
+          query = urllib.parse.urlencode({"id": f"eq.{build_id}"})
+          url = f"{os.environ['SUPABASE_URL'].rstrip('/')}/rest/v1/store_app_builds?{query}"
           payload = json.dumps({
               "status": "building",
               "github_run_url": os.environ["RUN_URL"],
@@ -124,6 +185,8 @@ jobs:
       - name: Prepare custom launcher icon (optional)
         env:
           ICON_URL: ${{ inputs.icon_url }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          STORE_ID: ${{ env.SAFE_STORE_ID }}
         run: |
           if [ -z "$ICON_URL" ]; then
             echo "No custom icon URL provided; using default launcher icon."
@@ -131,16 +194,37 @@ jobs:
           fi
           python3 -m pip install --quiet pillow || true
           python3 - << 'PY'
-          import io, os, urllib.request
+          import io, os, urllib.parse, urllib.request
           url = os.environ.get("ICON_URL", "").strip()
-          if not url.startswith("https://"):
-              print("Skipping non-HTTPS icon URL.")
+          supabase_url = os.environ.get("SUPABASE_URL", "").strip()
+          store_id = os.environ.get("STORE_ID", "").strip()
+
+          parsed_icon = urllib.parse.urlparse(url)
+          parsed_sb = urllib.parse.urlparse(supabase_url)
+          allowed_host = (parsed_sb.hostname or "").lower()
+          icon_host = (parsed_icon.hostname or "").lower()
+          expected_prefix = f"/storage/v1/object/public/product-images/app-icons/{store_id}/"
+
+          if (
+              parsed_icon.scheme != "https"
+              or not allowed_host
+              or icon_host != allowed_host
+              or ".." in parsed_icon.path
+              or not parsed_icon.path.startswith(expected_prefix)
+          ):
+              print("::warning::Skipping icon URL outside the project's Supabase Storage bucket for this store.")
               raise SystemExit(0)
+
+          MAX_BYTES = 3 * 1024 * 1024  # 3 MB hard cap
           try:
               from PIL import Image
+              Image.MAX_IMAGE_PIXELS = 16_000_000
+
               req = urllib.request.Request(url, headers={"User-Agent": "WhiteLabelCommerce-Builder/1.0"})
               with urllib.request.urlopen(req, timeout=20) as resp:
-                  data = resp.read()
+                  data = resp.read(MAX_BYTES + 1)
+                  if len(data) > MAX_BYTES:
+                      raise ValueError("Icon exceeds 3 MB maximum size.")
               img = Image.open(io.BytesIO(data)).convert("RGBA")
               # Center-crop to square
               side = min(img.width, img.height)
@@ -183,11 +267,11 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           WEB_STORE_BASE_URL: ${{ secrets.WEB_STORE_BASE_URL || vars.WEB_STORE_BASE_URL }}
-          STORE_ID_INPUT: ${{ inputs.store_id }}
-          APP_NAME_INPUT: ${{ inputs.app_name }}
-          APP_SUFFIX_INPUT: ${{ inputs.app_id_suffix }}
-          VERSION_CODE_INPUT: ${{ inputs.version_code }}
-          VERSION_NAME_INPUT: ${{ inputs.version_name }}
+          STORE_ID_INPUT: ${{ env.SAFE_STORE_ID }}
+          APP_NAME_INPUT: ${{ env.SAFE_APP_NAME }}
+          APP_SUFFIX_INPUT: ${{ env.SAFE_APP_ID_SUFFIX }}
+          VERSION_CODE_INPUT: ${{ env.SAFE_VERSION_CODE }}
+          VERSION_NAME_INPUT: ${{ env.SAFE_VERSION_NAME }}
         run: |
           chmod +x gradlew
           ./gradlew assembleGithubRelease \
@@ -200,9 +284,9 @@ jobs:
 
       - name: Package & verify signed white-label APK
         env:
-          STORE_SLUG: ${{ inputs.store_slug }}
-          VERSION_CODE_INPUT: ${{ inputs.version_code }}
-          VERSION_NAME_INPUT: ${{ inputs.version_name }}
+          STORE_SLUG: ${{ env.SAFE_STORE_SLUG }}
+          VERSION_CODE_INPUT: ${{ env.SAFE_VERSION_CODE }}
+          VERSION_NAME_INPUT: ${{ env.SAFE_VERSION_NAME }}
         run: |
           APK_SOURCE=$(find android-app/app/build/outputs/apk/github/release -maxdepth 1 -name "*.apk" | head -n 1)
           if [ -z "$APK_SOURCE" ]; then
@@ -213,6 +297,9 @@ jobs:
           APK_FILENAME="${STORE_SLUG}-v${VERSION_NAME_INPUT}-b${VERSION_CODE_INPUT}-release.apk"
           RELEASE_APK="dist/${APK_FILENAME}"
           cp "$APK_SOURCE" "$RELEASE_APK"
+          SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          APKSIGNER="$SDK_ROOT/build-tools/35.0.0/apksigner"
+          "$APKSIGNER" verify --verbose "$RELEASE_APK"
           RELEASE_TAG="store-${STORE_SLUG}-b${VERSION_CODE_INPUT}"
           echo "RELEASE_APK=${RELEASE_APK}" >> "$GITHUB_ENV"
           echo "APK_FILENAME=${APK_FILENAME}" >> "$GITHUB_ENV"
@@ -223,7 +310,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          name: "${{ inputs.app_name }} (${{ inputs.store_slug }}) v${{ inputs.version_name }} #${{ inputs.version_code }}"
+          name: "${{ env.SAFE_APP_NAME }} (${{ env.SAFE_STORE_SLUG }}) v${{ env.SAFE_VERSION_NAME }} #${{ env.SAFE_VERSION_CODE }}"
           prerelease: true
           make_latest: false
           files: |
@@ -234,16 +321,20 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          BUILD_ID: ${{ inputs.build_id }}
+          BUILD_ID: ${{ env.SAFE_BUILD_ID }}
           DOWNLOAD_URL: https://github.com/${{ github.repository }}/releases/download/${{ env.RELEASE_TAG }}/${{ env.APK_FILENAME }}
         run: |
           if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
             exit 0
           fi
           python3 - << 'PY'
-          import datetime, json, os, urllib.request
+          import datetime, json, os, re, sys, urllib.parse, urllib.request
+          build_id = os.environ["BUILD_ID"].strip()
+          if not re.match(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", build_id, re.I):
+              sys.exit("::error::Invalid BUILD_ID UUID.")
           now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
-          url = f"{os.environ['SUPABASE_URL'].rstrip('/')}/rest/v1/store_app_builds?id=eq.{os.environ['BUILD_ID']}"
+          query = urllib.parse.urlencode({"id": f"eq.{build_id}"})
+          url = f"{os.environ['SUPABASE_URL'].rstrip('/')}/rest/v1/store_app_builds?{query}"
           payload = json.dumps({
               "status": "succeeded",
               "apk_download_url": os.environ["DOWNLOAD_URL"],
@@ -272,16 +363,20 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          BUILD_ID: ${{ inputs.build_id }}
+          BUILD_ID: ${{ env.SAFE_BUILD_ID }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
             exit 0
           fi
           python3 - << 'PY'
-          import datetime, json, os, urllib.request
+          import datetime, json, os, re, sys, urllib.parse, urllib.request
+          build_id = os.environ["BUILD_ID"].strip()
+          if not re.match(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", build_id, re.I):
+              sys.exit("::error::Invalid BUILD_ID UUID.")
           now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
-          url = f"{os.environ['SUPABASE_URL'].rstrip('/')}/rest/v1/store_app_builds?id=eq.{os.environ['BUILD_ID']}"
+          query = urllib.parse.urlencode({"id": f"eq.{build_id}"})
+          url = f"{os.environ['SUPABASE_URL'].rstrip('/')}/rest/v1/store_app_builds?{query}"
           payload = json.dumps({
               "status": "failed",
               "github_run_url": os.environ["RUN_URL"],

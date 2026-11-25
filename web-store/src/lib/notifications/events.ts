@@ -375,6 +375,18 @@ export async function runRecoveryAutomations(storeId?: string): Promise<{
   let abandonedCartsNotified = 0;
   let unpaidOrdersNotified = 0;
 
+  let activeStoreIds: string[] | null = null;
+  if (!storeId) {
+    const { data: activeStores } = await db
+      .from("stores")
+      .select("id")
+      .neq("status", "suspended");
+    activeStoreIds = ((activeStores ?? []) as { id: string }[]).map((s) => s.id);
+    if (activeStoreIds.length === 0) {
+      return { abandonedCartsNotified: 0, unpaidOrdersNotified: 0 };
+    }
+  }
+
   // 1. Abandoned carts > 1 hour
   let cartQuery = db
     .from("cart_sessions")
@@ -385,7 +397,11 @@ export async function runRecoveryAutomations(storeId?: string): Promise<{
     .gt("updated_at", twoDaysAgo)
     .limit(50);
 
-  if (storeId) cartQuery = cartQuery.eq("store_id", storeId);
+  if (storeId) {
+    cartQuery = cartQuery.eq("store_id", storeId);
+  } else if (activeStoreIds) {
+    cartQuery = cartQuery.in("store_id", activeStoreIds);
+  }
 
   const { data: carts } = await cartQuery;
   for (const c of (carts ?? []) as {
@@ -436,7 +452,11 @@ export async function runRecoveryAutomations(storeId?: string): Promise<{
     .gt("created_at", twoDaysAgo)
     .limit(50);
 
-  if (storeId) orderQuery = orderQuery.eq("store_id", storeId);
+  if (storeId) {
+    orderQuery = orderQuery.eq("store_id", storeId);
+  } else if (activeStoreIds) {
+    orderQuery = orderQuery.in("store_id", activeStoreIds);
+  }
 
   const { data: unpaid } = await orderQuery;
   for (const o of (unpaid ?? []) as {

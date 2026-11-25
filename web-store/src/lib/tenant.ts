@@ -57,8 +57,7 @@ const FALLBACK_NOVA_STORE: ResolvedStore = {
   isDefault: true,
 };
 
-const STORE_SELECT =
-  "id,slug,name_ar,name_en,custom_domain,plan,status,max_products,owner_user_id,subscription_expires_at,mobile_app_access,pending_owner_email";
+const STORE_SELECT = "id,slug,name_ar,name_en,custom_domain,plan,status";
 
 export function normalizeStoreRecord(
   row: StoreRecord,
@@ -75,6 +74,8 @@ export function normalizeStoreRecord(
         ? row.status
         : "active",
     max_products: Number(row.max_products ?? 50),
+    owner_user_id: row.owner_user_id ?? null,
+    subscription_expires_at: row.subscription_expires_at ?? null,
     basePath,
     isDefault: row.id === DEFAULT_STORE_ID,
   };
@@ -222,6 +223,11 @@ export async function getManagedStores(
     });
   }
 
+  // Fail closed on unexpected RPC errors; only fall back if RPC does not exist yet
+  if (error && error.code !== "42883" && error.code !== "PGRST202") {
+    return [];
+  }
+
   // Graceful fallback before migration is applied
   const {
     data: { user },
@@ -239,12 +245,12 @@ export async function getManagedStores(
       slug: DEFAULT_STORE_SLUG,
       name_ar: "Nova Store",
       name_en: "Nova Store",
-      plan: "enterprise",
+      plan: "starter",
       status: "active",
-      max_products: 10000,
-      role: "owner",
+      max_products: 50,
+      role: "admin",
       mobile_app_access: "plan",
-      mobile_app_unlocked: true,
+      mobile_app_unlocked: false,
     },
   ];
 }

@@ -32,7 +32,7 @@ export async function POST(req: Request) {
       ? body.session_key.trim().slice(0, 120)
       : "";
 
-  if (action === "upsert" && sessionKey.length < 3) {
+  if (action === "upsert" && sessionKey.length < 24) {
     return Response.json({ ok: false }, { status: 400 });
   }
 
@@ -49,13 +49,13 @@ export async function POST(req: Request) {
           : null;
       await db.rpc("mark_abandoned_cart_recovered", {
         p_store_id: store.id,
-        p_session_key: sessionKey || null,
+        p_session_key: sessionKey.length >= 24 ? sessionKey : null,
         p_order_id: orderId,
       });
       return Response.json({ ok: true }, { status: 200 });
     }
 
-    const items = Array.isArray(body.items) ? body.items : [];
+    const items = Array.isArray(body.items) ? body.items.slice(0, 50) : [];
     const subtotal = Math.max(0, Number(body.subtotal) || 0);
     const currency =
       typeof body.currency === "string" && body.currency.trim()

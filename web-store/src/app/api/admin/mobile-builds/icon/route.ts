@@ -2,19 +2,24 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { serverDb } from "@/lib/db";
 import { adminDb } from "@/lib/supabase/admin";
+import { validateImageMagicBytes } from "@/lib/security";
 import {
   ADMIN_STORE_COOKIE,
   DEFAULT_STORE_ID,
+  computeMobileAppUnlocked,
   getManagedStores,
 } from "@/lib/tenant";
 
-const ALLOWED_EXTENSIONS: Record<string, string> = {
-  "image/png": "png",
-  "image/jpeg": "jpg",
-  "image/webp": "webp",
-};
-
 const MAX_ICON_BYTES = 2 * 1024 * 1024; // 2 MB
+
+function isValidStoreIconPath(storeId: string, candidate: string): boolean {
+  if (!candidate || candidate.includes("..")) return false;
+  const strictRe = new RegExp(
+    `^app-icons/${storeId}/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.(png|jpg|webp)$`,
+    "i",
+  );
+  return strictRe.test(candidate);
+}
 
 async function resolveActiveAdminStore() {
   const [db, jar] = await Promise.all([serverDb(), cookies()]);
@@ -55,6 +60,30 @@ async function resolveActiveAdminStore() {
     managedStores.find((s) => s.store_id === DEFAULT_STORE_ID) ??
     managedStores[0];
 
+  const { data: unlockedRpc, error: rpcErr } = await db.rpc(
+    "store_has_mobile_app_access",
+    { p_store_id: activeStore.store_id },
+  );
+  const unlocked =
+    !rpcErr && typeof unlockedRpc === "boolean"
+      ? unlockedRpc
+      : computeMobileAppUnlocked(activeStore.plan, activeStore.mobile_app_access);
+
+  if (!unlocked) {
+    return {
+      error: NextResponse.json(
+        {
+          error: "plan_upgrade_required",
+          message_ar:
+            "مصنع تطبيق الأندرويد متاح لباقات النمو (Growth) والمؤسسي (Enterprise) فقط.",
+          message_en:
+            "White-label Android APK Builder is available on Growth and Enterprise plans only.",
+        },
+        { status: 403 },
+      ),
+    };
+  }
+
   return { db, activeStore };
 }
 
@@ -89,17 +118,6 @@ export async function POST(req: Request) {
     );
   }
 
-  if (!Object.hasOwn(ALLOWED_EXTENSIONS, file.type)) {
-    return NextResponse.json(
-      {
-        error: "unsupported_type",
-        message_ar: "نوع الملف غير مدعوم. الصيغ المسموحة: PNG أو JPG أو WEBP.",
-        message_en: "Unsupported file format. Allowed formats: PNG, JPG, or WEBP.",
-      },
-      { status: 400 },
-    );
-  }
-
   if (file.size > MAX_ICON_BYTES) {
     return NextResponse.json(
       {
@@ -111,9 +129,20 @@ export async function POST(req: Request) {
     );
   }
 
-  const ext = ALLOWED_EXTENSIONS[file.type];
-  const storagePath = `app-icons/${activeStore.store_id}/${crypto.randomUUID()}.${ext}`;
   const buffer = new Uint8Array(await file.arrayBuffer());
+  const verified = validateImageMagicBytes(buffer);
+  if (!verified) {
+    return NextResponse.json(
+      {
+        error: "unsupported_type",
+        message_ar: "نوع الملف غير مدعوم. الصيغ المسموحة: PNG أو JPG أو WEBP.",
+        message_en: "Unsupported file format. Allowed formats: PNG, JPG, or WEBP.",
+      },
+      { status: 400 },
+    );
+  }
+
+  const storagePath = `app-icons/${activeStore.store_id}/${crypto.randomUUID()}.${verified.ext}`;
 
   let storageClient = db;
   try {
@@ -124,7 +153,7 @@ export async function POST(req: Request) {
 
   const bucket = storageClient.storage.from("product-images");
   const { error: uploadError } = await bucket.upload(storagePath, buffer, {
-    contentType: file.type,
+    contentType: verified.mime,
     cacheControl: "3600",
     upsert: false,
   });
@@ -142,8 +171,7 @@ export async function POST(req: Request) {
 
   const { data: publicData } = bucket.getPublicUrl(storagePath);
   const previousPath = String(formData.get("previousPath") ?? "").trim();
-  const allowedPrefix = `app-icons/${activeStore.store_id}/`;
-  if (previousPath && previousPath.startsWith(allowedPrefix)) {
+  if (isValidStoreIconPath(activeStore.store_id, previousPath)) {
     await bucket.remove([previousPath]).catch(() => undefined);
   }
 
@@ -169,8 +197,7 @@ export async function DELETE(req: Request) {
   }
 
   const path = String(body.path ?? "").trim();
-  const allowedPrefix = `app-icons/${activeStore.store_id}/`;
-  if (!path || !path.startsWith(allowedPrefix)) {
+  if (!isValidStoreIconPath(activeStore.store_id, path)) {
     return NextResponse.json({ ok: true });
   }
 

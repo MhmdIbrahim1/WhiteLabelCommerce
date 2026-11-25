@@ -17,21 +17,29 @@ export async function adminUser(
     if (!rpcErr) {
       return data === true ? user : null;
     }
+    if (rpcErr.code !== "42883" && rpcErr.code !== "PGRST202") {
+      return null;
+    }
   } else {
     const { data, error: rpcErr } = await db.rpc("is_admin");
     if (!rpcErr) {
       return data === true ? user : null;
     }
+    if (rpcErr.code !== "42883" && rpcErr.code !== "PGRST202") {
+      return null;
+    }
   }
 
-  // Fallback for pre-migration environments
+  // Fallback ONLY for pre-migration environments where RPC is missing
   const { data: profile, error: profileError } = await db
     .from("profiles")
-    .select("role")
+    .select("role,store_id")
     .eq("id", user.id)
-    .maybeSingle<{ role: string }>();
+    .maybeSingle<{ role: string; store_id?: string | null }>();
   if (profileError) return null;
-  return profile?.role === "admin" ? user : null;
+  if (profile?.role !== "admin") return null;
+  if (targetStoreId && profile.store_id !== targetStoreId) return null;
+  return user;
 }
 
 export async function superAdminUser(

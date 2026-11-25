@@ -28,9 +28,9 @@ export type StoreRecord = {
   custom_domain: string | null;
   plan: StorePlan;
   status: StoreStatus;
-  max_products: number;
-  owner_user_id: string | null;
-  subscription_expires_at: string | null;
+  max_products?: number;
+  owner_user_id?: string | null;
+  subscription_expires_at?: string | null;
   mobile_app_access?: MobileAppAccess;
   pending_owner_email?: string | null;
 };

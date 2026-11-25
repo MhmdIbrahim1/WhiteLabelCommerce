@@ -1,7 +1,6 @@
 import { adminDb } from "@/lib/supabase/admin";
 import { notifyPaymentOutcome } from "@/lib/notifications/events";
 import {
-  extractOrderUuidFromMerchantOrderId,
   verifyPaymobTransactionHmac,
   type PaymobTransactionObj,
 } from "@/lib/paymob";
@@ -14,9 +13,15 @@ type WebhookPayload = {
 type OrderLookupRow = {
   id: string;
   store_id: string;
+  status: string;
   total: number;
   currency: string;
   payment_status: string;
+};
+
+type PaymentAttemptRow = {
+  order_id: string;
+  store_id: string;
 };
 
 function isTruthyFlag(val: unknown): boolean {
@@ -33,7 +38,10 @@ export async function POST(req: Request) {
 
   const obj = payload?.obj;
   if (!obj || typeof obj !== "object") {
-    return Response.json({ error: "Missing transaction object." }, { status: 400 });
+    return Response.json(
+      { error: "Missing transaction object." },
+      { status: 400 },
+    );
   }
 
   const url = new URL(req.url);
@@ -46,31 +54,42 @@ export async function POST(req: Request) {
     return Response.json({ error: "Missing HMAC signature." }, { status: 401 });
   }
 
+  const paymobOrderId =
+    obj.order?.id !== undefined && obj.order?.id !== null
+      ? String(obj.order.id).trim()
+      : "";
+
+  if (!paymobOrderId) {
+    return Response.json({ error: "Missing Paymob order id." }, { status: 400 });
+  }
+
   try {
     const db = adminDb();
-    const paymobOrderId =
-      obj.order?.id !== undefined && obj.order?.id !== null
-        ? String(obj.order.id)
-        : null;
-    const merchantUuid = extractOrderUuidFromMerchantOrderId(
-      obj.order?.merchant_order_id,
-    );
 
+    // Resolve strictly via signed paymob_order_id (NEVER via unsigned merchant_order_id)
     let order: OrderLookupRow | null = null;
-    if (paymobOrderId) {
+
+    const { data: attempt } = await db
+      .from("payment_attempts")
+      .select("order_id,store_id")
+      .eq("paymob_order_id", paymobOrderId)
+      .maybeSingle<PaymentAttemptRow>();
+
+    if (attempt) {
       const { data } = await db
         .from("orders")
-        .select("id,store_id,total,currency,payment_status")
-        .eq("paymob_order_id", paymobOrderId)
+        .select("id,store_id,status,total,currency,payment_status")
+        .eq("id", attempt.order_id)
+        .eq("store_id", attempt.store_id)
         .maybeSingle<OrderLookupRow>();
       order = data;
     }
 
-    if (!order && merchantUuid) {
+    if (!order) {
       const { data } = await db
         .from("orders")
-        .select("id,store_id,total,currency,payment_status")
-        .eq("id", merchantUuid)
+        .select("id,store_id,status,total,currency,payment_status")
+        .eq("paymob_order_id", paymobOrderId)
         .maybeSingle<OrderLookupRow>();
       order = data;
     }
@@ -86,7 +105,10 @@ export async function POST(req: Request) {
       .maybeSingle<{ paymob_hmac_secret: string | null }>();
 
     const hmacSecret = secrets?.paymob_hmac_secret?.trim() ?? "";
-    if (!hmacSecret || !verifyPaymobTransactionHmac(obj, receivedHmac, hmacSecret)) {
+    if (
+      !hmacSecret ||
+      !verifyPaymobTransactionHmac(obj, receivedHmac, hmacSecret)
+    ) {
       return Response.json({ error: "Invalid HMAC signature." }, { status: 401 });
     }
 
@@ -95,15 +117,40 @@ export async function POST(req: Request) {
       return Response.json({ ok: true, idempotent: true }, { status: 200 });
     }
 
+    if (order.status === "cancelled") {
+      return Response.json(
+        { error: "Order is cancelled." },
+        { status: 409 },
+      );
+    }
+
     const isSuccess = isTruthyFlag(obj.success);
     const isPending = isTruthyFlag(obj.pending);
-    const txCurrency = String(obj.currency ?? "").toUpperCase();
+    const isVoided = isTruthyFlag(obj.is_voided);
+    const isRefunded = isTruthyFlag(obj.is_refunded);
+    const isErrorOccured = isTruthyFlag(obj.error_occured);
+
+    const expectedCurrency = (order.currency || "EGP").trim().toUpperCase();
+    const txCurrency = String(obj.currency ?? "").trim().toUpperCase();
     const expectedAmountCents = Math.round(Number(order.total) * 100);
     const receivedAmountCents = Number(obj.amount_cents);
+    const transactionId =
+      obj.id !== undefined && obj.id !== null ? String(obj.id).trim() : null;
+
+    const cleanSuccess =
+      isSuccess &&
+      !isPending &&
+      !isVoided &&
+      !isRefunded &&
+      !isErrorOccured;
 
     // Anti-tampering check on currency & exact amount_cents before marking paid
-    if (isSuccess && !isPending) {
-      if (txCurrency !== "EGP" || receivedAmountCents !== expectedAmountCents) {
+    if (cleanSuccess) {
+      if (
+        txCurrency !== expectedCurrency ||
+        !Number.isFinite(receivedAmountCents) ||
+        receivedAmountCents !== expectedAmountCents
+      ) {
         return Response.json(
           { error: "Transaction amount or currency mismatch." },
           { status: 400 },
@@ -111,17 +158,35 @@ export async function POST(req: Request) {
       }
     }
 
-    const nextPaymentStatus =
-      isSuccess && !isPending ? "paid" : isPending ? "pending" : "failed";
+    // Prevent reusing a transaction_id already recorded on another order in this store
+    if (transactionId) {
+      const { data: dupTx } = await db
+        .from("orders")
+        .select("id")
+        .eq("store_id", order.store_id)
+        .eq("payment_transaction_id", transactionId)
+        .neq("id", order.id)
+        .maybeSingle<{ id: string }>();
+      if (dupTx) {
+        return Response.json(
+          { error: "Transaction already consumed by another order." },
+          { status: 409 },
+        );
+      }
+    }
+
+    const nextPaymentStatus = cleanSuccess
+      ? "paid"
+      : isPending && !isVoided && !isRefunded && !isErrorOccured
+        ? "pending"
+        : "failed";
 
     const updatePayload: Record<string, unknown> = {
       payment_status: nextPaymentStatus,
+      paymob_order_id: paymobOrderId,
     };
-    if (obj.id !== undefined && obj.id !== null) {
-      updatePayload.payment_transaction_id = String(obj.id);
-    }
-    if (paymobOrderId) {
-      updatePayload.paymob_order_id = paymobOrderId;
+    if (transactionId) {
+      updatePayload.payment_transaction_id = transactionId;
     }
 
     const { error: updateErr } = await db
@@ -129,9 +194,16 @@ export async function POST(req: Request) {
       .update(updatePayload)
       .eq("id", order.id)
       .eq("store_id", order.store_id)
-      .neq("payment_status", "paid");
+      .neq("payment_status", "paid")
+      .neq("status", "cancelled");
 
     if (updateErr) {
+      if (updateErr.code === "23505") {
+        return Response.json(
+          { error: "Transaction already consumed by another order." },
+          { status: 409 },
+        );
+      }
       return Response.json(
         { error: "Failed to record payment status." },
         { status: 500 },

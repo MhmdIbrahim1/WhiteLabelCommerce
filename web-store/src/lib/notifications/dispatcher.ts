@@ -443,24 +443,6 @@ export async function dispatchNotification(
         locale: s.locale,
       });
     }
-  } else if (input.phone) {
-    const cleanPhone = input.phone.replace(/\D+/g, "");
-    if (cleanPhone.length >= 8) {
-      const { data: subs } = await db
-        .from("push_subscriptions")
-        .select("id,token,platform,locale,user_id")
-        .eq("store_id", input.storeId)
-        .eq("phone", cleanPhone)
-        .eq("is_active", true);
-      for (const s of (subs ?? []) as PushSubRow[]) {
-        targets.set(s.token, {
-          id: s.id,
-          token: s.token,
-          platform: s.platform,
-          locale: s.locale,
-        });
-      }
-    }
   }
 
   if (targets.size === 0) {

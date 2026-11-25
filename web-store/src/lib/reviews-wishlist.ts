@@ -6,8 +6,8 @@ export type ProductReview = {
   id: string;
   store_id: string;
   product_id: string;
-  user_id: string;
-  order_id: string | null;
+  user_id?: string | null;
+  order_id?: string | null;
   author_name: string;
   rating: number;
   comment: string;

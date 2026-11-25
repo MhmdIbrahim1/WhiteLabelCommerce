@@ -591,6 +591,7 @@ export function Basket({
                             effectivePaymentMethod === "paymob_wallet"
                               ? cleanWallet
                               : undefined,
+                          customer_phone: phone,
                         }),
                       },
                     );

@@ -1,4 +1,6 @@
+import { serverDb } from "@/lib/db";
 import { adminDb } from "@/lib/supabase/admin";
+import { resolveActiveStoreOrDefault } from "@/lib/tenant";
 import {
   authenticatePaymob,
   EGYPT_WALLET_PHONE_RE,
@@ -12,13 +14,19 @@ type InitiateBody = {
   order_id?: unknown;
   method?: unknown;
   wallet_phone?: unknown;
+  customer_phone?: unknown;
+  phone?: unknown;
 };
 
 type OrderRow = {
   id: string;
   store_id: string;
+  user_id: string | null;
+  guest_tracking: boolean | null;
+  status: string;
   total: number;
   currency: string;
+  payment_method: string;
   payment_status: string;
   phone: string | null;
   shipping_address: string | null;
@@ -46,6 +54,29 @@ type PaymentSecretsRow = {
   paymob_iframe_id: string | null;
 };
 
+function phoneVariants(raw: string | null | undefined): string[] {
+  let digits = (raw ?? "").replace(/\D+/g, "");
+  if (/^2001[0125][0-9]{8}$/.test(digits)) {
+    digits = "0" + digits.slice(3);
+  } else if (/^00201[0125][0-9]{8}$/.test(digits)) {
+    digits = "0" + digits.slice(4);
+  }
+  if (/^01[0125][0-9]{8}$/.test(digits)) {
+    return [digits, "20" + digits.slice(1)];
+  }
+  if (/^201[0125][0-9]{8}$/.test(digits)) {
+    return ["0" + digits.slice(2), digits];
+  }
+  return digits.length >= 8 ? [digits] : [];
+}
+
+function phonesMatch(a: string | null | undefined, b: string | null | undefined): boolean {
+  const va = phoneVariants(a);
+  const vb = phoneVariants(b);
+  if (va.length === 0 || vb.length === 0) return false;
+  return va.some((x) => vb.includes(x));
+}
+
 export async function POST(req: Request) {
   let body: InitiateBody;
   try {
@@ -65,6 +96,12 @@ export async function POST(req: Request) {
     typeof body.wallet_phone === "string"
       ? body.wallet_phone.replace(/\s+/g, "")
       : "";
+  const callerPhone =
+    typeof body.customer_phone === "string" && body.customer_phone.trim()
+      ? body.customer_phone.trim()
+      : typeof body.phone === "string" && body.phone.trim()
+        ? body.phone.trim()
+        : "";
 
   if (!UUID_RE.test(orderId)) {
     return Response.json(
@@ -88,12 +125,20 @@ export async function POST(req: Request) {
   }
 
   try {
+    const [userDb, activeStore] = await Promise.all([
+      serverDb(),
+      resolveActiveStoreOrDefault(),
+    ]);
+    const {
+      data: { user },
+    } = await userDb.auth.getUser();
+
     const db = adminDb();
 
     const { data: order, error: orderErr } = await db
       .from("orders")
       .select(
-        "id,store_id,total,currency,payment_status,phone,shipping_address,customer_id",
+        "id,store_id,user_id,guest_tracking,status,total,currency,payment_method,payment_status,phone,shipping_address,customer_id",
       )
       .eq("id", orderId)
       .maybeSingle<OrderRow>();
@@ -105,9 +150,56 @@ export async function POST(req: Request) {
       );
     }
 
+    // Strict tenant check: order must belong to the active store
+    if (order.store_id !== activeStore.id) {
+      return Response.json(
+        { error: "Order does not belong to this store." },
+        { status: 403, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+
+    // Strict caller authorization: authenticated owner OR verified guest phone
+    if (order.user_id) {
+      if (!user || user.id !== order.user_id) {
+        return Response.json(
+          { error: "Unauthorized order payment initiation." },
+          { status: 403, headers: { "Cache-Control": "no-store" } },
+        );
+      }
+    } else {
+      const verifiedGuestPhone =
+        order.guest_tracking === true &&
+        (phonesMatch(callerPhone, order.phone) ||
+          (method === "wallet" && phonesMatch(walletPhone, order.phone)));
+      if (!verifiedGuestPhone) {
+        return Response.json(
+          { error: "Guest phone verification required." },
+          { status: 403, headers: { "Cache-Control": "no-store" } },
+        );
+      }
+    }
+
+    // Reject closed, already-paid, or non-online orders
+    if (order.status === "cancelled" || order.status === "delivered") {
+      return Response.json(
+        { error: "Order is closed and cannot be paid." },
+        { status: 409, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+
     if (order.payment_status === "paid") {
       return Response.json(
         { error: "Order is already paid." },
+        { status: 409, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+
+    if (
+      order.payment_method !== "paymob_card" &&
+      order.payment_method !== "paymob_wallet"
+    ) {
+      return Response.json(
+        { error: "Order is not eligible for online payment." },
         { status: 409, headers: { "Cache-Control": "no-store" } },
       );
     }
@@ -119,6 +211,8 @@ export async function POST(req: Request) {
         { status: 400, headers: { "Cache-Control": "no-store" } },
       );
     }
+
+    const currency = (order.currency || "EGP").trim().toUpperCase();
 
     const [flagsRes, secretsRes, customerRes] = await Promise.all([
       db
@@ -191,18 +285,34 @@ export async function POST(req: Request) {
       authToken,
       amountCents,
       merchantOrderId,
-      currency: "EGP",
+      currency,
     });
+
+    const nextPaymentMethod =
+      method === "card" ? "paymob_card" : "paymob_wallet";
+
+    // Record attempt cleanly in payment_attempts so every initiated paymob_order_id remains resolvable
+    await db
+      .from("payment_attempts")
+      .insert({
+        store_id: order.store_id,
+        order_id: order.id,
+        paymob_order_id: paymobOrderId,
+        payment_method: nextPaymentMethod,
+      })
+      .then(() => undefined, () => undefined);
 
     await db
       .from("orders")
       .update({
         paymob_order_id: paymobOrderId,
-        payment_method: method === "card" ? "paymob_card" : "paymob_wallet",
+        payment_method: nextPaymentMethod,
         payment_status: "pending",
       })
       .eq("id", order.id)
-      .eq("store_id", order.store_id);
+      .eq("store_id", order.store_id)
+      .neq("payment_status", "paid")
+      .not("status", "in", "(cancelled,delivered)");
 
     // 3. Payment Key with safe fallback billing data
     const customer = customerRes.data;
@@ -211,7 +321,7 @@ export async function POST(req: Request) {
       amountCents,
       paymobOrderId,
       integrationId,
-      currency: "EGP",
+      currency,
       customerName: customer?.full_name,
       customerEmail: customer?.email,
       customerPhone: customer?.phone || order.phone,

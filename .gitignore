@@ -55,3 +55,7 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+# --- Internal Security Audit Reports (NEVER commit) ---
+SECURITY_QA_AUDIT_REPORT.md
+**/SECURITY_QA_AUDIT_REPORT.md

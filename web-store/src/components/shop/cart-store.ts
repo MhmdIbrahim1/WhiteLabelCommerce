@@ -52,32 +52,32 @@ let contactCache: {
 export function getCartSessionKey(): string {
   try {
     let id = localStorage.getItem(abandonedSessionKey);
-    if (!id) {
+    if (!id || id.length < 24) {
       id =
         typeof crypto !== "undefined" && "randomUUID" in crypto
           ? `web-${crypto.randomUUID()}`
-          : `web-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+          : `web-${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
       localStorage.setItem(abandonedSessionKey, id);
     }
     return id;
   } catch {
-    return "web-fallback";
+    return `web-fallback-${Date.now()}-000000000000`;
   }
 }
 
 export function getGuestSessionId(): string {
   try {
     let id = localStorage.getItem(guestSessionKey);
-    if (!id) {
+    if (!id || id.length < 24) {
       id =
         typeof crypto !== "undefined" && "randomUUID" in crypto
           ? crypto.randomUUID()
-          : `guest-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+          : `guest-${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
       localStorage.setItem(guestSessionKey, id);
     }
     return id;
   } catch {
-    return "guest-fallback";
+    return `guest-fallback-${Date.now()}-000000000000`;
   }
 }
 

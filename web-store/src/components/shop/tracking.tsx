@@ -149,6 +149,7 @@ export function Timeline({
           order_id: row.id,
           method,
           wallet_phone: method === "wallet" ? cleanWallet : undefined,
+          customer_phone: row.phone ?? undefined,
         }),
       });
       const data = (await res.json()) as { redirect_url?: string };

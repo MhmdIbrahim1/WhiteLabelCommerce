@@ -35,6 +35,7 @@ import type { ProductReview } from "@/lib/reviews-wishlist";
 import { resolveEffectivePrice } from "@/lib/flash-sale";
 import { normalizeSpecs } from "@/lib/specs";
 import { nextOrder, nextTicket } from "@/lib/workflow";
+import { safeRelativePath, validateImageMagicBytes } from "@/lib/security";
 
 const catalog = "/admin/products";
 const text = (form: FormData, name: string) =>
@@ -218,16 +219,13 @@ export async function saveProduct(f: FormData) {
   const file = f.get("image");
   let image: string | undefined;
   if (file instanceof File && file.size) {
-    const extensions: Record<string, string> = {
-      "image/png": "png",
-      "image/jpeg": "jpg",
-      "image/webp": "webp",
-    };
-    if (!Object.hasOwn(extensions, file.type) || file.size > 5 * 1024 * 1024)
-      finish(catalog, false);
-    image = "products/" + crypto.randomUUID() + "." + extensions[file.type];
-    const uploaded = await bucket.upload(image, file, {
-      contentType: file.type,
+    if (file.size > 5 * 1024 * 1024) finish(catalog, false);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const verified = validateImageMagicBytes(bytes);
+    if (!verified) finish(catalog, false);
+    image = `${storeId}/products/${crypto.randomUUID()}.${verified.ext}`;
+    const uploaded = await bucket.upload(image, bytes, {
+      contentType: verified.mime,
       upsert: false,
     });
     if (uploaded.error) finish(catalog, false);
@@ -274,8 +272,15 @@ export async function saveProduct(f: FormData) {
     .select("id")
     .single();
   if (result.error && image) await bucket.remove([image]);
-  if (!result.error && image && id && previous.startsWith("products/"))
-    await bucket.remove([previous]);
+  if (
+    !result.error &&
+    image &&
+    id &&
+    !previous.includes("..") &&
+    (previous.startsWith(`${storeId}/products/`) ||
+      previous.startsWith("products/"))
+  )
+    await bucket.remove([previous]).catch(() => undefined);
   if (result.error?.message?.includes("store_product_limit_reached")) {
     finish(catalog, false, "limit_reached");
   }
@@ -318,8 +323,16 @@ export async function deleteProduct(f: FormData) {
     .eq("store_id", storeId)
     .select("image_path")
     .single();
-  if (result.data?.image_path && result.data.image_path.startsWith("products/"))
-    await db.storage.from("product-images").remove([result.data.image_path]);
+  if (
+    result.data?.image_path &&
+    !result.data.image_path.includes("..") &&
+    (result.data.image_path.startsWith(`${storeId}/products/`) ||
+      result.data.image_path.startsWith("products/"))
+  )
+    await db.storage
+      .from("product-images")
+      .remove([result.data.image_path])
+      .catch(() => undefined);
   finish(catalog, !result.error);
 }
 export async function updateOrder(f: FormData) {
@@ -715,24 +728,20 @@ export async function uploadHeroBannerImage(
 ): Promise<UploadHeroBannerResult> {
   const { db, storeId } = await requireAdmin();
   const file = f.get("file");
-  const extensions: Record<string, string> = {
-    "image/png": "png",
-    "image/jpeg": "jpg",
-    "image/webp": "webp",
-  };
-  if (
-    !(file instanceof File) ||
-    !file.size ||
-    !Object.hasOwn(extensions, file.type) ||
-    file.size > 5 * 1024 * 1024
-  ) {
+  if (!(file instanceof File) || !file.size || file.size > 5 * 1024 * 1024) {
     return { ok: false, error: "invalid_file" };
   }
 
-  const path = `banners/${storeId}/${crypto.randomUUID()}.${extensions[file.type]}`;
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const verified = validateImageMagicBytes(bytes);
+  if (!verified) {
+    return { ok: false, error: "invalid_file" };
+  }
+
+  const path = `${storeId}/banners/${crypto.randomUUID()}.${verified.ext}`;
   const bucket = db.storage.from("product-images");
-  const uploaded = await bucket.upload(path, file, {
-    contentType: file.type,
+  const uploaded = await bucket.upload(path, bytes, {
+    contentType: verified.mime,
     upsert: false,
   });
   if (uploaded.error) {
@@ -779,14 +788,12 @@ export async function saveCustomerNotes(f: FormData) {
   const { db, storeId } = await requireAdmin();
   const id = text(f, "id");
   const notes = text(f, "notes").slice(0, 1000);
-  if (!id) finish("/admin/customers", false);
-  const { error } = await db
-    .from("store_customers")
-    .update({ notes, updated_at: new Date().toISOString() })
-    .eq("id", id)
-    .eq("store_id", storeId)
-    .select("id")
-    .single();
+  if (!id || !UUID_REGEX.test(id)) finish("/admin/customers", false);
+  const { error } = await db.rpc("admin_update_customer_notes", {
+    p_store_id: storeId,
+    p_customer_id: id,
+    p_notes: notes,
+  });
   finish("/admin/customers", !error);
 }
 
@@ -886,7 +893,7 @@ export async function sendPromoCampaign(
   const bodyEn = text(f, "body_en").slice(0, 400);
   const audience = text(f, "audience") || "all";
   const rawDeepLink = text(f, "deep_link") || "/";
-  const deepLink = rawDeepLink.startsWith("/") ? rawDeepLink : "/";
+  const deepLink = safeRelativePath(rawDeepLink, "/");
   const bypassQuietHours = f.get("bypass_quiet_hours") === "true";
 
   if (!titleAr || !titleEn || !bodyAr || !bodyEn) {
@@ -1042,7 +1049,8 @@ export async function deleteAdminNotifications(
     let query = svc
       .from("notifications")
       .delete()
-      .eq("store_id", storeId);
+      .eq("store_id", storeId)
+      .eq("target_role", "admin");
 
     if (input.mode === "single" || input.mode === "selected") {
       const cleanIds = Array.from(
@@ -1167,7 +1175,7 @@ export async function processReturnRequestAction(input: {
   adminNotes?: string | null;
   restock?: boolean;
 }): Promise<ProcessReturnResult> {
-  const { db } = await requireAdmin();
+  const { db, storeId } = await requireAdmin();
   const cleanId = (input.returnId ?? "").trim();
   if (!UUID_REGEX.test(cleanId)) {
     return { ok: false, error: "invalid_return_id" };
@@ -1179,6 +1187,18 @@ export async function processReturnRequestAction(input: {
     input.action !== "complete_refund"
   ) {
     return { ok: false, error: "invalid_return_action" };
+  }
+
+  // Enforce active admin store scoping before processing the return request
+  const { data: ownedReturn } = await db
+    .from("return_requests")
+    .select("id")
+    .eq("id", cleanId)
+    .eq("store_id", storeId)
+    .maybeSingle<{ id: string }>();
+
+  if (!ownedReturn) {
+    return { ok: false, error: "return_request_not_found" };
   }
 
   const rpcParams: {
@@ -1307,13 +1327,25 @@ export async function updateAbandonedCartAction(input: {
   action: "mark_reminded" | "dismiss";
   couponCode?: string | null;
 }): Promise<UpdateAbandonedCartResult> {
-  const { db } = await requireAdmin();
+  const { db, storeId } = await requireAdmin();
   const cleanId = (input.cartId ?? "").trim();
   if (!UUID_REGEX.test(cleanId)) {
     return { ok: false, error: "invalid_cart_id" };
   }
   if (input.action !== "mark_reminded" && input.action !== "dismiss") {
     return { ok: false, error: "invalid_action" };
+  }
+
+  // Enforce active admin store scoping before mutating the abandoned cart
+  const { data: ownedCart } = await db
+    .from("abandoned_carts")
+    .select("id")
+    .eq("id", cleanId)
+    .eq("store_id", storeId)
+    .maybeSingle<{ id: string }>();
+
+  if (!ownedCart) {
+    return { ok: false, error: "abandoned_cart_not_found" };
   }
 
   const cleanCoupon =

@@ -21,21 +21,32 @@ import {
   type PromoBannerCampaign,
 } from "@/lib/ui-config";
 import { useLanguage } from "@/components/language-provider";
+import { safeRelativePath } from "@/lib/security";
 
 export function normalizePromoHref(rawHref: string | null | undefined): string {
   const clean = (rawHref ?? "").trim();
   if (!clean) return "/products";
-  if (clean.startsWith("http://") || clean.startsWith("https://")) return clean;
+  if (clean.startsWith("http://") || clean.startsWith("https://")) {
+    try {
+      const parsed = new URL(clean);
+      if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+        return parsed.toString();
+      }
+    } catch {
+      return "/products";
+    }
+    return "/products";
+  }
   if (clean.startsWith("/product/")) {
     const rest = clean.slice("/product/".length).trim();
-    return rest ? `/products/${rest}` : "/products";
+    return rest ? safeRelativePath(`/products/${rest}`, "/products") : "/products";
   }
   if (clean.startsWith("/category/")) {
     const rest = clean.slice("/category/".length).trim();
     return rest ? `/products?category=${encodeURIComponent(rest)}` : "/products";
   }
   if (clean === "/offers") return "/products";
-  return clean.startsWith("/") ? clean : "/products";
+  return safeRelativePath(clean, "/products");
 }
 
 function CtaLink({
