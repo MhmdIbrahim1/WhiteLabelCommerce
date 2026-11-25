@@ -73,6 +73,7 @@ object AppRoutes {
     const val ORDERS = "orders"
 
     const val PRODUCT_DETAIL = "product/{productId}"
+    const val ORDER_DETAIL = "order/{orderId}"
     const val CHECKOUT = "checkout"
     const val ACCOUNT = "account"
     const val WISHLIST = "wishlist"
@@ -82,6 +83,8 @@ object AppRoutes {
     val topLevelRoutes: Set<String> = setOf(HOME, CATEGORIES, CART, ORDERS, ACCOUNT)
 
     fun productDetail(productId: String): String = "product/${Uri.encode(productId)}"
+
+    fun orderDetail(orderId: String): String = "order/${Uri.encode(orderId)}"
 
     fun support(orderId: String? = null): String =
         if (orderId.isNullOrBlank()) {

@@ -5,6 +5,10 @@ import com.whitelabel.commerce.core.domain.model.CheckoutResult
 import com.whitelabel.commerce.core.domain.model.GuestOrderTracking
 import com.whitelabel.commerce.core.domain.model.Order
 import com.whitelabel.commerce.core.domain.model.OrderStatus
+import com.whitelabel.commerce.core.domain.model.ReturnRefundMethod
+import com.whitelabel.commerce.core.domain.model.ReturnRequest
+import com.whitelabel.commerce.core.domain.model.ReturnRequestType
+import com.whitelabel.commerce.core.domain.model.ReturnSubmissionItem
 import com.whitelabel.commerce.core.domain.model.SavedOrderReceipt
 import kotlinx.coroutines.flow.Flow
 import java.util.UUID
@@ -73,4 +77,26 @@ interface OrderRepository {
      * updates the local saved receipt, and clears the cart.
      */
     suspend fun switchOrderToCod(orderNumber: String, phone: String): Result<Unit>
+
+    /**
+     * Fetches the latest return/exchange request for the given [orderId] in the active store.
+     */
+    suspend fun getReturnRequestForOrder(orderId: String): Result<ReturnRequest?>
+
+    /**
+     * Batch-fetches the latest return/exchange requests for the signed-in user's orders in the active store.
+     */
+    suspend fun getMyReturnRequests(): Result<Map<String, ReturnRequest>>
+
+    /**
+     * Submits a self-service return or exchange request via `public.submit_return_request` RPC.
+     */
+    suspend fun submitReturnRequest(
+        orderId: String,
+        requestType: ReturnRequestType,
+        refundMethod: ReturnRefundMethod,
+        reason: String,
+        customerNotes: String?,
+        items: List<ReturnSubmissionItem>,
+    ): Result<ReturnRequest>
 }

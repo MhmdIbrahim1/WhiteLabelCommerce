@@ -40,6 +40,9 @@ function txTitle(tx: WalletTransactionItem, isEn: boolean): string {
         return shortOrder ? `Redeemed on order ${shortOrder}` : "Order wallet redemption";
       case "order_refund":
         return shortOrder ? `Refunded from order ${shortOrder}` : "Cancelled order refund";
+      case "return_refund":
+      case "credit":
+        return shortOrder ? `Return refund · ${shortOrder}` : "Return refund credit";
       case "admin_credit":
         return "Store credit added";
       case "admin_debit":
@@ -56,6 +59,9 @@ function txTitle(tx: WalletTransactionItem, isEn: boolean): string {
       return shortOrder ? `خصم على طلب ${shortOrder}` : "استخدام رصيد المحفظة";
     case "order_refund":
       return shortOrder ? `استرداد طلب ملغي ${shortOrder}` : "استرداد رصيد المحفظة";
+    case "return_refund":
+    case "credit":
+      return shortOrder ? `استرداد طلب إرجاع ${shortOrder}` : "استرداد إرجاع للمحفظة";
     case "admin_credit":
       return "رصيد إداري";
     case "admin_debit":

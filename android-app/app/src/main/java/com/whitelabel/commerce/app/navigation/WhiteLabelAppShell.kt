@@ -67,6 +67,7 @@ import com.whitelabel.commerce.feature.checkout.PaymentFlowOutcome
 import com.whitelabel.commerce.feature.home.HomeScreen
 import com.whitelabel.commerce.feature.home.parseHeroCategoryParam
 import com.whitelabel.commerce.feature.notifications.NotificationsScreen
+import com.whitelabel.commerce.feature.orders.OrderDetailScreen
 import com.whitelabel.commerce.feature.orders.OrdersScreen
 import com.whitelabel.commerce.feature.support.SupportScreen
 import com.whitelabel.commerce.feature.wishlist.WishlistScreen
@@ -118,11 +119,14 @@ fun WhiteLabelAppShell(
     fun handleHeroRoute(link: String) {
         val clean = link.trim()
         val productIdMatch = Regex("^/products?/([0-9a-fA-F-]{8,64}).*$").matchEntire(clean)
+        val orderIdMatch = Regex("^/orders/([0-9a-fA-F-]{8,64}).*$").matchEntire(clean)
         val categoryPathMatch = Regex("^/category/([^/?#]+).*$").matchEntire(clean)
         when {
             clean == "/" -> navigateToTab(AppRoutes.HOME)
             productIdMatch != null ->
                 navController.navigate(AppRoutes.productDetail(productIdMatch.groupValues[1]))
+            orderIdMatch != null ->
+                navController.navigate(AppRoutes.orderDetail(orderIdMatch.groupValues[1]))
             categoryPathMatch != null -> {
                 pendingCategoryId = categoryPathMatch.groupValues[1]
                 navigateToTab(AppRoutes.CATEGORIES)
@@ -432,6 +436,9 @@ fun WhiteLabelAppShell(
                     initialPhone = pendingTrackOrder?.second,
                     initialPaymentOutcome = pendingTrackOrder?.third,
                     onConsumePrefill = { pendingTrackOrder = null },
+                    onOpenOrderDetail = { orderId ->
+                        navController.navigate(AppRoutes.orderDetail(orderId))
+                    },
                     onOpenSupport = { orderId ->
                         navController.navigate(AppRoutes.support(orderId))
                     },
@@ -442,6 +449,23 @@ fun WhiteLabelAppShell(
                     onShowActionMessage = { msg, actionLabel, onAction ->
                         showActionSnackbar(msg, actionLabel, onAction)
                     },
+                )
+            }
+
+            composable(
+                route = AppRoutes.ORDER_DETAIL,
+                arguments = listOf(navArgument("orderId") { type = NavType.StringType }),
+            ) { backStackEntry ->
+                val orderId = backStackEntry.arguments?.getString("orderId").orEmpty()
+                OrderDetailScreen(
+                    orderId = orderId,
+                    onBack = { navController.popBackStack() },
+                    onOpenSupport = { id -> navController.navigate(AppRoutes.support(id)) },
+                    onOpenAccount = {
+                        navController.popBackStack()
+                        navigateToTab(AppRoutes.ACCOUNT)
+                    },
+                    onShowMessage = { msg -> showSnackbar(msg) },
                 )
             }
 

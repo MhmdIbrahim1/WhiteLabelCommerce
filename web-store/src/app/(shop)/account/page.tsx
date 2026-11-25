@@ -24,6 +24,7 @@ import {
   WalletSection,
   type WalletSummaryData,
 } from "@/components/shop/wallet-section";
+import { normalizeReturnRecord, type ReturnRequestRecord } from "@/lib/returns";
 import type { Summary } from "../orders/actions";
 import { logout, saveCustomerAccount } from "../../login/actions";
 
@@ -134,7 +135,30 @@ export default async function AccountPage({
 
   const ArrowIcon = lang === "en" ? ArrowRight : ArrowLeft;
   const profile = profileRes.data;
-  const allOrders = (checked(ordersRes) as AccountOrderRow[]) ?? [];
+  const rawOrders = (checked(ordersRes) as AccountOrderRow[]) ?? [];
+  const recentOrderIds = rawOrders.slice(0, 4).map((o) => o.id);
+  const returnsByOrder = new Map<string, ReturnRequestRecord>();
+  if (recentOrderIds.length > 0) {
+    const retRes = await db
+      .from("return_requests")
+      .select("*")
+      .eq("store_id", store.storeId)
+      .eq("user_id", user.id)
+      .in("order_id", recentOrderIds)
+      .order("created_at", { ascending: false });
+    if (!retRes.error && Array.isArray(retRes.data)) {
+      for (const raw of retRes.data as Record<string, unknown>[]) {
+        const rec = normalizeReturnRecord(raw);
+        if (!returnsByOrder.has(rec.order_id)) {
+          returnsByOrder.set(rec.order_id, rec);
+        }
+      }
+    }
+  }
+  const allOrders: AccountOrderRow[] = rawOrders.map((o) => ({
+    ...o,
+    return_request: returnsByOrder.get(o.id) ?? null,
+  }));
   const totalOrders = allOrders.length;
   const deliveredOrders = allOrders.filter((o) => o.status === "delivered");
   const totalSpent = deliveredOrders.reduce(
@@ -293,7 +317,13 @@ export default async function AccountPage({
           {allOrders.length > 0 ? (
             <div className="orders-list">
               {allOrders.slice(0, 4).map((o, idx) => (
-                <Timeline key={o.id} row={o} index={idx} />
+                <Timeline
+                  key={o.id}
+                  row={o}
+                  index={idx}
+                  detailHref={storeHref(store.basePath, `/orders/${o.id}`)}
+                  currency={o.currency || store.currency}
+                />
               ))}
             </div>
           ) : (

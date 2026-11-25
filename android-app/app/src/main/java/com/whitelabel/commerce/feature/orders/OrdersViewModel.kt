@@ -1,17 +1,22 @@
 package com.whitelabel.commerce.feature.orders
 
-import com.whitelabel.commerce.core.designsystem.localized
-
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.whitelabel.commerce.core.designsystem.localized
 import com.whitelabel.commerce.core.domain.model.AuthSessionState
 import com.whitelabel.commerce.core.domain.model.GuestOrderTracking
 import com.whitelabel.commerce.core.domain.model.Order
+import com.whitelabel.commerce.core.domain.model.ReturnRefundMethod
+import com.whitelabel.commerce.core.domain.model.ReturnRequest
+import com.whitelabel.commerce.core.domain.model.ReturnRequestStatus
+import com.whitelabel.commerce.core.domain.model.ReturnRequestType
+import com.whitelabel.commerce.core.domain.model.ReturnSubmissionItem
 import com.whitelabel.commerce.core.domain.model.SavedOrderReceipt
 import com.whitelabel.commerce.core.domain.model.StoreSettings
 import com.whitelabel.commerce.core.domain.repository.AuthRepository
 import com.whitelabel.commerce.core.domain.repository.OrderRepository
 import com.whitelabel.commerce.core.domain.repository.StoreRepository
+import com.whitelabel.commerce.core.domain.repository.WalletRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -31,6 +36,14 @@ data class OrderTrackingFormState(
     val refreshingOrderNumber: String? = null,
     val accountOrders: List<Order> = emptyList(),
     val isLoadingAccountOrders: Boolean = false,
+    val returnsByOrderId: Map<String, ReturnRequest> = emptyMap(),
+    val detailOrderId: String? = null,
+    val detailOrder: Order? = null,
+    val detailReturnRequest: ReturnRequest? = null,
+    val isLoadingDetail: Boolean = false,
+    val isSubmittingReturn: Boolean = false,
+    val returnSubmitError: String? = null,
+    val refreshedWalletBalance: Double? = null,
 )
 
 sealed interface SwitchToCodOutcome {
@@ -56,6 +69,7 @@ data class OrdersUiState(
 class OrdersViewModel @Inject constructor(
     private val orderRepository: OrderRepository,
     private val authRepository: AuthRepository,
+    private val walletRepository: WalletRepository,
     storeRepository: StoreRepository,
 ) : ViewModel() {
 
@@ -88,7 +102,14 @@ class OrdersViewModel @Inject constructor(
             authRepository.sessionState.collect { session ->
                 when (session) {
                     is AuthSessionState.SignedIn -> loadAccountOrders()
-                    AuthSessionState.SignedOut -> trackingState.update { it.copy(accountOrders = emptyList()) }
+                    AuthSessionState.SignedOut -> trackingState.update {
+                        it.copy(
+                            accountOrders = emptyList(),
+                            returnsByOrderId = emptyMap(),
+                            detailReturnRequest = null,
+                            refreshedWalletBalance = null,
+                        )
+                    }
                     AuthSessionState.Loading -> Unit
                 }
             }
@@ -177,7 +198,8 @@ class OrdersViewModel @Inject constructor(
 
     suspend fun refreshPayments(receipts: List<SavedOrderReceipt>) {
         val accounts = orderRepository.getMyOrders().getOrNull().orEmpty()
-        trackingState.update { it.copy(accountOrders = accounts) }
+        val returns = orderRepository.getMyReturnRequests().getOrNull().orEmpty()
+        trackingState.update { it.copy(accountOrders = accounts, returnsByOrderId = returns) }
         for (receipt in receipts) {
             if (accounts.none { it.id == receipt.orderNumber }) orderRepository.trackGuestOrder(receipt.orderNumber, receipt.phone)
         }
@@ -186,15 +208,137 @@ class OrdersViewModel @Inject constructor(
     fun loadAccountOrders() {
         viewModelScope.launch {
             trackingState.update { it.copy(isLoadingAccountOrders = true) }
-            orderRepository.getMyOrders()
-                .onSuccess { list ->
-                    trackingState.update {
-                        it.copy(accountOrders = list, isLoadingAccountOrders = false)
-                    }
+            val orders = orderRepository.getMyOrders().getOrNull()
+            val returns = orderRepository.getMyReturnRequests().getOrNull()
+            trackingState.update { prev ->
+                prev.copy(
+                    accountOrders = orders ?: prev.accountOrders,
+                    returnsByOrderId = returns ?: prev.returnsByOrderId,
+                    isLoadingAccountOrders = false,
+                )
+            }
+            if (returns != null && returns.values.any { it.status == ReturnRequestStatus.REFUNDED || it.walletCredited }) {
+                refreshWalletBalance()
+            }
+        }
+    }
+
+    fun loadOrderDetail(orderId: String) {
+        val cleanId = orderId.trim()
+        if (cleanId.isEmpty()) return
+        viewModelScope.launch {
+            trackingState.update {
+                it.copy(
+                    detailOrderId = cleanId,
+                    isLoadingDetail = true,
+                    returnSubmitError = null,
+                )
+            }
+            val orders = orderRepository.getMyOrders().getOrNull().orEmpty()
+            val matchedOrder = orders.firstOrNull { it.id.equals(cleanId, ignoreCase = true) }
+            val returnReq = orderRepository.getReturnRequestForOrder(cleanId).getOrNull()
+
+            trackingState.update { prev ->
+                val updatedMap = if (returnReq != null) {
+                    prev.returnsByOrderId + (cleanId to returnReq)
+                } else {
+                    prev.returnsByOrderId
                 }
-                .onFailure {
-                    trackingState.update { it.copy(isLoadingAccountOrders = false) }
+                prev.copy(
+                    accountOrders = if (orders.isNotEmpty()) orders else prev.accountOrders,
+                    returnsByOrderId = updatedMap,
+                    detailOrder = matchedOrder,
+                    detailReturnRequest = returnReq,
+                    isLoadingDetail = false,
+                )
+            }
+
+            if (returnReq?.status == ReturnRequestStatus.REFUNDED || returnReq?.walletCredited == true) {
+                refreshWalletBalance()
+            }
+        }
+    }
+
+    fun refreshWalletBalance() {
+        viewModelScope.launch {
+            walletRepository.getMyWalletSummary()
+                .onSuccess { summary ->
+                    trackingState.update { it.copy(refreshedWalletBalance = summary.balance) }
                 }
+        }
+    }
+
+    fun clearReturnError() {
+        trackingState.update { it.copy(returnSubmitError = null) }
+    }
+
+    fun submitReturnRequest(
+        orderId: String,
+        requestType: ReturnRequestType,
+        refundMethod: ReturnRefundMethod,
+        reason: String,
+        customerNotes: String?,
+        items: List<ReturnSubmissionItem>,
+        onSuccess: (ReturnRequest) -> Unit,
+    ) {
+        if (trackingState.value.isSubmittingReturn) return
+        viewModelScope.launch {
+            trackingState.update { it.copy(isSubmittingReturn = true, returnSubmitError = null) }
+            orderRepository.submitReturnRequest(
+                orderId = orderId,
+                requestType = requestType,
+                refundMethod = refundMethod,
+                reason = reason,
+                customerNotes = customerNotes,
+                items = items,
+            ).onSuccess { created ->
+                trackingState.update { prev ->
+                    prev.copy(
+                        isSubmittingReturn = false,
+                        returnSubmitError = null,
+                        returnsByOrderId = prev.returnsByOrderId + (orderId to created),
+                        detailReturnRequest = if (prev.detailOrderId.equals(orderId, ignoreCase = true)) {
+                            created
+                        } else {
+                            prev.detailReturnRequest
+                        },
+                    )
+                }
+                if (created.status == ReturnRequestStatus.REFUNDED || created.walletCredited) {
+                    refreshWalletBalance()
+                }
+                onSuccess(created)
+            }.onFailure { err ->
+                val raw = err.message.orEmpty().lowercase()
+                val friendly = when {
+                    "return_already_exists" in raw -> localized(
+                        "يوجد بالفعل طلب إرجاع أو استبدال نشط لهذا الطلب.",
+                        "An active return or exchange request already exists for this order.",
+                    )
+                    "order_not_delivered" in raw -> localized(
+                        "الإرجاع والاستبدال متاحان فقط بعد تسليم الطلب.",
+                        "Returns are only available after the order has been delivered.",
+                    )
+                    "invalid_return_quantity" in raw -> localized(
+                        "الكمية المختارة تتجاوز الكمية المطلوبة.",
+                        "Selected quantity exceeds the ordered quantity.",
+                    )
+                    "not_authorized" in raw -> localized(
+                        "يرجى تسجيل الدخول للمتابعة.",
+                        "Please sign in to submit a return request.",
+                    )
+                    else -> localized(
+                        "تعذر إرسال طلب الإرجاع حالياً. يرجى المحاولة مرة أخرى.",
+                        "Could not submit your return request right now. Please try again.",
+                    )
+                }
+                trackingState.update {
+                    it.copy(
+                        isSubmittingReturn = false,
+                        returnSubmitError = friendly,
+                    )
+                }
+            }
         }
     }
 

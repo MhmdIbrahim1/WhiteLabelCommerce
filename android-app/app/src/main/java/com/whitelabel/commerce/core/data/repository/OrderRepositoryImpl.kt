@@ -15,6 +15,9 @@ import com.whitelabel.commerce.core.data.remote.dto.GuestOrderInsertDto
 import com.whitelabel.commerce.core.data.remote.dto.GuestOrderTrackParamsDto
 import com.whitelabel.commerce.core.data.remote.dto.GuestOrderTrackingDto
 import com.whitelabel.commerce.core.data.remote.dto.OrderDto
+import com.whitelabel.commerce.core.data.remote.dto.ReturnRequestDto
+import com.whitelabel.commerce.core.data.remote.dto.SubmitReturnItemParamDto
+import com.whitelabel.commerce.core.data.remote.dto.SubmitReturnParamsDto
 import com.whitelabel.commerce.core.data.remote.runSuspendCatching
 import com.whitelabel.commerce.core.domain.model.CartItem
 import com.whitelabel.commerce.core.domain.model.CheckoutResult
@@ -22,6 +25,10 @@ import com.whitelabel.commerce.core.domain.model.GuestOrderTracking
 import com.whitelabel.commerce.core.domain.model.Order
 import com.whitelabel.commerce.core.domain.model.OrderStatus
 import com.whitelabel.commerce.core.domain.model.PaymentMethod
+import com.whitelabel.commerce.core.domain.model.ReturnRefundMethod
+import com.whitelabel.commerce.core.domain.model.ReturnRequest
+import com.whitelabel.commerce.core.domain.model.ReturnRequestType
+import com.whitelabel.commerce.core.domain.model.ReturnSubmissionItem
 import com.whitelabel.commerce.core.domain.model.SavedOrderReceipt
 import com.whitelabel.commerce.core.domain.repository.OrderRepository
 import io.github.jan.supabase.SupabaseClient
@@ -260,6 +267,79 @@ class OrderRepositoryImpl @Inject constructor(
         }
         settledReceipt?.let { cart.settleReceipt(it) }
         cart.clearCart()
+    }
+
+    override suspend fun getReturnRequestForOrder(orderId: String): Result<ReturnRequest?> = runSuspendCatching {
+        val userId = supabase.auth.currentUserOrNull()?.id ?: return@runSuspendCatching null
+        val rows = supabase
+            .from("return_requests")
+            .select() {
+                filter {
+                    eq("order_id", orderId.trim())
+                    eq("store_id", com.whitelabel.commerce.BuildConfig.STORE_ID)
+                    eq("user_id", userId)
+                }
+                order(column = "created_at", order = SortOrder.DESCENDING)
+                limit(1)
+            }
+            .decodeList<ReturnRequestDto>()
+        rows.firstOrNull()?.toDomain()
+    }
+
+    override suspend fun getMyReturnRequests(): Result<Map<String, ReturnRequest>> = runSuspendCatching {
+        val userId = supabase.auth.currentUserOrNull()?.id ?: return@runSuspendCatching emptyMap()
+        val rows = supabase
+            .from("return_requests")
+            .select() {
+                filter {
+                    eq("store_id", com.whitelabel.commerce.BuildConfig.STORE_ID)
+                    eq("user_id", userId)
+                }
+                order(column = "created_at", order = SortOrder.DESCENDING)
+                limit(100)
+            }
+            .decodeList<ReturnRequestDto>()
+        val result = linkedMapOf<String, ReturnRequest>()
+        for (dto in rows) {
+            val domain = dto.toDomain()
+            if (domain.orderId !in result) {
+                result[domain.orderId] = domain
+            }
+        }
+        result
+    }
+
+    override suspend fun submitReturnRequest(
+        orderId: String,
+        requestType: ReturnRequestType,
+        refundMethod: ReturnRefundMethod,
+        reason: String,
+        customerNotes: String?,
+        items: List<ReturnSubmissionItem>,
+    ): Result<ReturnRequest> = runSuspendCatching {
+        require(items.isNotEmpty()) {
+            localized("يرجى اختيار منتج واحد على الأقل.", "Please select at least one item.")
+        }
+        val cleanReason = reason.trim()
+        require(cleanReason.length >= 2) {
+            localized("يرجى اختيار سبب الطلب.", "Please select a reason.")
+        }
+        val params = SubmitReturnParamsDto(
+            storeId = com.whitelabel.commerce.BuildConfig.STORE_ID,
+            orderId = orderId.trim(),
+            requestType = requestType.rawValue,
+            refundMethod = refundMethod.rawValue,
+            reason = cleanReason,
+            customerNotes = customerNotes?.trim()?.takeIf { it.isNotEmpty() },
+            items = items.map { SubmitReturnItemParamDto(orderItemId = it.orderItemId, quantity = it.quantity) },
+        )
+        supabase.postgrest
+            .rpc(
+                function = "submit_return_request",
+                parameters = json.encodeToJsonElement(params).jsonObject,
+            )
+            .decodeAs<ReturnRequestDto>()
+            .toDomain()
     }
 
     private fun decodeSavedOrders(raw: String?): List<SavedOrderReceiptEntity> {

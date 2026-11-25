@@ -81,7 +81,9 @@ import com.whitelabel.commerce.core.designsystem.components.OrderTimelineStepper
 import com.whitelabel.commerce.core.designsystem.formatPrice
 import com.whitelabel.commerce.core.designsystem.localized
 import com.whitelabel.commerce.core.domain.model.Order
+import com.whitelabel.commerce.core.domain.model.OrderStatus
 import com.whitelabel.commerce.core.domain.model.PaymentMethod
+import com.whitelabel.commerce.core.domain.model.ReturnRequest
 import com.whitelabel.commerce.core.domain.model.SavedOrderReceipt
 import com.whitelabel.commerce.core.domain.model.StoreSettings
 import com.whitelabel.commerce.feature.checkout.PaymentFlow
@@ -117,6 +119,7 @@ fun OrdersScreen(
     initialPhone: String?,
     initialPaymentOutcome: PaymentFlowOutcome?,
     onConsumePrefill: () -> Unit,
+    onOpenOrderDetail: (orderId: String) -> Unit = {},
     onOpenSupport: (orderId: String?) -> Unit,
     onOpenAccount: () -> Unit = {},
     onShowMessage: (String) -> Unit,
@@ -519,8 +522,10 @@ fun OrdersScreen(
             items(state.tracking.accountOrders, key = { it.id }) { order ->
                 AccountOrderCard(
                     order = order,
+                    returnRequest = state.tracking.returnsByOrderId[order.id],
                     locale = state.storeSettings.locale,
                     hasOnlinePaymentEnabled = enabledOnlineMethods.isNotEmpty(),
+                    onOpenDetail = { onOpenOrderDetail(order.id) },
                     onCopyTracking = { code ->
                         clipboard.setText(AnnotatedString(code))
                         onShowMessage(localized("تم نسخ رقم الشحنة", "Tracking number copied"))
@@ -1205,14 +1210,17 @@ private fun ItemizedReceiptRows(
 @Composable
 private fun AccountOrderCard(
     order: Order,
+    returnRequest: ReturnRequest?,
     locale: String,
     hasOnlinePaymentEnabled: Boolean,
+    onOpenDetail: () -> Unit,
     onCopyTracking: (String) -> Unit,
     onRetryPayment: () -> Unit,
     onContactSupport: () -> Unit,
 ) {
     val brandColors = LocalBrandColors.current
     Card(
+        onClick = onOpenDetail,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, brandColors.hairline),
         shape = MaterialTheme.shapes.medium,
@@ -1299,8 +1307,34 @@ private fun AccountOrderCard(
                 }
             }
 
-            TextButton(onClick = onContactSupport) {
-                Text(localized("تواصل بخصوص الطلب", "Contact support"))
+            returnRequest?.let { req ->
+                ReturnRequestStatusCard(
+                    returnRequest = req,
+                    currency = order.currency,
+                    locale = locale,
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (order.status == OrderStatus.DELIVERED && (returnRequest == null || !returnRequest.isActive)) {
+                    OutlinedButton(
+                        onClick = onOpenDetail,
+                        shape = MaterialTheme.shapes.small,
+                    ) {
+                        Text(localized("طلب إرجاع / استبدال", "Return / Exchange"))
+                    }
+                } else {
+                    TextButton(onClick = onOpenDetail) {
+                        Text(localized("تفاصيل الطلب", "Order details"))
+                    }
+                }
+                TextButton(onClick = onContactSupport) {
+                    Text(localized("تواصل بخصوص الطلب", "Contact support"))
+                }
             }
         }
     }

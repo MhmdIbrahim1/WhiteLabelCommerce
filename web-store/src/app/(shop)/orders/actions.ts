@@ -5,9 +5,16 @@ import { serverDb } from "@/lib/db";
 import { getServerLang } from "@/lib/i18n-server";
 import { normalizePhone } from "@/lib/phone";
 import { resolveActiveStoreOrDefault } from "@/lib/tenant";
+import {
+  normalizeReturnRecord,
+  type ReturnRefundMethod,
+  type ReturnRequestRecord,
+  type ReturnRequestType,
+} from "@/lib/returns";
 
 export type OrderItemSummary = {
   id: string;
+  product_id?: string | null;
   product_name: string;
   quantity: number;
   unit_price: number;
@@ -19,6 +26,7 @@ export type Summary = {
   id: string;
   status: string;
   created_at: string;
+  currency?: string | null;
   phone?: string | null;
   payment_method?: string | null;
   payment_status?: string | null;
@@ -29,6 +37,7 @@ export type Summary = {
   shipped_at?: string | null;
   delivered_at?: string | null;
   order_items?: OrderItemSummary[] | null;
+  return_request?: ReturnRequestRecord | null;
 };
 
 export async function track(
@@ -123,4 +132,138 @@ export async function customerLogout() {
   const { error } = await db.auth.signOut({ scope: "local" });
   if (error) throw new Error("تعذر تسجيل الخروج");
   redirect("/orders");
+}
+
+export type SubmitReturnInput = {
+  orderId: string;
+  requestType: ReturnRequestType;
+  refundMethod: ReturnRefundMethod;
+  reason: string;
+  customerNotes?: string;
+  items: { order_item_id: string; quantity: number }[];
+};
+
+export type SubmitReturnResult =
+  | { ok: true; returnRequest: ReturnRequestRecord }
+  | { ok: false; error: string };
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export async function submitReturnRequestAction(
+  input: SubmitReturnInput,
+): Promise<SubmitReturnResult> {
+  const isEn = (await getServerLang()) === "en";
+  const cleanOrderId = (input.orderId ?? "").trim();
+  const cleanReason = (input.reason ?? "").trim().slice(0, 300);
+  const cleanNotes = (input.customerNotes ?? "").trim().slice(0, 1000);
+
+  if (!UUID_RE.test(cleanOrderId)) {
+    return {
+      ok: false,
+      error: isEn ? "Invalid order ID." : "رقم الطلب غير صالح.",
+    };
+  }
+  if (input.requestType !== "return" && input.requestType !== "exchange") {
+    return {
+      ok: false,
+      error: isEn ? "Choose Return or Exchange." : "يرجى اختيار إرجاع أو استبدال.",
+    };
+  }
+  if (
+    input.refundMethod !== "wallet" &&
+    input.refundMethod !== "original_payment"
+  ) {
+    return {
+      ok: false,
+      error: isEn ? "Choose a refund method." : "يرجى اختيار وسيلة الاسترداد.",
+    };
+  }
+  if (cleanReason.length < 2) {
+    return {
+      ok: false,
+      error: isEn
+        ? "Please choose a reason for your request."
+        : "يرجى اختيار سبب طلب الإرجاع أو الاستبدال.",
+    };
+  }
+
+  const validItems = (input.items ?? [])
+    .filter(
+      (it) =>
+        typeof it.order_item_id === "string" &&
+        UUID_RE.test(it.order_item_id.trim()) &&
+        Number.isInteger(it.quantity) &&
+        it.quantity > 0,
+    )
+    .map((it) => ({
+      order_item_id: it.order_item_id.trim(),
+      quantity: it.quantity,
+    }));
+
+  if (validItems.length === 0) {
+    return {
+      ok: false,
+      error: isEn
+        ? "Please select at least one item to return or exchange."
+        : "يرجى اختيار منتج واحد على الأقل للإرجاع أو الاستبدال.",
+    };
+  }
+
+  const [db, store] = await Promise.all([
+    serverDb(),
+    resolveActiveStoreOrDefault(),
+  ]);
+
+  const {
+    data: { user },
+  } = await db.auth.getUser();
+  if (!user) {
+    return {
+      ok: false,
+      error: isEn
+        ? "Please sign in to submit a return request."
+        : "يرجى تسجيل الدخول لإرسال طلب الإرجاع أو الاستبدال.",
+    };
+  }
+
+  const { data, error } = await db.rpc("submit_return_request", {
+    p_store_id: store.id,
+    p_order_id: cleanOrderId,
+    p_request_type: input.requestType,
+    p_refund_method: input.refundMethod,
+    p_reason: cleanReason,
+    p_customer_notes: cleanNotes || null,
+    p_items: validItems,
+  });
+
+  if (error || !data) {
+    const raw = (error?.message ?? "").toLowerCase();
+    let msg = isEn
+      ? "Could not submit your return request right now. Please try again."
+      : "تعذر إرسال طلب الإرجاع حالياً. يرجى المحاولة مرة أخرى.";
+    if (raw.includes("return_already_exists")) {
+      msg = isEn
+        ? "A return or exchange request already exists for this order."
+        : "يوجد بالفعل طلب إرجاع أو استبدال نشط لهذا الطلب.";
+    } else if (raw.includes("order_not_delivered")) {
+      msg = isEn
+        ? "Returns are available once your order has been delivered."
+        : "الإرجاع والاستبدال متاحان فقط بعد تسليم الطلب.";
+    } else if (raw.includes("invalid_return_quantity")) {
+      msg = isEn
+        ? "Selected item quantity exceeds the ordered quantity."
+        : "الكمية المختارة تتجاوز الكمية الموجودة في الطلب.";
+    }
+    return { ok: false, error: msg };
+  }
+
+  const record = normalizeReturnRecord(data as Record<string, unknown>);
+
+  revalidatePath("/orders");
+  revalidatePath(`/orders/${cleanOrderId}`);
+  revalidatePath("/account");
+  revalidatePath("/admin/returns");
+
+  return { ok: true, returnRequest: record };
 }

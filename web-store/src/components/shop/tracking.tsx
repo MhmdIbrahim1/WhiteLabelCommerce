@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Truck,
@@ -17,6 +18,7 @@ import {
   XCircle,
   CheckCircle2,
   X,
+  ArrowUpRight,
 } from "lucide-react";
 import {
   track,
@@ -26,6 +28,7 @@ import {
 import { orderStatusLabel, translateColor } from "@/lib/i18n";
 import { date } from "@/lib/brand";
 import { useLanguage } from "@/components/language-provider";
+import { OrderReturnPanel } from "./order-return-panel";
 import {
   clearPendingOnlineOrder,
   setPendingOnlineOrder,
@@ -38,9 +41,15 @@ type RetryOption = "paymob_card" | "paymob_wallet" | "cod";
 export function Timeline({
   row,
   index = 0,
+  detailHref,
+  currency = "EGP",
+  hideReturnPanel = false,
 }: {
   row: Summary;
   index?: number;
+  detailHref?: string;
+  currency?: string;
+  hideReturnPanel?: boolean;
 }) {
   const router = useRouter();
   const { lang, t } = useLanguage();
@@ -218,9 +227,20 @@ export function Timeline({
       <div className="order-card-head">
         <div className="order-id-block">
           <div className="order-id-row">
-            <span dir="ltr" className="order-id" title={row.id}>
-              #{row.id.slice(0, 8)}
-            </span>
+            {detailHref ? (
+              <Link
+                href={detailHref}
+                dir="ltr"
+                className="order-id order-id-link"
+                title={row.id}
+              >
+                #{row.id.slice(0, 8)}
+              </Link>
+            ) : (
+              <span dir="ltr" className="order-id" title={row.id}>
+                #{row.id.slice(0, 8)}
+              </span>
+            )}
             <button
               type="button"
               className="icon-copy-chip"
@@ -230,6 +250,12 @@ export function Timeline({
               {copiedId ? <Check size={12} /> : <Copy size={12} />}
               <span>{copiedId ? t("copied") : t("copyId")}</span>
             </button>
+            {detailHref && (
+              <Link href={detailHref} className="order-detail-chip">
+                <span>{isEn ? "Details" : "التفاصيل"}</span>
+                <ArrowUpRight size={12} />
+              </Link>
+            )}
           </div>
           <small className="order-date-row">
             <Clock3 size={12} /> {date(row.created_at, lang)}
@@ -509,6 +535,16 @@ export function Timeline({
             </a>
           )}
         </div>
+      )}
+
+      {!hideReturnPanel && (detailHref || row.return_request) && (
+        <OrderReturnPanel
+          orderId={row.id}
+          orderStatus={effectiveStatus}
+          currency={row.currency || currency}
+          orderItems={items}
+          initialReturn={row.return_request ?? null}
+        />
       )}
     </article>
   );

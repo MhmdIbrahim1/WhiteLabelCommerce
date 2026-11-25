@@ -1135,3 +1135,100 @@ export async function moderateReviewAction(input: {
 
   return { ok: true, review: updated };
 }
+
+export type ProcessReturnActionType =
+  | "approve"
+  | "reject"
+  | "mark_received"
+  | "complete_refund";
+
+export type ProcessReturnResult =
+  | {
+      ok: true;
+      returnRequest: {
+        id: string;
+        status: "pending" | "approved" | "rejected" | "received" | "refunded";
+        admin_notes: string | null;
+        restocked: boolean;
+        wallet_credited: boolean;
+        updated_at: string;
+      };
+    }
+  | { ok: false; error: string };
+
+export async function processReturnRequestAction(input: {
+  returnId: string;
+  action: ProcessReturnActionType;
+  adminNotes?: string | null;
+  restock?: boolean;
+}): Promise<ProcessReturnResult> {
+  const { db } = await requireAdmin();
+  const cleanId = (input.returnId ?? "").trim();
+  if (!UUID_REGEX.test(cleanId)) {
+    return { ok: false, error: "invalid_return_id" };
+  }
+  if (
+    input.action !== "approve" &&
+    input.action !== "reject" &&
+    input.action !== "mark_received" &&
+    input.action !== "complete_refund"
+  ) {
+    return { ok: false, error: "invalid_return_action" };
+  }
+
+  const rpcParams: {
+    p_return_id: string;
+    p_action: string;
+    p_admin_notes?: string | null;
+    p_restock: boolean;
+  } = {
+    p_return_id: cleanId,
+    p_action: input.action,
+    p_restock: input.restock ?? true,
+  };
+  if (typeof input.adminNotes === "string") {
+    rpcParams.p_admin_notes = input.adminNotes.trim().slice(0, 1000);
+  }
+
+  const { data, error } = await db.rpc("admin_process_return_request", rpcParams);
+  if (error || !data) {
+    return {
+      ok: false,
+      error: error?.message || "process_return_failed",
+    };
+  }
+
+  const row = data as {
+    id: string;
+    order_id?: string;
+    status: "pending" | "approved" | "rejected" | "received" | "refunded";
+    admin_notes: string | null;
+    restocked: boolean;
+    wallet_credited: boolean;
+    updated_at: string;
+  };
+
+  revalidatePath("/admin", "layout");
+  revalidatePath("/admin/returns");
+  revalidatePath("/admin/orders");
+  revalidatePath("/admin/products");
+  revalidatePath("/admin/customers");
+  revalidatePath("/orders");
+  if (row.order_id) {
+    revalidatePath(`/orders/${row.order_id}`);
+    revalidatePath(`/admin/orders/${row.order_id}`);
+  }
+  revalidatePath("/account");
+
+  return {
+    ok: true,
+    returnRequest: {
+      id: row.id,
+      status: row.status,
+      admin_notes: row.admin_notes ?? null,
+      restocked: Boolean(row.restocked),
+      wallet_credited: Boolean(row.wallet_credited),
+      updated_at: row.updated_at,
+    },
+  };
+}

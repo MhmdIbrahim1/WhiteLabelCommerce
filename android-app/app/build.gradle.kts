@@ -84,9 +84,9 @@ if (isCiEnvironment && isReleaseBuildRequested && !hasReleaseSigning) {
 }
 
 // Single source of truth for Android release versioning (read by .github/workflows/android-release.yml).
-// Must be strictly greater than all previously published GitHub Releases (v1.2.0 = 40, v1.3.0 = 42).
-val defaultVersionCode = 43
-val defaultVersionName = "1.3.1"
+// Must be strictly greater than all previously published GitHub Releases (v1.2.0 = 40, v1.3.0 = 42, v1.3.1 = 43).
+val defaultVersionCode = 44
+val defaultVersionName = "1.4.0"
 
 val resolvedVersionCode = (project.findProperty("VERSION_CODE") as? String)
     ?.trim()

@@ -7,12 +7,14 @@ import {
   Phone,
   Calendar,
   FileText,
+  RotateCcw,
 } from "lucide-react";
 import { checked, requireAdmin } from "@/lib/db";
 import { money, date } from "@/lib/brand";
 import { t, translateColor } from "@/lib/i18n";
 import { getServerLang } from "@/lib/i18n-server";
 import { nextOrder } from "@/lib/workflow";
+import { normalizeReturnRecord, returnStatusMeta } from "@/lib/returns";
 import { Notice, Status, Empty } from "../../ui";
 import { OrderStatusForm } from "../order-status-form";
 
@@ -26,14 +28,30 @@ export default async function OrderDetails({
     getServerLang(),
   ]);
   const isEn = lang === "en";
-  const result = await db
-    .from("orders")
-    .select("*,order_items(*)")
-    .eq("id", id)
-    .eq("store_id", storeId)
-    .maybeSingle();
+  const [result, returnRes] = await Promise.all([
+    db
+      .from("orders")
+      .select("*,order_items(*)")
+      .eq("id", id)
+      .eq("store_id", storeId)
+      .maybeSingle(),
+    db
+      .from("return_requests")
+      .select("*")
+      .eq("order_id", id)
+      .eq("store_id", storeId)
+      .order("created_at", { ascending: false })
+      .limit(1),
+  ]);
   if (!result.data && !result.error) notFound();
   const o = checked(result);
+  const linkedReturn =
+    !returnRes.error && Array.isArray(returnRes.data) && returnRes.data[0]
+      ? normalizeReturnRecord(returnRes.data[0] as Record<string, unknown>)
+      : null;
+  const linkedReturnMeta = linkedReturn
+    ? returnStatusMeta(linkedReturn.status, lang)
+    : null;
   const options = (nextOrder[o.status] ?? []).filter(
     (s) => o.subtotal !== null || s === "cancelled",
   );
@@ -47,6 +65,45 @@ export default async function OrderDetails({
         {isEn ? "Order" : "طلب"} <bdi>#{id.slice(0, 8)}</bdi>
       </h1>
       <Notice result={(await searchParams).result} />
+
+      {linkedReturn && linkedReturnMeta && (
+        <section
+          className="card"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "0.75rem",
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap" }}>
+            <RotateCcw size={17} />
+            <strong>
+              {isEn ? "Linked Return / Exchange Request" : "طلب إرجاع / استبدال مرتبط"}
+            </strong>
+            <span
+              style={{
+                padding: "0.2rem 0.65rem",
+                borderRadius: "999px",
+                fontSize: "0.78rem",
+                fontWeight: 700,
+                background: linkedReturnMeta.bg,
+                color: linkedReturnMeta.color,
+                border: `1px solid ${linkedReturnMeta.border}`,
+              }}
+            >
+              {linkedReturnMeta.label}
+            </span>
+            <span dir="ltr" style={{ fontWeight: 700 }}>
+              {money(linkedReturn.refund_amount, o.currency, lang)}
+            </span>
+          </div>
+          <Link href="/admin/returns" className="btn-outline-admin">
+            {isEn ? "Manage in Returns Queue" : "إدارة في صفحة المرتجعات"}
+          </Link>
+        </section>
+      )}
 
       <section className="card stack">
         <div className="row">

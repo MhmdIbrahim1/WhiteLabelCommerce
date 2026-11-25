@@ -8,6 +8,7 @@ import { t } from "@/lib/i18n";
 import { getServerLang } from "@/lib/i18n-server";
 import { Timeline, GuestTracking } from "@/components/shop/tracking";
 import { OrdersPaymentSync } from "@/components/shop/orders-payment-sync";
+import { normalizeReturnRecord, type ReturnRequestRecord } from "@/lib/returns";
 import { customerLogin, customerLogout, type Summary } from "./actions";
 
 export default async function Orders({ searchParams }: PageProps<"/orders">) {
@@ -33,7 +34,7 @@ export default async function Orders({ searchParams }: PageProps<"/orders">) {
     ? await db
         .from("orders")
         .select(
-          "id,status,created_at,payment_method,payment_status,shipping_carrier,tracking_number,tracking_url,courier_note,shipped_at,delivered_at,order_items(id,product_name,quantity,unit_price,size,color)",
+          "id,status,created_at,currency,payment_method,payment_status,shipping_carrier,tracking_number,tracking_url,courier_note,shipped_at,delivered_at,order_items(id,product_id,product_name,quantity,unit_price,size,color)",
           { count: "exact" },
         )
         .eq("store_id", s.storeId)
@@ -43,7 +44,31 @@ export default async function Orders({ searchParams }: PageProps<"/orders">) {
         .range(from, to)
     : null;
 
-  const userOrders = user && result ? (checked(result) as Summary[]) : [];
+  const baseOrders = user && result ? (checked(result) as Summary[]) : [];
+  const orderIds = baseOrders.map((o) => o.id);
+  const returnsByOrder = new Map<string, ReturnRequestRecord>();
+  if (user && orderIds.length > 0) {
+    const returnsRes = await db
+      .from("return_requests")
+      .select("*")
+      .eq("store_id", s.storeId)
+      .eq("user_id", user.id)
+      .in("order_id", orderIds)
+      .order("created_at", { ascending: false });
+    if (!returnsRes.error && Array.isArray(returnsRes.data)) {
+      for (const raw of returnsRes.data as Record<string, unknown>[]) {
+        const rec = normalizeReturnRecord(raw);
+        if (!returnsByOrder.has(rec.order_id)) {
+          returnsByOrder.set(rec.order_id, rec);
+        }
+      }
+    }
+  }
+
+  const userOrders: Summary[] = baseOrders.map((o) => ({
+    ...o,
+    return_request: returnsByOrder.get(o.id) ?? null,
+  }));
   const paidOrderIds = userOrders
     .filter((o) => o.payment_status === "paid")
     .map((o) => o.id);
@@ -75,7 +100,13 @@ export default async function Orders({ searchParams }: PageProps<"/orders">) {
             <>
               <div className="orders-list">
                 {userOrders.map((o, idx) => (
-                  <Timeline key={o.id} row={o} index={idx} />
+                  <Timeline
+                    key={o.id}
+                    row={o}
+                    index={idx}
+                    detailHref={storeHref(s.basePath, `/orders/${o.id}`)}
+                    currency={o.currency || s.currency}
+                  />
                 ))}
               </div>
               {!result.data?.length && (

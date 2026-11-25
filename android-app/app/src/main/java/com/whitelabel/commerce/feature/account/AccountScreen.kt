@@ -881,6 +881,7 @@ private fun WalletAccountCard(
                                     "cashback_earned" -> "كاش باك طلب $shortOrder".trim()
                                     "order_redemption" -> "خصم على طلب $shortOrder".trim()
                                     "order_refund" -> "استرداد طلب ملغي $shortOrder".trim()
+                                    "return_refund", "credit" -> "استرداد إرجاع $shortOrder".trim()
                                     "admin_credit" -> "رصيد إداري"
                                     "admin_debit" -> "خصم إداري"
                                     else -> "حركة محفظة"
@@ -891,6 +892,7 @@ private fun WalletAccountCard(
                                     "cashback_earned" -> "Cashback earned $shortOrder".trim()
                                     "order_redemption" -> "Redeemed on order $shortOrder".trim()
                                     "order_refund" -> "Refunded from order $shortOrder".trim()
+                                    "return_refund", "credit" -> "Return refund $shortOrder".trim()
                                     "admin_credit" -> "Store credit added"
                                     "admin_debit" -> "Store credit deducted"
                                     else -> "Wallet adjustment"

@@ -14,13 +14,22 @@ export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
   const [{ db, user, storeId, activeStore, managedStores, isSuperAdmin }, lang] =
     await Promise.all([requireAdmin(), getServerLang()]);
   const isEn = lang === "en";
-  const settings = checked(
-    await db
+  const [settingsRes, pendingReturnsRes] = await Promise.all([
+    db
       .from("store_settings")
       .select("store_id,store_name")
       .eq("store_id", storeId)
       .single<{ store_id?: string | null; store_name: string }>(),
-  );
+    db
+      .from("return_requests")
+      .select("id", { count: "exact", head: true })
+      .eq("store_id", storeId)
+      .eq("status", "pending"),
+  ]);
+  const settings = checked(settingsRes);
+  const pendingReturnsCount = pendingReturnsRes.error
+    ? 0
+    : (pendingReturnsRes.count ?? 0);
   const storeTitle =
     localizedText(lang, settings.store_name || activeStore.name_ar, activeStore.name_en) ||
     brand.storeName;
@@ -36,6 +45,7 @@ export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
         <Navigation
           isSuperAdmin={isSuperAdmin}
           mobileAppUnlocked={activeStore.mobile_app_unlocked !== false}
+          pendingReturnsCount={pendingReturnsCount}
         />
         <form action={logout} className="logout">
           <button>
