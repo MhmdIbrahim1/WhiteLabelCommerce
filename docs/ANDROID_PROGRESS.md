@@ -203,3 +203,19 @@
     - `-PappIdSuffix=.<slug>` -> optional `applicationIdSuffix` (omitted when unset so default package ID remains `com.whitelabel.commerce`)
   - No version bump or release tag in Phase 10B (reserved for Phase 10C Reviews & Wishlist).
 - **Build & Test Verification:** `$env:JAVA_HOME='C:\Users\moham\.jdks\jbr-21.0.11'; .\gradlew.bat testGithubDebugUnitTest assembleGithubDebug --no-daemon` passed (`BUILD SUCCESSFUL`, 0 errors) with zero Gradle parameters passed.
+
+
+
+### 6.10 Phase 10C: Native Verified Product Reviews, Cloud Wishlist & `v1.2.0` Release (2026-11-25)
+- **Domain, DTOs & Repositories (`core/domain/`, `core/data/`):**
+  - Extended `Product` and `ProductDto` with `avgRating` / `reviewCount` (`avg_rating` / `review_count`, safe defaults `0.0` / `0`, plus `hasReviews` and `formattedRating`).
+  - Added `ReviewModels.kt`, `WishlistModels.kt`, `ReviewDto.kt`, `WishlistDto.kt`, `ReviewRepository`, `ReviewRepositoryImpl`, `WishlistRepository`, and `WishlistRepositoryImpl` strictly scoped to `BuildConfig.STORE_ID` and bound in Hilt `RepositoryModule`.
+  - Wired `MainViewModel` and `MainActivity` to track and sync `wishlistCount` on startup and auth session transitions.
+- **Compose Material 3 UI (`ProductCard.kt`, `WhiteLabelAppShell.kt`, `HomeScreen.kt`, `CatalogScreen.kt`, `ProductDetailScreen.kt`, `ProductReviewsSection.kt`, `WishlistScreen.kt`, `AccountScreen.kt`):**
+  - Upgraded `ProductCard` with a compact warm-amber rating pill (`★ 4.5 (2)`) shown only when `reviewCount > 0` and an animated translucent circular `WishlistHeartIconButton` (`#E11D48` active rose fill + spring bounce scale) mirrored via `Alignment.TopEnd`.
+  - Added TopAppBar Heart icon with live `BadgedBox` count badge, `/wishlist` deep-link handling, guest sign-in snackbar prompt, dedicated **Wishlist (`المفضلة`)** screen (`WishlistScreen.kt` + `WishlistViewModel.kt`) with Add-to-Cart, instant Remove, and empty/guest states, plus a Wishlist shortcut card inside `AccountScreen`.
+  - Added full Verified Reviews section (`ProductReviewsSection.kt`) on `ProductDetailScreen.kt`: rating summary card with `5★`–`1★` distribution bars, clickable star filter chips, emerald Verified Purchase badges, indented Store Reply card with logical start accent bar, calm eligibility info note, and a Material 3 `ModalBottomSheet` (`WriteReviewBottomSheet`) with `48dp` tactile stars and live AR/EN captions.
+- **Unit Tests & Release `v1.2.0` (`ReviewsAndWishlistTest.kt`, `app/build.gradle.kts`):**
+  - Added 4 JUnit tests in `ReviewsAndWishlistTest.kt` covering `ProductDto` rating aggregates/defaults, `ReviewEligibilityDto` & `ProductReviewDto` deserialization, `ToggleWishlistResultDto`, and `ReviewFormatting` stats & bilingual labels.
+  - Bumped default release version in `android-app/app/build.gradle.kts` to **`versionCode = 23`** and **`versionName = "1.2.0"`** while keeping all Phase 10B white-label Gradle properties (`-PstoreId`, `-PstoreName`, `-PappIdSuffix`) intact.
+- **Build & Test Verification:** `$env:JAVA_HOME='C:\Users\moham\.jdks\jbr-21.0.11'; .\gradlew.bat testGithubDebugUnitTest assembleGithubDebug assemblePlaystoreDebug --no-daemon` passed (`BUILD SUCCESSFUL`, 0 errors) across both `github` and `playstore` flavors.

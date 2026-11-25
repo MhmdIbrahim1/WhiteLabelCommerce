@@ -28,10 +28,12 @@ export type Product = {
   colors: string[];
   image_path: string | null;
   specifications?: ProductSpec[] | null;
+  avg_rating?: number | null;
+  review_count?: number | null;
 };
 
 export const productFields =
-  "id,name,name_en,category_id,description,description_en,price,old_price,stock,sizes,colors,image_path,specifications";
+  "id,name,name_en,category_id,description,description_en,price,old_price,stock,sizes,colors,image_path,specifications,avg_rating,review_count";
 
 type SettingsRow = {
   store_id?: string | null;

@@ -38,6 +38,8 @@ data class ProductDto(
     @SerialName("colors") val colors: List<String> = emptyList(),
     @SerialName("image_path") val imagePath: String? = null,
     @SerialName("specifications") val specifications: List<ProductSpecificationDto> = emptyList(),
+    @SerialName("avg_rating") val avgRating: Double = 0.0,
+    @SerialName("review_count") val reviewCount: Int = 0,
     @SerialName("match_type") val matchType: String? = null,
     @SerialName("created_at") val createdAt: String? = null,
 ) {
@@ -58,6 +60,8 @@ data class ProductDto(
         imagePath = imagePath,
         imageUrl = SupabaseStorageUrls.resolveProductImageUrl(imagePath),
         specifications = specifications.map { it.toDomain() }.filter { it.isValid },
+        avgRating = avgRating,
+        reviewCount = reviewCount,
         matchType = matchType,
         createdAt = createdAt,
     )

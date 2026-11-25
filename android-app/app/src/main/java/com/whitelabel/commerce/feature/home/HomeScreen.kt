@@ -90,6 +90,7 @@ import com.whitelabel.commerce.core.domain.model.Category
 import com.whitelabel.commerce.core.domain.model.Product
 import com.whitelabel.commerce.core.domain.model.PromoBannerCampaign
 import com.whitelabel.commerce.core.domain.model.StoreSettings
+import com.whitelabel.commerce.core.domain.model.WishlistToggleOutcome
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.absoluteValue
@@ -101,6 +102,7 @@ fun HomeScreen(
     onCategoryClick: (String?) -> Unit,
     onHeroRoute: (String) -> Unit,
     onShowMessage: (String) -> Unit,
+    onWishlistSignInPrompt: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
@@ -210,6 +212,14 @@ fun HomeScreen(
                     items(state.searchResults, key = { "search_${it.id}" }) { product: Product ->
                         ProductCard(
                             product = product,
+                            isWishlisted = product.id in state.wishlistedProductIds,
+                            onToggleWishlist = {
+                                viewModel.toggleWishlist(product.id) { outcome ->
+                                    if (outcome is WishlistToggleOutcome.RequiresSignIn) {
+                                        onWishlistSignInPrompt()
+                                    }
+                                }
+                            },
                             onClick = { onProductClick(product.id) },
                             onQuickAdd = {
                                 if (product.sizes.isNotEmpty() || product.colors.isNotEmpty()) {
@@ -360,6 +370,14 @@ fun HomeScreen(
                         items(state.featuredProducts, key = { it.id }) { product: Product ->
                             ProductCard(
                                 product = product,
+                                isWishlisted = product.id in state.wishlistedProductIds,
+                                onToggleWishlist = {
+                                    viewModel.toggleWishlist(product.id) { outcome ->
+                                        if (outcome is WishlistToggleOutcome.RequiresSignIn) {
+                                            onWishlistSignInPrompt()
+                                        }
+                                    }
+                                },
                                 onClick = { onProductClick(product.id) },
                                 onQuickAdd = {
                                     if (product.sizes.isNotEmpty() || product.colors.isNotEmpty()) {

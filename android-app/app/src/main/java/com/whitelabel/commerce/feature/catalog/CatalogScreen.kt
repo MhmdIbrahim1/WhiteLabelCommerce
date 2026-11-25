@@ -46,6 +46,7 @@ import com.whitelabel.commerce.core.designsystem.components.BrandEmptyState
 import com.whitelabel.commerce.core.designsystem.components.ProductCard
 import com.whitelabel.commerce.core.designsystem.components.ProductCardSkeleton
 import com.whitelabel.commerce.core.designsystem.localized
+import com.whitelabel.commerce.core.domain.model.WishlistToggleOutcome
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -54,6 +55,7 @@ fun CatalogScreen(
     onConsumeInitialCategory: () -> Unit,
     onProductClick: (String) -> Unit,
     onShowMessage: (String) -> Unit,
+    onWishlistSignInPrompt: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: CatalogViewModel = hiltViewModel(),
 ) {
@@ -291,6 +293,14 @@ fun CatalogScreen(
                     items(state.displayedProducts, key = { it.id }) { product ->
                         ProductCard(
                             product = product,
+                            isWishlisted = product.id in state.wishlistedProductIds,
+                            onToggleWishlist = {
+                                viewModel.toggleWishlist(product.id) { outcome ->
+                                    if (outcome is WishlistToggleOutcome.RequiresSignIn) {
+                                        onWishlistSignInPrompt()
+                                    }
+                                }
+                            },
                             onClick = { onProductClick(product.id) },
                             onQuickAdd = {
                                 if (product.sizes.isNotEmpty() || product.colors.isNotEmpty()) {

@@ -7,6 +7,7 @@ import com.whitelabel.commerce.core.domain.model.StoreSettings
 import com.whitelabel.commerce.core.domain.repository.AuthRepository
 import com.whitelabel.commerce.core.domain.repository.CartRepository
 import com.whitelabel.commerce.core.domain.repository.StoreRepository
+import com.whitelabel.commerce.core.domain.repository.WishlistRepository
 import com.whitelabel.commerce.core.notifications.FcmTokenManager
 import com.whitelabel.commerce.core.notifications.NotificationRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -23,6 +24,7 @@ data class MainUiState(
     val darkThemeOverride: Boolean? = null,
     val cartItemCount: Int = 0,
     val unreadNotificationCount: Int = 0,
+    val wishlistCount: Int = 0,
     val isSyncingBrand: Boolean = false,
     val isSignedIn: Boolean = false,
 )
@@ -33,6 +35,7 @@ class MainViewModel @Inject constructor(
     cartRepository: CartRepository,
     authRepository: AuthRepository,
     private val notificationRepository: NotificationRepository,
+    private val wishlistRepository: WishlistRepository,
     private val fcmTokenManager: FcmTokenManager,
 ) : ViewModel() {
 
@@ -49,12 +52,14 @@ class MainViewModel @Inject constructor(
         },
         isSyncingBrand,
         authRepository.sessionState,
-    ) { quad, syncing, authSession ->
+        wishlistRepository.wishlistCount,
+    ) { quad, syncing, authSession, wishCount ->
         MainUiState(
             storeSettings = quad.first,
             darkThemeOverride = quad.second,
             cartItemCount = quad.third,
             unreadNotificationCount = quad.fourth,
+            wishlistCount = wishCount,
             isSyncingBrand = syncing,
             isSignedIn = authSession is AuthSessionState.SignedIn,
         )
@@ -64,6 +69,7 @@ class MainViewModel @Inject constructor(
         initialValue = MainUiState(
             storeSettings = storeRepository.storeSettings.value,
             unreadNotificationCount = notificationRepository.unreadCount.value,
+            wishlistCount = wishlistRepository.wishlistCount.value,
             isSignedIn = authRepository.sessionState.value is AuthSessionState.SignedIn,
         ),
     )
@@ -76,6 +82,7 @@ class MainViewModel @Inject constructor(
                 val phone = (session as? AuthSessionState.SignedIn)?.profile?.phone
                 fcmTokenManager.syncCurrentToken(locale = locale, phone = phone)
                 notificationRepository.refresh()
+                wishlistRepository.refreshWishlistIds()
             }
         }
     }
@@ -85,6 +92,7 @@ class MainViewModel @Inject constructor(
             isSyncingBrand.value = true
             storeRepository.refreshStoreSettings()
             notificationRepository.refresh()
+            wishlistRepository.refreshWishlistIds()
             isSyncingBrand.value = false
         }
     }

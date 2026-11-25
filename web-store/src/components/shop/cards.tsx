@@ -1,11 +1,13 @@
 import Link from "next/link";
 import Image from "next/image";
-import { Package } from "lucide-react";
+import { Package, Star } from "lucide-react";
 import { photo, type Product } from "@/lib/shop";
 import { money } from "@/lib/brand";
 import { localizedText, t, type Lang } from "@/lib/i18n";
 import { storeHref } from "@/lib/tenant-shared";
+import { formatRatingScore } from "@/lib/reviews-wishlist";
 import { Buy } from "./buy";
+import { WishlistHeartButton } from "./wishlist-heart";
 
 export function Picture({ p, lang = "ar" }: { p: Product; lang?: Lang }) {
   const src = photo(p.image_path);
@@ -57,6 +59,8 @@ export function Grid({
       {rows.map((p, idx) => {
         const title = localizedText(lang, p.name, p.name_en);
         const detailHref = storeHref(basePath, "/products/" + p.id);
+        const reviewCount = Number(p.review_count ?? 0);
+        const avgRating = Number(p.avg_rating ?? 0);
         return (
           <article
             className="tile shop-animate"
@@ -77,14 +81,25 @@ export function Grid({
                   {lang === "en" ? "%" : "٪"}
                 </span>
               ) : null}
+              <WishlistHeartButton productId={p.id} />
               <div className="tile-quick-add">
-                <Buy p={p} />
+                <Buy p={p} basePath={basePath} />
               </div>
             </div>
             <div className="tile-body">
               <Link href={detailHref} className="tile-title-link">
                 <h3>{title}</h3>
               </Link>
+              {reviewCount > 0 && (
+                <span
+                  className="tile-rating-badge"
+                  aria-label={`${formatRatingScore(avgRating)} (${reviewCount})`}
+                >
+                  <Star size={12} fill="#F59E0B" stroke="#F59E0B" />
+                  <strong>{formatRatingScore(avgRating)}</strong>
+                  <span>({reviewCount})</span>
+                </span>
+              )}
               <Price p={p} currency={currency} lang={lang} />
             </div>
           </article>

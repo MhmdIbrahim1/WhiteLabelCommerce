@@ -76,6 +76,35 @@ export default async function Catalog({
     }
 
     if (rows.length > 0) {
+      const { data: ratingRows } = await db
+        .from("products")
+        .select("id,avg_rating,review_count")
+        .eq("store_id", s.storeId)
+        .in(
+          "id",
+          rows.map((r) => r.id),
+        );
+      if (ratingRows?.length) {
+        const ratingMap = new Map(
+          (
+            ratingRows as {
+              id: string;
+              avg_rating: number | null;
+              review_count: number | null;
+            }[]
+          ).map((r) => [r.id, r]),
+        );
+        rows = rows.map((r) => {
+          const stats = ratingMap.get(r.id);
+          return stats
+            ? {
+                ...r,
+                avg_rating: stats.avg_rating,
+                review_count: stats.review_count,
+              }
+            : r;
+        });
+      }
       const hasDirect = rows.some(
         (p) => p.match_type === "exact" || p.match_type === "synonym",
       );

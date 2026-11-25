@@ -517,3 +517,162 @@ export async function notifyWalletCashback(params: {
     });
   }
 }
+
+/**
+ * Fires when a store admin posts or updates a reply on a verified customer review.
+ */
+export async function notifyReviewReply(params: {
+  storeId: string;
+  userId: string;
+  productId: string;
+  reviewId: string;
+  replyText: string;
+}): Promise<void> {
+  try {
+    if (!params.userId || !params.replyText.trim()) return;
+    const db = adminDb();
+
+    // Ensure target user exists in auth/profiles (skips synthetic seeded review UUIDs cleanly)
+    const { data: profile } = await db
+      .from("profiles")
+      .select("id")
+      .eq("id", params.userId)
+      .maybeSingle<{ id: string }>();
+    if (!profile) return;
+
+    const { data: prod } = await db
+      .from("products")
+      .select("id,name,name_en")
+      .eq("id", params.productId)
+      .eq("store_id", params.storeId)
+      .maybeSingle<{ id: string; name: string; name_en: string | null }>();
+
+    const prodAr = prod?.name || "المنتج";
+    const prodEn = prod?.name_en?.trim() || prod?.name || "the product";
+    const snippet = params.replyText.trim().slice(0, 120);
+
+    await dispatchNotification({
+      storeId: params.storeId,
+      userId: params.userId,
+      targetRole: "customer",
+      category: "order_update",
+      titleAr: `رد جديد من المتجر على تقييمك`,
+      titleEn: `New Store Reply to Your Review`,
+      bodyAr: `ردّ المتجر على تقييمك لمنتج "${prodAr}": "${snippet}"`,
+      bodyEn: `The store replied to your review on "${prodEn}": "${snippet}"`,
+      deepLink: `/products/${params.productId}#reviews`,
+      dedupeKey: `review_reply:${params.reviewId}:${Date.now().toString().slice(0, -4)}`,
+      data: { product_id: params.productId, review_id: params.reviewId },
+    });
+  } catch (err) {
+    console.error("[notifications] notifyReviewReply failed", {
+      code: err instanceof Error ? err.message : "unknown",
+    });
+  }
+}
+
+/**
+ * Fires when a wishlisted product drops in price OR is restocked from 0 -> > 0.
+ * Queries public.wishlists scoped strictly by (store_id, product_id).
+ */
+export async function notifyWishlistProductAlert(params: {
+  storeId: string;
+  productId: string;
+  kind: "price_drop" | "restock";
+  oldPrice?: number;
+  newPrice?: number;
+  currency?: string;
+}): Promise<number> {
+  try {
+    const db = adminDb();
+    const [prodRes, wishRes, settingsRes] = await Promise.all([
+      db
+        .from("products")
+        .select("id,name,name_en,price,stock,is_active")
+        .eq("id", params.productId)
+        .eq("store_id", params.storeId)
+        .maybeSingle<{
+          id: string;
+          name: string;
+          name_en: string | null;
+          price: number;
+          stock: number;
+          is_active: boolean;
+        }>(),
+      db
+        .from("wishlists")
+        .select("user_id")
+        .eq("store_id", params.storeId)
+        .eq("product_id", params.productId),
+      db
+        .from("store_settings")
+        .select("currency")
+        .eq("store_id", params.storeId)
+        .maybeSingle<{ currency: string }>(),
+    ]);
+
+    const prod = prodRes.data;
+    if (!prod || !prod.is_active) return 0;
+
+    const userIds = Array.from(
+      new Set(
+        ((wishRes.data ?? []) as { user_id: string }[])
+          .map((w) => w.user_id)
+          .filter(Boolean),
+      ),
+    );
+    if (userIds.length === 0) return 0;
+
+    const currency = params.currency || settingsRes.data?.currency || "EGP";
+    const currencyAr = formatArabicCurrency(currency);
+    const nameEn = prod.name_en?.trim() || prod.name;
+    const today = new Date().toISOString().slice(0, 10);
+
+    let sent = 0;
+    for (const userId of userIds) {
+      if (params.kind === "price_drop") {
+        const nextVal = Number(params.newPrice ?? prod.price).toFixed(0);
+        const prevVal = params.oldPrice ? Number(params.oldPrice).toFixed(0) : null;
+        await dispatchNotification({
+          storeId: params.storeId,
+          userId,
+          targetRole: "customer",
+          category: "promo_campaign",
+          bypassQuietHours: true,
+          titleAr: `انخفض سعر منتج في مفضلتك!`,
+          titleEn: `Price Drop on Your Wishlist!`,
+          bodyAr: prevVal
+            ? `"${prod.name}" أصبح بسعر ${nextVal} ${currencyAr} بدلاً من ${prevVal} ${currencyAr}. تسوّقه الآن!`
+            : `"${prod.name}" انخفض سعره الآن إلى ${nextVal} ${currencyAr}. تسوّقه الآن!`,
+          bodyEn: prevVal
+            ? `"${nameEn}" dropped from ${prevVal} ${currency} to ${nextVal} ${currency}. Grab it now!`
+            : `"${nameEn}" is now ${nextVal} ${currency}. Grab it now!`,
+          deepLink: `/products/${prod.id}`,
+          dedupeKey: `wishlist_price_drop:${params.storeId}:${prod.id}:${userId}:${nextVal}:${today}`,
+          data: { product_id: prod.id, new_price: Number(nextVal) },
+        });
+      } else {
+        await dispatchNotification({
+          storeId: params.storeId,
+          userId,
+          targetRole: "customer",
+          category: "back_in_stock",
+          titleAr: `منتجك المفضل عاد للمخزون!`,
+          titleEn: `Your Saved Item Is Back in Stock!`,
+          bodyAr: `"${prod.name}" في قائمة مفضلتك أصبح متوفراً الآن — اطلبه قبل نفاد الكمية.`,
+          bodyEn: `"${nameEn}" from your wishlist is back in stock now — order before it sells out.`,
+          deepLink: `/products/${prod.id}`,
+          dedupeKey: `wishlist_restock:${params.storeId}:${prod.id}:${userId}:${today}`,
+          data: { product_id: prod.id, stock: prod.stock },
+        });
+      }
+      sent += 1;
+    }
+    return sent;
+  } catch (err) {
+    console.error("[notifications] notifyWishlistProductAlert failed", {
+      code: err instanceof Error ? err.message : "unknown",
+    });
+    return 0;
+  }
+}

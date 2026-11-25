@@ -1,7 +1,8 @@
 package com.whitelabel.commerce.core.designsystem.components
 
-import com.whitelabel.commerce.core.designsystem.localized
-
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -16,9 +17,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.rounded.AddShoppingCart
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -28,9 +33,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
@@ -40,10 +52,16 @@ import coil.compose.SubcomposeAsyncImage
 import com.whitelabel.commerce.core.designsystem.LocalBrandColors
 import com.whitelabel.commerce.core.designsystem.LocalStoreSettings
 import com.whitelabel.commerce.core.designsystem.formatPrice
+import com.whitelabel.commerce.core.designsystem.localized
 import com.whitelabel.commerce.core.domain.model.Product
+import kotlinx.coroutines.delay
+
+val WishlistRoseColor = Color(0xFFE11D48)
+val RatingAmberColor = Color(0xFFF59E0B)
+val RatingAmberTextColor = Color(0xFFB45309)
 
 /**
- * Unified 4:5 white-label product card used on Home and Catalog 2-column grids.
+ * Unified 4:5 white-label product card used on Home, Catalog, and Wishlist 2-column grids.
  */
 @Composable
 fun ProductCard(
@@ -51,6 +69,8 @@ fun ProductCard(
     onClick: () -> Unit,
     onQuickAdd: () -> Unit,
     modifier: Modifier = Modifier,
+    isWishlisted: Boolean = false,
+    onToggleWishlist: (() -> Unit)? = null,
 ) {
     val brandColors = LocalBrandColors.current
     val settings = LocalStoreSettings.current
@@ -113,6 +133,17 @@ fun ProductCard(
                     }
                 }
 
+                // Soft translucent circular Heart toggle button (mirrors in RTL/LTR via TopEnd)
+                if (onToggleWishlist != null) {
+                    WishlistHeartIconButton(
+                        isWishlisted = isWishlisted,
+                        onClick = onToggleWishlist,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(8.dp),
+                    )
+                }
+
                 // Stock status pill
                 if (!product.isInStock) {
                     Surface(
@@ -149,6 +180,38 @@ fun ProductCard(
                     overflow = TextOverflow.Ellipsis,
                 )
 
+                // Calm compact warm-amber single-star badge ONLY when reviewCount > 0
+                if (product.hasReviews) {
+                    Surface(
+                        color = RatingAmberColor.copy(alpha = 0.14f),
+                        shape = CircleShape,
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(3.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Star,
+                                contentDescription = null,
+                                tint = RatingAmberColor,
+                                modifier = Modifier.size(13.dp),
+                            )
+                            Text(
+                                text = product.formattedRating,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = RatingAmberTextColor,
+                            )
+                            Text(
+                                text = "(${product.reviewCount})",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = RatingAmberTextColor.copy(alpha = 0.85f),
+                            )
+                        }
+                    }
+                }
+
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -174,7 +237,11 @@ fun ProductCard(
                 }
 
                 Text(
-                    text = if (product.isInStock) localized("متوفر (${product.stock})", "In stock (${product.stock})") else localized("غير متوفر حالياً", "Currently unavailable"),
+                    text = if (product.isInStock) {
+                        localized("متوفر (${product.stock})", "In stock (${product.stock})")
+                    } else {
+                        localized("غير متوفر حالياً", "Currently unavailable")
+                    },
                     style = MaterialTheme.typography.labelSmall,
                     color = if (product.isInStock) brandColors.success else MaterialTheme.colorScheme.error,
                 )
@@ -209,6 +276,60 @@ fun ProductCard(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun WishlistHeartIconButton(
+    isWishlisted: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var burst by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (burst) 1.24f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium,
+        ),
+        label = "wishlistHeartScale",
+    )
+
+    LaunchedEffect(burst) {
+        if (burst) {
+            delay(180)
+            burst = false
+        }
+    }
+
+    Surface(
+        onClick = {
+            burst = true
+            onClick()
+        },
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)),
+        shadowElevation = 2.dp,
+        modifier = modifier.size(34.dp),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = if (isWishlisted) Icons.Rounded.Favorite else Icons.Outlined.FavoriteBorder,
+                contentDescription = if (isWishlisted) {
+                    localized("إزالة من المفضلة", "Remove from wishlist")
+                } else {
+                    localized("أضف إلى المفضلة", "Save to wishlist")
+                },
+                tint = if (isWishlisted) WishlistRoseColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .size(18.dp)
+                    .graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                    },
+            )
         }
     }
 }

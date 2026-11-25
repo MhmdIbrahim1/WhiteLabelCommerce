@@ -227,6 +227,7 @@ export const config = {
     "/",
     "/products/:path*",
     "/orders",
+    "/wishlist",
     "/account",
     "/login",
     "/register",

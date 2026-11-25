@@ -26,6 +26,7 @@ import {
   Tag,
   ShieldCheck,
   PlusCircle,
+  Heart,
 } from "lucide-react";
 import { money } from "@/lib/brand";
 import { localizedText } from "@/lib/i18n";
@@ -40,6 +41,7 @@ import { LanguageToggle, useLanguage } from "@/components/language-provider";
 import { NotificationBell } from "@/components/notifications/notification-bell";
 import { logout } from "@/app/login/actions";
 import { useCart } from "./cart-store";
+import { useWishlist } from "./wishlist-provider";
 
 export function Navigation({
   name,
@@ -62,6 +64,7 @@ export function Navigation({
   const href = (path: string) => storeHref(basePath, path);
   const ArrowIcon = lang === "en" ? ArrowRight : ArrowLeft;
   const count = useCart().reduce((a, l) => a + l.quantity, 0);
+  const { count: wishlistCount, isSignedIn: wishlistSignedIn } = useWishlist();
   const [searchOpen, setSearchOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -483,6 +486,18 @@ export function Navigation({
                       <ClipboardList size={15} /> {t("navOrders")}
                     </Link>
                     <Link
+                      href={href("/wishlist")}
+                      role="menuitem"
+                      onClick={() => setUserMenuOpen(false)}
+                    >
+                      <Heart size={15} /> {t("navWishlist")}
+                      {wishlistCount > 0 && (
+                        <span className="user-menu-pill-count">
+                          {wishlistCount}
+                        </span>
+                      )}
+                    </Link>
+                    <Link
                       href="/create-store"
                       role="menuitem"
                       onClick={() => setUserMenuOpen(false)}
@@ -541,6 +556,26 @@ export function Navigation({
               userId={user?.id ?? null}
               scope="customer"
             />
+
+            <Link
+              href={href("/wishlist")}
+              className="wishlist-nav-btn icon-ghost-btn"
+              aria-label={
+                wishlistSignedIn && wishlistCount > 0
+                  ? `${t("navWishlist")} · ${wishlistCount}`
+                  : t("navWishlist")
+              }
+              title={t("navWishlist")}
+            >
+              <Heart
+                size={18}
+                fill={wishlistSignedIn && wishlistCount > 0 ? "#E11D48" : "none"}
+                stroke={wishlistSignedIn && wishlistCount > 0 ? "#E11D48" : "currentColor"}
+              />
+              {wishlistSignedIn && wishlistCount > 0 && (
+                <span className="wishlist-nav-badge">{wishlistCount}</span>
+              )}
+            </Link>
 
             <Link
               href={href("/cart")}

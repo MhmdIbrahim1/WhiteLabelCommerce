@@ -13,6 +13,7 @@ import {
   Palette,
   Settings,
   ShieldCheck,
+  Star,
 } from "lucide-react";
 import { useLanguage } from "@/components/language-provider";
 import type { DictKey } from "@/lib/i18n";
@@ -27,6 +28,7 @@ const sections: {
   { url: "/admin/products", key: "adminProducts", icon: Boxes, tourId: "nav-products" },
   { url: "/admin/orders", key: "adminOrders", icon: ClipboardList, tourId: "nav-orders" },
   { url: "/admin/customers", key: "adminCustomers", icon: Users, tourId: "nav-customers" },
+  { url: "/admin/reviews", key: "adminReviews", icon: Star },
   { url: "/admin/coupons", key: "adminCoupons", icon: TicketPercent },
   { url: "/admin/notifications", key: "adminNotifications", icon: BellRing },
   { url: "/admin/tickets", key: "adminTickets", icon: MessagesSquare },

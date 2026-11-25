@@ -80,12 +80,12 @@ val resolvedVersionCode = (project.findProperty("VERSION_CODE") as? String)
     ?.trim()
     ?.toIntOrNull()
     ?.takeIf { it > 0 }
-    ?: 22
+    ?: 23
 
 val resolvedVersionName = (project.findProperty("VERSION_NAME") as? String)
     ?.trim()
     ?.takeIf { it.isNotEmpty() }
-    ?: "1.1.2"
+    ?: "1.2.0"
 
 val resolvedStoreId = resolveConfigValue(
     "storeId",

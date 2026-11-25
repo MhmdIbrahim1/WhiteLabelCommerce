@@ -5,9 +5,11 @@ import androidx.lifecycle.viewModelScope
 import com.whitelabel.commerce.core.domain.model.Category
 import com.whitelabel.commerce.core.domain.model.Product
 import com.whitelabel.commerce.core.domain.model.StoreSettings
+import com.whitelabel.commerce.core.domain.model.WishlistToggleOutcome
 import com.whitelabel.commerce.core.domain.repository.CartRepository
 import com.whitelabel.commerce.core.domain.repository.CatalogRepository
 import com.whitelabel.commerce.core.domain.repository.StoreRepository
+import com.whitelabel.commerce.core.domain.repository.WishlistRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -25,6 +27,7 @@ data class HomeUiState(
     val storeSettings: StoreSettings = StoreSettings(),
     val categories: List<Category> = emptyList(),
     val featuredProducts: List<Product> = emptyList(),
+    val wishlistedProductIds: Set<String> = emptySet(),
     val searchQuery: String = "",
     val searchResults: List<Product> = emptyList(),
     val isSearching: Boolean = false,
@@ -41,6 +44,7 @@ class HomeViewModel @Inject constructor(
     private val storeRepository: StoreRepository,
     private val catalogRepository: CatalogRepository,
     private val cartRepository: CartRepository,
+    private val wishlistRepository: WishlistRepository,
 ) : ViewModel() {
 
     private val localState = MutableStateFlow(HomeUiState())
@@ -49,12 +53,19 @@ class HomeViewModel @Inject constructor(
     val uiState: StateFlow<HomeUiState> = combine(
         storeRepository.storeSettings,
         localState,
-    ) { settings, state ->
-        state.copy(storeSettings = settings)
+        wishlistRepository.wishlistedProductIds,
+    ) { settings, state, wishIds ->
+        state.copy(
+            storeSettings = settings,
+            wishlistedProductIds = wishIds,
+        )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
-        initialValue = HomeUiState(storeSettings = storeRepository.storeSettings.value),
+        initialValue = HomeUiState(
+            storeSettings = storeRepository.storeSettings.value,
+            wishlistedProductIds = wishlistRepository.wishlistedProductIds.value,
+        ),
     )
 
     init {
@@ -161,6 +172,15 @@ class HomeViewModel @Inject constructor(
                 selectedSize = product.sizes.firstOrNull(),
                 selectedColor = product.colors.firstOrNull(),
             )
+        }
+    }
+
+    fun toggleWishlist(
+        productId: String,
+        onOutcome: (WishlistToggleOutcome) -> Unit,
+    ) {
+        viewModelScope.launch {
+            onOutcome(wishlistRepository.toggleWishlist(productId))
         }
     }
 

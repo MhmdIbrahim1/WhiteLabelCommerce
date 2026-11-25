@@ -1,19 +1,29 @@
 package com.whitelabel.commerce.feature.catalog
 
-import com.whitelabel.commerce.core.designsystem.localized
-
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.whitelabel.commerce.core.designsystem.localized
+import com.whitelabel.commerce.core.domain.model.AuthSessionState
 import com.whitelabel.commerce.core.domain.model.Product
+import com.whitelabel.commerce.core.domain.model.ProductReview
+import com.whitelabel.commerce.core.domain.model.ReviewEligibility
+import com.whitelabel.commerce.core.domain.model.ReviewFormatting
+import com.whitelabel.commerce.core.domain.model.WishlistToggleOutcome
+import com.whitelabel.commerce.core.domain.repository.AuthRepository
 import com.whitelabel.commerce.core.domain.repository.CartRepository
 import com.whitelabel.commerce.core.domain.repository.CatalogRepository
+import com.whitelabel.commerce.core.domain.repository.ReviewRepository
+import com.whitelabel.commerce.core.domain.repository.WishlistRepository
 import com.whitelabel.commerce.core.notifications.FcmTokenManager
 import com.whitelabel.commerce.core.notifications.NotificationRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -28,6 +38,12 @@ data class ProductDetailUiState(
     val isSubscribingRestock: Boolean = false,
     val restockSubscribed: Boolean = false,
     val restockError: String? = null,
+    val isWishlisted: Boolean = false,
+    val isSignedIn: Boolean = false,
+    val reviews: List<ProductReview> = emptyList(),
+    val eligibility: ReviewEligibility = ReviewEligibility(),
+    val isSubmittingReview: Boolean = false,
+    val reviewSubmitError: String? = null,
 ) {
     val canAddToCart: Boolean
         get() {
@@ -46,12 +62,31 @@ class ProductDetailViewModel @Inject constructor(
     private val cartRepository: CartRepository,
     private val notificationRepository: NotificationRepository,
     private val fcmTokenManager: FcmTokenManager,
+    private val reviewRepository: ReviewRepository,
+    private val wishlistRepository: WishlistRepository,
+    private val authRepository: AuthRepository,
 ) : ViewModel() {
 
     private val productId: String = checkNotNull(savedStateHandle["productId"])
 
     private val _uiState = MutableStateFlow(ProductDetailUiState())
-    val uiState: StateFlow<ProductDetailUiState> = _uiState.asStateFlow()
+    val uiState: StateFlow<ProductDetailUiState> = combine(
+        _uiState,
+        wishlistRepository.wishlistedProductIds,
+        authRepository.sessionState,
+    ) { state, wishIds, session ->
+        state.copy(
+            isWishlisted = productId in wishIds,
+            isSignedIn = session is AuthSessionState.SignedIn,
+        )
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = ProductDetailUiState(
+            isWishlisted = productId in wishlistRepository.wishlistedProductIds.value,
+            isSignedIn = authRepository.sessionState.value is AuthSessionState.SignedIn,
+        ),
+    )
 
     init {
         loadProduct()
@@ -60,7 +95,15 @@ class ProductDetailViewModel @Inject constructor(
     fun loadProduct() {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
-            catalogRepository.getProductById(productId)
+            val productDeferred = async { catalogRepository.getProductById(productId) }
+            val reviewsDeferred = async { reviewRepository.getPublishedReviews(productId) }
+            val eligibilityDeferred = async { reviewRepository.checkEligibility(productId) }
+
+            val productResult = productDeferred.await()
+            val reviewsResult = reviewsDeferred.await()
+            val eligibilityResult = eligibilityDeferred.await()
+
+            productResult
                 .onSuccess { product ->
                     if (product == null) {
                         _uiState.update {
@@ -76,6 +119,8 @@ class ProductDetailViewModel @Inject constructor(
                                 selectedSize = product.sizes.firstOrNull(),
                                 selectedColor = product.colors.firstOrNull(),
                                 quantity = if (product.stock > 0) 1 else 0,
+                                reviews = reviewsResult.getOrDefault(it.reviews),
+                                eligibility = eligibilityResult.getOrDefault(it.eligibility),
                                 isLoading = false,
                             )
                         }
@@ -125,7 +170,75 @@ class ProductDetailViewModel @Inject constructor(
                 selectedSize = state.selectedSize,
                 selectedColor = state.selectedColor,
             )
-            onAdded(localized("تمت إضافة ${state.quantity} × \"${product.displayName}\" إلى السلة", "Added ${state.quantity} × ${product.displayName} to cart"))
+            onAdded(
+                localized(
+                    "تمت إضافة ${state.quantity} × \"${product.displayName}\" إلى السلة",
+                    "Added ${state.quantity} × ${product.displayName} to cart",
+                ),
+            )
+        }
+    }
+
+    fun toggleWishlist(onOutcome: (WishlistToggleOutcome) -> Unit) {
+        viewModelScope.launch {
+            onOutcome(wishlistRepository.toggleWishlist(productId))
+        }
+    }
+
+    fun submitReview(
+        rating: Int,
+        comment: String,
+        onSaved: (String) -> Unit,
+    ) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSubmittingReview = true, reviewSubmitError = null) }
+            reviewRepository.submitReview(
+                productId = productId,
+                rating = rating,
+                comment = comment,
+            ).onSuccess { saved ->
+                _uiState.update { prev ->
+                    val updatedList = prev.reviews.toMutableList().apply {
+                        val idx = indexOfFirst { it.id == saved.id }
+                        if (idx >= 0) set(idx, saved) else add(0, saved)
+                    }
+                    val stats = ReviewFormatting.computeStats(updatedList)
+                    prev.copy(
+                        reviews = updatedList,
+                        product = prev.product?.copy(
+                            avgRating = stats.average,
+                            reviewCount = stats.total,
+                        ),
+                        eligibility = prev.eligibility.copy(
+                            eligible = true,
+                            existingReview = saved,
+                        ),
+                        isSubmittingReview = false,
+                        reviewSubmitError = null,
+                    )
+                }
+                onSaved(
+                    localized(
+                        "شكراً لك! تم حفظ تقييمك الموثّق بنجاح.",
+                        "Thank you! Your verified review has been saved.",
+                    ),
+                )
+            }.onFailure { err ->
+                val raw = err.localizedMessage.orEmpty()
+                val msg = when {
+                    raw.contains("verified_purchase_required", ignoreCase = true) ->
+                        localized(
+                            "التقييمات متاحة فقط للمشترين الذين تم تسليم طلبهم لهذا المنتج.",
+                            "Reviews are exclusive to verified delivered orders of this product.",
+                        )
+                    else ->
+                        localized(
+                            "تعذر حفظ تقييمك حالياً. حاول مرة أخرى.",
+                            "Could not save your review right now. Please try again.",
+                        )
+                }
+                _uiState.update { it.copy(isSubmittingReview = false, reviewSubmitError = msg) }
+            }
         }
     }
 

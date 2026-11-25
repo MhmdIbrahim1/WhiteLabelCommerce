@@ -28,6 +28,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Remove
+import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Straighten
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -69,15 +70,22 @@ import com.whitelabel.commerce.core.designsystem.LocalStoreSettings
 import com.whitelabel.commerce.core.designsystem.components.BrandEmptyState
 import com.whitelabel.commerce.core.designsystem.components.ColorSwatchMapper
 import com.whitelabel.commerce.core.designsystem.components.ProductImageFallback
+import com.whitelabel.commerce.core.designsystem.components.RatingAmberColor
+import com.whitelabel.commerce.core.designsystem.components.RatingAmberTextColor
+import com.whitelabel.commerce.core.designsystem.components.WishlistHeartIconButton
 import com.whitelabel.commerce.core.designsystem.components.rememberShimmerBrush
 import com.whitelabel.commerce.core.designsystem.formatPrice
 import com.whitelabel.commerce.core.designsystem.localized
+import com.whitelabel.commerce.core.domain.model.WishlistToggleOutcome
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ProductDetailScreen(
     onBack: () -> Unit,
     onAddedToCart: (String) -> Unit,
+    onOpenAccount: () -> Unit = {},
+    onShowMessage: (String) -> Unit = {},
+    onWishlistSignInPrompt: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: ProductDetailViewModel = hiltViewModel(),
 ) {
@@ -85,6 +93,7 @@ fun ProductDetailScreen(
     val brandColors = LocalBrandColors.current
     val settings = LocalStoreSettings.current
     var showSizeGuide by remember { mutableStateOf(false) }
+    var showWriteReview by remember { mutableStateOf(false) }
     var showRestockInput by remember { mutableStateOf(false) }
     var restockPhone by remember { mutableStateOf("") }
 
@@ -105,6 +114,29 @@ fun ProductDetailScreen(
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
                             contentDescription = localized("رجوع", "Back"),
+                        )
+                    }
+                },
+                actions = {
+                    if (state.product != null) {
+                        WishlistHeartIconButton(
+                            isWishlisted = state.isWishlisted,
+                            onClick = {
+                                viewModel.toggleWishlist { outcome ->
+                                    when (outcome) {
+                                        WishlistToggleOutcome.RequiresSignIn -> onWishlistSignInPrompt()
+                                        is WishlistToggleOutcome.Toggled -> onShowMessage(
+                                            if (outcome.inWishlist) {
+                                                localized("تمت الإضافة إلى المفضلة", "Saved to wishlist")
+                                            } else {
+                                                localized("تمت الإزالة من المفضلة", "Removed from wishlist")
+                                            },
+                                        )
+                                        is WishlistToggleOutcome.Failure -> onShowMessage(outcome.message)
+                                    }
+                                }
+                            },
+                            modifier = Modifier.padding(end = 10.dp),
                         )
                     }
                 },
@@ -262,13 +294,47 @@ fun ProductDetailScreen(
                         }
                     }
 
-                    // 2. Title, Price, Stock Availability Badge
+                    // 2. Title, Rating Pill, Price, Stock Availability Badge
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
                             text = product.displayName,
                             style = MaterialTheme.typography.headlineSmall,
                             color = MaterialTheme.colorScheme.onBackground,
                         )
+
+                        if (product.hasReviews) {
+                            Surface(
+                                color = RatingAmberColor.copy(alpha = 0.14f),
+                                shape = CircleShape,
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Star,
+                                        contentDescription = null,
+                                        tint = RatingAmberColor,
+                                        modifier = Modifier.size(15.dp),
+                                    )
+                                    Text(
+                                        text = product.formattedRating,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = RatingAmberTextColor,
+                                    )
+                                    Text(
+                                        text = localized(
+                                            "(${product.reviewCount} تقييم)",
+                                            "(${product.reviewCount} reviews)",
+                                        ),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = RatingAmberTextColor.copy(alpha = 0.85f),
+                                    )
+                                }
+                            }
+                        }
 
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -680,6 +746,18 @@ fun ProductDetailScreen(
                         }
                     }
 
+                    // 8. Verified Customer Reviews Section
+                    ProductReviewsSection(
+                        reviews = state.reviews,
+                        eligibility = state.eligibility,
+                        isSignedIn = state.isSignedIn,
+                        storeName = settings.storeName,
+                        isSubmitting = state.isSubmittingReview,
+                        submitError = state.reviewSubmitError,
+                        onOpenWriteReview = { showWriteReview = true },
+                        onOpenAccount = onOpenAccount,
+                    )
+
                     Spacer(modifier = Modifier.height(12.dp))
                 }
             }
@@ -690,6 +768,22 @@ fun ProductDetailScreen(
         SizeGuideSheet(
             sizes = state.product?.sizes.orEmpty(),
             onDismiss = { showSizeGuide = false },
+        )
+    }
+
+    if (showWriteReview) {
+        WriteReviewBottomSheet(
+            initialRating = state.eligibility.existingReview?.rating ?: 5,
+            initialComment = state.eligibility.existingReview?.comment.orEmpty(),
+            isEditing = state.eligibility.existingReview != null,
+            isSubmitting = state.isSubmittingReview,
+            onSubmit = { rating, comment ->
+                viewModel.submitReview(rating = rating, comment = comment) { msg ->
+                    showWriteReview = false
+                    onShowMessage(msg)
+                }
+            },
+            onDismiss = { showWriteReview = false },
         )
     }
 }

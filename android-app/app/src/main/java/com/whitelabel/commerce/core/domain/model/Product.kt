@@ -42,9 +42,16 @@ data class Product(
     val imagePath: String? = null,
     val imageUrl: String? = null,
     val specifications: List<ProductSpecification> = emptyList(),
+    val avgRating: Double = 0.0,
+    val reviewCount: Int = 0,
     val matchType: String? = null,
     val createdAt: String? = null,
 ) {
+    val hasReviews: Boolean
+        get() = reviewCount > 0
+
+    val formattedRating: String
+        get() = ReviewFormatting.formatScore(avgRating)
     val displayDescription: String
         get() = localized(description, descriptionEn?.takeIf { it.isNotBlank() } ?: description)
 

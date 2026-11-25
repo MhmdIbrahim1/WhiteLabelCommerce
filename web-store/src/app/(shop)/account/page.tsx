@@ -9,10 +9,12 @@ import {
   LogOut,
   Sparkles,
   LockKeyhole,
+  Heart,
 } from "lucide-react";
 import { serverDb, checked } from "@/lib/db";
 import { money } from "@/lib/brand";
 import { settings } from "@/lib/shop";
+import { storeHref } from "@/lib/tenant";
 import { t } from "@/lib/i18n";
 import { getServerLang } from "@/lib/i18n-server";
 import { Timeline } from "@/components/shop/tracking";
@@ -155,7 +157,17 @@ export default async function AccountPage({
           </p>
         </div>
         <div className="actions">
-          <Link href="/orders" className="section-more-link">
+          <Link
+            href={storeHref(store.basePath, "/wishlist")}
+            className="section-more-link"
+          >
+            <Heart size={15} />
+            <span>{t(lang, "navWishlist")}</span>
+          </Link>
+          <Link
+            href={storeHref(store.basePath, "/orders")}
+            className="section-more-link"
+          >
             <span>{t(lang, "accountAllOrders")}</span>
             <ArrowIcon size={15} />
           </Link>
@@ -271,7 +283,10 @@ export default async function AccountPage({
         <section className="panel order-panel">
           <div className="split" style={{ marginBottom: "0.75rem" }}>
             <h2>{t(lang, "accountRecentOrders")}</h2>
-            <Link href="/orders" className="section-more-link">
+            <Link
+              href={storeHref(store.basePath, "/orders")}
+              className="section-more-link"
+            >
               {t(lang, "viewAll")} <ArrowIcon size={14} />
             </Link>
           </div>
@@ -290,7 +305,7 @@ export default async function AccountPage({
               }}
             >
               <p>{t(lang, "accountNoOrders")}</p>
-              <Link href="/products" className="cta">
+              <Link href={storeHref(store.basePath, "/products")} className="cta">
                 {t(lang, "heroShopProducts")}
               </Link>
             </div>

@@ -147,6 +147,7 @@ class MainActivity : ComponentActivity() {
                     storeSettings = settings,
                     cartItemCount = uiState.cartItemCount,
                     unreadNotificationCount = uiState.unreadNotificationCount,
+                    wishlistCount = uiState.wishlistCount,
                     pendingDeepLink = pendingDeepLinkState.value,
                     onConsumeDeepLink = { pendingDeepLinkState.value = null },
                     isDarkTheme = useDarkTheme,

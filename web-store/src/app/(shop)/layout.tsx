@@ -12,6 +12,7 @@ import { getServerLang } from "@/lib/i18n-server";
 import brand from "@/lib/brand";
 import { Navigation } from "@/components/shop/navigation";
 import { SuspendedStoreGate } from "@/components/shop/suspended-store";
+import { WishlistProvider } from "@/components/shop/wishlist-provider";
 import "./shop.css";
 
 export const dynamic = "force-dynamic";
@@ -50,6 +51,17 @@ export default async function Layout({
   }
 
   const authUser = authRes.data.user;
+  let initialWishlistIds: string[] = [];
+  if (authUser) {
+    const { data: wishRows } = await db
+      .from("wishlists")
+      .select("product_id")
+      .eq("store_id", s.storeId)
+      .eq("user_id", authUser.id);
+    initialWishlistIds = ((wishRows ?? []) as { product_id: string }[])
+      .map((w) => w.product_id)
+      .filter(Boolean);
+  }
   const userSummary = authUser
     ? {
         id: authUser.id,
@@ -67,45 +79,52 @@ export default async function Layout({
   const dataAttrs = uiConfigDataAttrs(s.uiConfig);
   const href = (path: string) => storeHref(s.basePath, path);
   return (
-    <div
-      className={`shop ${font.className}`}
-      {...dataAttrs}
-      data-card={brand.presets.productCard}
-      style={style}
+    <WishlistProvider
+      storeId={s.storeId}
+      initialProductIds={initialWishlistIds}
+      isSignedIn={Boolean(authUser)}
     >
-      <Navigation
-        name={displayName}
-        storeId={s.storeId}
-        basePath={s.basePath}
-        admin={Boolean(admin)}
-        superAdmin={Boolean(superAdmin)}
-        user={userSummary}
-      />
-      <main className="shop-main">{children}</main>
-      <footer className="shop-footer-wrap">
-        <div className="shop-footer">
-          <div className="footer-brand">
-            <span className="footer-mark" aria-hidden="true">
-              <Store size={17} />
-            </span>
-            <div>
-              <b>{displayName}</b>
-              <p>{t(lang, "footerTagline")}</p>
+      <div
+        className={`shop ${font.className}`}
+        {...dataAttrs}
+        data-card={brand.presets.productCard}
+        style={style}
+      >
+        <Navigation
+          name={displayName}
+          storeId={s.storeId}
+          basePath={s.basePath}
+          admin={Boolean(admin)}
+          superAdmin={Boolean(superAdmin)}
+          user={userSummary}
+        />
+        <main className="shop-main">{children}</main>
+        <footer className="shop-footer-wrap">
+          <div className="shop-footer">
+            <div className="footer-brand">
+              <span className="footer-mark" aria-hidden="true">
+                <Store size={17} />
+              </span>
+              <div>
+                <b>{displayName}</b>
+                <p>{t(lang, "footerTagline")}</p>
+              </div>
             </div>
+            <nav className="footer-links" aria-label="Footer navigation">
+              <Link href={href("/products")}>{t(lang, "footerAllProducts")}</Link>
+              <Link href={href("/wishlist")}>{t(lang, "navWishlist")}</Link>
+              <Link href={href("/orders")}>{t(lang, "footerTrackOrders")}</Link>
+              <Link href={href("/contact")}>{t(lang, "footerContact")}</Link>
+              {admin && <Link href="/admin">{t(lang, "footerAdmin")}</Link>}
+              {superAdmin && (
+                <Link href="/super-admin">
+                  {lang === "en" ? "Super Admin" : "إدارة المنصة"}
+                </Link>
+              )}
+            </nav>
           </div>
-          <nav className="footer-links" aria-label="Footer navigation">
-            <Link href={href("/products")}>{t(lang, "footerAllProducts")}</Link>
-            <Link href={href("/orders")}>{t(lang, "footerTrackOrders")}</Link>
-            <Link href={href("/contact")}>{t(lang, "footerContact")}</Link>
-            {admin && <Link href="/admin">{t(lang, "footerAdmin")}</Link>}
-            {superAdmin && (
-              <Link href="/super-admin">
-                {lang === "en" ? "Super Admin" : "إدارة المنصة"}
-              </Link>
-            )}
-          </nav>
-        </div>
-      </footer>
-    </div>
+        </footer>
+      </div>
+    </WishlistProvider>
   );
 }

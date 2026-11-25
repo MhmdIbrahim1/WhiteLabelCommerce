@@ -5,9 +5,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccountCircle
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.DarkMode
+import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.SupportAgent
@@ -50,6 +52,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.whitelabel.commerce.core.designsystem.LocalBrandColors
+import com.whitelabel.commerce.core.designsystem.components.WishlistRoseColor
 import com.whitelabel.commerce.core.designsystem.localized
 import com.whitelabel.commerce.core.domain.model.StoreSettings
 import com.whitelabel.commerce.feature.account.AccountScreen
@@ -63,6 +66,7 @@ import com.whitelabel.commerce.feature.home.parseHeroCategoryParam
 import com.whitelabel.commerce.feature.notifications.NotificationsScreen
 import com.whitelabel.commerce.feature.orders.OrdersScreen
 import com.whitelabel.commerce.feature.support.SupportScreen
+import com.whitelabel.commerce.feature.wishlist.WishlistScreen
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -71,6 +75,7 @@ fun WhiteLabelAppShell(
     storeSettings: StoreSettings,
     cartItemCount: Int,
     unreadNotificationCount: Int = 0,
+    wishlistCount: Int = 0,
     pendingDeepLink: String? = null,
     onConsumeDeepLink: () -> Unit = {},
     isDarkTheme: Boolean,
@@ -116,6 +121,7 @@ fun WhiteLabelAppShell(
                 pendingCategoryId = categoryPathMatch.groupValues[1]
                 navigateToTab(AppRoutes.CATEGORIES)
             }
+            clean.startsWith("/wishlist") -> navController.navigate(AppRoutes.WISHLIST)
             clean.startsWith("/cart") -> navigateToTab(AppRoutes.CART)
             clean.startsWith("/orders") -> navigateToTab(AppRoutes.ORDERS)
             clean.startsWith("/account") || clean.startsWith("/login") ->
@@ -163,6 +169,17 @@ fun WhiteLabelAppShell(
         }
     }
 
+    fun promptSignInForWishlist() {
+        showActionSnackbar(
+            message = localized(
+                "سجّل الدخول لحفظ المنتجات في المفضلة",
+                "Sign in to save items to your wishlist",
+            ),
+            actionLabel = localized("تسجيل الدخول", "Sign In"),
+            onAction = { navController.navigate(AppRoutes.ACCOUNT) },
+        )
+    }
+
     Scaffold(
         modifier = modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
@@ -185,6 +202,34 @@ fun WhiteLabelAppShell(
                                 text = if (storeSettings.isRtl) "EN" else "عربي",
                                 fontWeight = FontWeight.Bold,
                             )
+                        }
+                        IconButton(onClick = { navController.navigate(AppRoutes.WISHLIST) }) {
+                            if (isSignedIn && wishlistCount > 0) {
+                                BadgedBox(
+                                    badge = {
+                                        Badge(
+                                            containerColor = WishlistRoseColor,
+                                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                                        ) {
+                                            Text(
+                                                text = if (wishlistCount > 99) "99+" else wishlistCount.toString(),
+                                                style = MaterialTheme.typography.labelSmall,
+                                            )
+                                        }
+                                    },
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Favorite,
+                                        contentDescription = localized("المفضلة", "Wishlist"),
+                                        tint = WishlistRoseColor,
+                                    )
+                                }
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Outlined.FavoriteBorder,
+                                    contentDescription = localized("المفضلة", "Wishlist"),
+                                )
+                            }
                         }
                         IconButton(onClick = { navController.navigate(AppRoutes.NOTIFICATIONS) }) {
                             if (unreadNotificationCount > 0) {
@@ -331,6 +376,7 @@ fun WhiteLabelAppShell(
                     },
                     onHeroRoute = ::handleHeroRoute,
                     onShowMessage = { msg -> showSnackbar(msg, showCartAction = true) },
+                    onWishlistSignInPrompt = ::promptSignInForWishlist,
                 )
             }
 
@@ -342,6 +388,7 @@ fun WhiteLabelAppShell(
                         navController.navigate(AppRoutes.productDetail(productId))
                     },
                     onShowMessage = { msg -> showSnackbar(msg, showCartAction = true) },
+                    onWishlistSignInPrompt = ::promptSignInForWishlist,
                 )
             }
 
@@ -385,6 +432,9 @@ fun WhiteLabelAppShell(
                 ProductDetailScreen(
                     onBack = { navController.popBackStack() },
                     onAddedToCart = { msg -> showSnackbar(msg, showCartAction = true) },
+                    onOpenAccount = { navController.navigate(AppRoutes.ACCOUNT) },
+                    onShowMessage = { msg -> showSnackbar(msg) },
+                    onWishlistSignInPrompt = ::promptSignInForWishlist,
                 )
             }
 
@@ -412,7 +462,27 @@ fun WhiteLabelAppShell(
                         navController.popBackStack()
                         navigateToTab(AppRoutes.ORDERS)
                     },
+                    onOpenWishlist = {
+                        navController.navigate(AppRoutes.WISHLIST)
+                    },
                     onShowMessage = { msg -> showSnackbar(msg) },
+                )
+            }
+
+            composable(AppRoutes.WISHLIST) {
+                WishlistScreen(
+                    onBack = { navController.popBackStack() },
+                    onProductClick = { productId ->
+                        navController.navigate(AppRoutes.productDetail(productId))
+                    },
+                    onBrowseCatalog = {
+                        navController.popBackStack()
+                        navigateToTab(AppRoutes.CATEGORIES)
+                    },
+                    onOpenAccount = {
+                        navController.navigate(AppRoutes.ACCOUNT)
+                    },
+                    onShowMessage = { msg -> showSnackbar(msg, showCartAction = true) },
                 )
             }
 

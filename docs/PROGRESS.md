@@ -757,3 +757,27 @@ Stored as `store_settings.ui_config.homeSections` (ordered array, up to 15 items
 - **Verification:**
   - Live Chrome check at `http://localhost:3000/admin?onboarding=1` in both EN (LTR) and AR (RTL) verified `?onboarding=1` auto-launch, all 6 tour steps + `Previous` / `Done` / `Escape`, live `2 / 5` -> `3 / 5` (Copy Link) -> `5 / 5` celebration state, Dismiss + Quick Tour reopen/relaunch, `0` console errors, `0` HTTP `>= 400`, and `0` horizontal overflow.
   - Passed `npx tsc --noEmit` (0 errors), `npm run lint -- --max-warnings 0` (0 warnings), and `npm run build` (23/23 routes).
+
+
+
+---
+
+### Phase 10C: Verified Product Reviews, Cloud Wishlist & Android `v1.2.0` — 2026-11-25
+
+- **Database Schema, Rating Sync Trigger, Cloud Wishlist & Atomic RPCs ([shared/phase-10c-reviews-wishlist.sql](../shared/phase-10c-reviews-wishlist.sql), applied live):**
+  - Added `avg_rating numeric(3,2) not null default 0` and `review_count integer not null default 0` (with bounds checks) to `public.products`.
+  - Created `public.product_reviews` (unique on `(store_id, product_id, user_id)`, strict `store_id` scoping, `is_verified_purchase`, `status in ('published','hidden')`, `admin_reply`, `admin_replied_at`) with automatic `trg_sync_product_rating_stats` trigger recalculating `products.avg_rating` and `products.review_count` on published reviews across `INSERT`/`UPDATE`/`DELETE`, and strict RLS (public reads published, customers read own, `is_store_admin(store_id)` reads all store reviews; direct client writes revoked).
+  - Created `public.wishlists` (unique on `(store_id, user_id, product_id)`, indexed on `(store_id, product_id)` for fast restock/price-drop lookups) with strict RLS (`user_id = auth.uid()`).
+  - Created `SECURITY DEFINER` RPCs (`#variable_conflict use_column` + explicit `::text` casts): `can_review_product`, `submit_product_review`, `toggle_wishlist_item`, and `admin_moderate_review`.
+  - Seeded 4 realistic bilingual verified reviews across Nova Store's top 3 products (including 1 merchant reply example) and reloaded PostgREST schema cache (`NOTIFY pgrst, 'reload schema'`).
+  - Live Supabase verification confirmed `has_product_rating_cols: true`, `tables_exist: true`, `trigger_exists: true`, `rpcs_count: 4`, `seeded_reviews_count: 4`, and 3 populated `rated_products` (`avg_rating: 4.5 / 5.0 / 5.0`).
+- **Storefront Reviews & Cloud Wishlist (`web-store/`):**
+  - Added [reviews-wishlist.ts](../web-store/src/lib/reviews-wishlist.ts), [wishlist-provider.tsx](../web-store/src/components/shop/wishlist-provider.tsx), [wishlist-heart.tsx](../web-store/src/components/shop/wishlist-heart.tsx), [wishlist-grid.tsx](../web-store/src/components/shop/wishlist-grid.tsx), [wishlist/page.tsx](../web-store/src/app/(shop)/wishlist/page.tsx), [wishlist/actions.ts](../web-store/src/app/(shop)/wishlist/actions.ts), [product-reviews.tsx](../web-store/src/components/shop/product-reviews.tsx), and [products/[id]/actions.ts](../web-store/src/app/(shop)/products/[id]/actions.ts) strictly scoped by active `store_id` and `storeHref` across `/` and `/s/[slug]`.
+  - Product cards ([cards.tsx](../web-store/src/components/shop/cards.tsx)) display compact warm-amber single-star badges (`★ 4.5 (2)`) only when `review_count > 0` and soft translucent circular Heart buttons (`#E11D48` active rose fill + spring pop micro-animation) mirrored in RTL/LTR; header ([navigation.tsx](../web-store/src/components/shop/navigation.tsx)) and `/account` link to `/wishlist` with a live badge counter.
+  - Product detail pages ([products/[id]/page.tsx](../web-store/src/app/(shop)/products/[id]/page.tsx)) support UUID and slug lookup, render a rating jump pill + wishlist pill, and feature the full Reviews Summary Header (average score, 5 stars, clickable `5★`–`1★` distribution bars, star filter chips, Newest/Highest sort), verified purchase badges, indented Store Reply sub-cards (`border-inline-start`), tactile `46px` Write/Edit Review form, and calm neutral eligibility note for non-buyers.
+- **Merchant Admin Review Moderation (`/admin/reviews`) & Wishlist Alerts (`web-store/`):**
+  - Added **"التقييمات / Reviews"** to [admin/nav.tsx](../web-store/src/app/admin/nav.tsx) and built [admin/reviews/page.tsx](../web-store/src/app/admin/reviews/page.tsx) + [admin/reviews/reviews-client.tsx](../web-store/src/app/admin/reviews/reviews-client.tsx) with KPI strip (Average Rating, Total Reviews, Needs Reply, Hidden), filter tabs (`All / Needs Reply / Hidden`), one-click **Publish / Hide** pill toggle, and inline **Reply / Edit Reply** editor.
+  - Wired `moderateReviewAction` in [admin/mutations.ts](../web-store/src/app/admin/mutations.ts) to dispatch Phase 9 `notifyReviewReply`, and upgraded `saveProduct` to dispatch non-blocking Phase 9 `notifyWishlistProductAlert` notifications to wishlisting customers on price drops (`price < previousPrice`) or restocks (`0 -> > 0`).
+- **Verification:**
+  - Live Chrome QA at `http://localhost:3000` (AR RTL & EN LTR, `1440px` Desktop & `390px` Mobile) passed across Storefront Home, Cloud Wishlist (`/` -> `/wishlist` + cleanup), Product Detail `#reviews` (summary, bars, filters, verified badges, store reply), and `/admin/reviews` (KPIs, Hide/Publish, Reply/Clear Reply restore) with `0` console errors, `0` HTTP `>= 400` responses, and `0` horizontal overflow.
+  - Passed `npx tsc --noEmit` (0 errors), `npm run lint -- --max-warnings 0` (0 errors, 0 warnings), and `npm run build` (25/25 routes).

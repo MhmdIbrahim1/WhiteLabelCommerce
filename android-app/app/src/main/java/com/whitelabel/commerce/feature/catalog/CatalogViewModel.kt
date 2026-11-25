@@ -5,15 +5,19 @@ import androidx.lifecycle.viewModelScope
 import com.whitelabel.commerce.core.designsystem.localized
 import com.whitelabel.commerce.core.domain.model.Category
 import com.whitelabel.commerce.core.domain.model.Product
+import com.whitelabel.commerce.core.domain.model.WishlistToggleOutcome
 import com.whitelabel.commerce.core.domain.repository.CartRepository
 import com.whitelabel.commerce.core.domain.repository.CatalogRepository
+import com.whitelabel.commerce.core.domain.repository.WishlistRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -37,6 +41,7 @@ enum class CatalogSortOption(private val arabicText: String) {
 data class CatalogUiState(
     val categories: List<Category> = emptyList(),
     val rawProducts: List<Product> = emptyList(),
+    val wishlistedProductIds: Set<String> = emptySet(),
     val selectedCategoryId: String? = null,
     val searchQuery: String = "",
     val instantHints: List<InstantSearchHint> = emptyList(),
@@ -58,10 +63,31 @@ data class CatalogUiState(
 class CatalogViewModel @Inject constructor(
     private val catalogRepository: CatalogRepository,
     private val cartRepository: CartRepository,
+    private val wishlistRepository: WishlistRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(CatalogUiState())
-    val uiState: StateFlow<CatalogUiState> = _uiState.asStateFlow()
+    val uiState: StateFlow<CatalogUiState> = combine(
+        _uiState,
+        wishlistRepository.wishlistedProductIds,
+    ) { state, wishIds ->
+        state.copy(wishlistedProductIds = wishIds)
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = CatalogUiState(
+            wishlistedProductIds = wishlistRepository.wishlistedProductIds.value,
+        ),
+    )
+
+    fun toggleWishlist(
+        productId: String,
+        onOutcome: (WishlistToggleOutcome) -> Unit,
+    ) {
+        viewModelScope.launch {
+            onOutcome(wishlistRepository.toggleWishlist(productId))
+        }
+    }
 
     private var searchJob: Job? = null
 

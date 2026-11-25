@@ -21,9 +21,12 @@ import { dispatchNotification } from "@/lib/notifications/dispatcher";
 import {
   notifyBackInStock,
   notifyOrderStatusChanged,
+  notifyReviewReply,
   notifyWalletCashback,
+  notifyWishlistProductAlert,
   runRecoveryAutomations,
 } from "@/lib/notifications/events";
+import type { ProductReview } from "@/lib/reviews-wishlist";
 import { normalizeSpecs } from "@/lib/specs";
 import { nextOrder, nextTicket } from "@/lib/workflow";
 
@@ -175,15 +178,17 @@ export async function saveProduct(f: FormData) {
   }
   const previous = text(f, "previous_image");
   let previousStock: number | null = null;
+  let previousPrice: number | null = null;
   if (id) {
     const { data: existingProd } = await db
       .from("products")
-      .select("stock")
+      .select("stock,price")
       .eq("id", id)
       .eq("store_id", storeId)
-      .maybeSingle<{ stock: number }>();
+      .maybeSingle<{ stock: number; price: number }>();
     if (existingProd) {
       previousStock = Number(existingProd.stock ?? 0);
+      previousPrice = Number(existingProd.price ?? 0);
     }
   }
   const values = image ? { ...row, image_path: image } : row;
@@ -205,8 +210,24 @@ export async function saveProduct(f: FormData) {
   if (result.error?.message?.includes("store_product_limit_reached")) {
     finish(catalog, false, "limit_reached");
   }
-  if (!result.error && id && previousStock !== null && previousStock <= 0 && stock > 0) {
-    void notifyBackInStock(id, storeId);
+  if (!result.error && id) {
+    if (previousStock !== null && previousStock <= 0 && stock > 0) {
+      void notifyBackInStock(id, storeId);
+      void notifyWishlistProductAlert({
+        storeId,
+        productId: id,
+        kind: "restock",
+      });
+    }
+    if (previousPrice !== null && price < previousPrice) {
+      void notifyWishlistProductAlert({
+        storeId,
+        productId: id,
+        kind: "price_drop",
+        oldPrice: previousPrice,
+        newPrice: price,
+      });
+    }
   }
   finish(catalog, !result.error);
 }
@@ -976,4 +997,68 @@ export async function deleteAdminNotifications(
     });
     return { ok: false, error: "delete_failed" };
   }
+}
+
+
+export type ModerateReviewResult =
+  | { ok: true; review: ProductReview }
+  | { ok: false; error: string };
+
+export async function moderateReviewAction(input: {
+  reviewId: string;
+  status: "published" | "hidden";
+  adminReply?: string;
+}): Promise<ModerateReviewResult> {
+  const { db, storeId } = await requireAdmin();
+  const cleanId = (input.reviewId ?? "").trim();
+  if (!UUID_REGEX.test(cleanId)) {
+    return { ok: false, error: "invalid_review" };
+  }
+  if (input.status !== "published" && input.status !== "hidden") {
+    return { ok: false, error: "invalid_status" };
+  }
+
+  const rpcParams: {
+    p_store_id: string;
+    p_review_id: string;
+    p_status: string;
+    p_admin_reply?: string;
+  } = {
+    p_store_id: storeId,
+    p_review_id: cleanId,
+    p_status: input.status,
+  };
+  if (typeof input.adminReply === "string") {
+    rpcParams.p_admin_reply = input.adminReply.trim().slice(0, 1500);
+  }
+
+  const { data, error } = await db.rpc("admin_moderate_review", rpcParams);
+  if (error || !data) {
+    return { ok: false, error: error?.message || "moderate_review_failed" };
+  }
+
+  const updated = data as ProductReview;
+
+  // Dispatch Phase 9 notification when merchant submits a non-empty reply
+  if (
+    typeof input.adminReply === "string" &&
+    input.adminReply.trim().length > 0 &&
+    updated.user_id &&
+    updated.product_id
+  ) {
+    void notifyReviewReply({
+      storeId,
+      userId: updated.user_id,
+      productId: updated.product_id,
+      reviewId: updated.id,
+      replyText: input.adminReply.trim(),
+    });
+  }
+
+  revalidatePath("/admin/reviews");
+  revalidatePath(`/products/${updated.product_id}`);
+  revalidatePath("/products");
+  revalidatePath("/");
+
+  return { ok: true, review: updated };
 }

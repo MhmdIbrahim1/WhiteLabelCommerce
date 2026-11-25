@@ -5,11 +5,20 @@ import Link from "next/link";
 import { ShoppingBag, Check, SlidersHorizontal, Ruler, BellRing } from "lucide-react";
 import type { Product } from "@/lib/shop";
 import { translateColor } from "@/lib/i18n";
+import { storeHref } from "@/lib/tenant-shared";
 import { useLanguage } from "@/components/language-provider";
 import { change } from "./cart-store";
 import { SizeGuideModal } from "./size-guide-modal";
 
-export function Buy({ p, detail = false }: { p: Product; detail?: boolean }) {
+export function Buy({
+  p,
+  detail = false,
+  basePath = "",
+}: {
+  p: Product;
+  detail?: boolean;
+  basePath?: string;
+}) {
   const { lang, t } = useLanguage();
   const [size, setSize] = useState(
       detail && p.sizes.length === 1 ? p.sizes[0] : "",
@@ -54,7 +63,10 @@ export function Buy({ p, detail = false }: { p: Product; detail?: boolean }) {
 
   if (!detail && (p.sizes.length || p.colors.length))
     return (
-      <Link className="cta atc-btn quick-add-pill" href={"/products/" + p.id}>
+      <Link
+        className="cta atc-btn quick-add-pill"
+        href={storeHref(basePath, "/products/" + p.id)}
+      >
         <SlidersHorizontal size={14} />
         <span>{t("chooseOptions")}</span>
       </Link>
