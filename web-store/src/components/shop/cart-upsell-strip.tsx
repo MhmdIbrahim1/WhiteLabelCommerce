@@ -9,7 +9,7 @@ import { localizedText } from "@/lib/i18n";
 import { storeHref } from "@/lib/tenant-shared";
 import { isFlashSaleActive, resolveEffectivePrice } from "@/lib/flash-sale";
 import { useLanguage } from "@/components/language-provider";
-import { change, type Line } from "./cart-store";
+import { change, type Line, useCartTenant } from "./cart-store";
 
 type UpsellProduct = {
   id: string;
@@ -42,6 +42,7 @@ export function CartUpsellStrip({
   basePath?: string;
 }) {
   const { lang } = useLanguage();
+  const tenantId = useCartTenant();
   const isEn = lang === "en";
 
   const remaining = Math.max(0, threshold - subtotal);
@@ -106,6 +107,7 @@ export function CartUpsellStrip({
   function handleQuickAdd(item: UpsellProduct) {
     const effective = resolveEffectivePrice(item);
     const ok = change(
+      tenantId,
       {
         id: item.id,
         name: item.name,

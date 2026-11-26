@@ -9,7 +9,7 @@ import { translateColor } from "@/lib/i18n";
 import { storeHref } from "@/lib/tenant-shared";
 import { useLanguage } from "@/components/language-provider";
 import { trackAddToCart } from "@/lib/analytics";
-import { change } from "./cart-store";
+import { change, useCartTenant } from "./cart-store";
 import { SizeGuideModal } from "./size-guide-modal";
 
 export function Buy({
@@ -22,6 +22,7 @@ export function Buy({
   basePath?: string;
 }) {
   const { lang, t } = useLanguage();
+  const tenantId = useCartTenant();
   const [size, setSize] = useState(
       detail && p.sizes.length === 1 ? p.sizes[0] : "",
     ),
@@ -93,6 +94,7 @@ export function Buy({
           setError("");
           const effectiveUnit = resolveEffectivePrice(p);
           const added = change(
+            tenantId,
             {
               id: p.id,
               name: p.name,

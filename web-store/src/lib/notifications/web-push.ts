@@ -43,6 +43,7 @@ function getFirebaseWebConfig() {
  */
 export async function syncWebPushSubscription(
   lang: "ar" | "en",
+  storeId: string,
 ): Promise<{ ok: boolean; reason?: "unavailable" | "failed" }> {
   if (
     typeof window === "undefined" ||
@@ -112,7 +113,7 @@ export async function syncWebPushSubscription(
         platform: "web",
         token,
         locale: lang,
-        guest_session_id: getGuestSessionId(),
+        guest_session_id: getGuestSessionId(storeId),
       }),
     });
 

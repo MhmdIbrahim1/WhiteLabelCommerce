@@ -1,4 +1,5 @@
 import { requireAdmin } from "@/lib/db";
+import { adminDb } from "@/lib/supabase/admin";
 import brand from "@/lib/brand";
 import { photo } from "@/lib/shop";
 import { isTemplate } from "@/lib/theme-templates";
@@ -40,6 +41,7 @@ type RawPreviewProduct = {
 
 export default async function AdminMobileAppPage() {
   const { db, storeId, activeStore, isSuperAdmin } = await requireAdmin();
+  const secureDb = adminDb();
 
   const [settingsRes, accessRes, buildsRes, productsRes] = await Promise.all([
     db
@@ -50,7 +52,7 @@ export default async function AdminMobileAppPage() {
       .eq("store_id", storeId)
       .maybeSingle<StoreSettingsSelect>(),
     db.rpc("store_has_mobile_app_access", { p_store_id: storeId }),
-    db
+    secureDb
       .from("store_app_builds")
       .select(
         "id,store_id,app_name,app_id_suffix,package_id,icon_url,version_code,version_name,status,apk_download_url,github_run_url,error_message,created_at,updated_at,completed_at",

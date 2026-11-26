@@ -33,6 +33,7 @@ import { OrderReturnPanel } from "./order-return-panel";
 import {
   clearPendingOnlineOrder,
   setPendingOnlineOrder,
+  useCartTenant,
 } from "./cart-store";
 
 const EGYPT_WALLET_RE = /^01[0125][0-9]{8}$/;
@@ -53,6 +54,7 @@ export function Timeline({
   hideReturnPanel?: boolean;
 }) {
   const router = useRouter();
+  const tenantId = useCartTenant();
   const { lang, t } = useLanguage();
   const isEn = lang === "en";
   const [copiedId, setCopiedId] = useState(false);
@@ -112,7 +114,7 @@ export function Timeline({
           setRetrying(false);
           return;
         }
-        clearPendingOnlineOrder();
+        clearPendingOnlineOrder(tenantId);
         setLocalOverride({
           status: res.status ?? "confirmed",
           payment_method: "cod",
@@ -142,7 +144,7 @@ export function Timeline({
 
     setRetrying(true);
     try {
-      setPendingOnlineOrder(row.id);
+      setPendingOnlineOrder(tenantId, row.id);
       const res = await fetch("/api/payments/paymob/initiate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

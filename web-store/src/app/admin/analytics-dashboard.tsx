@@ -27,11 +27,22 @@ export type AnalyticsOrder = {
   currency: string;
   created_at: string;
   items: {
+    id: string;
     product_id: string | null;
     product_name: string;
     quantity: number;
     unit_price: number;
     unit_cost: number;
+  }[];
+  returns: {
+    status: string;
+    refund_amount: number;
+    restocked: boolean;
+    items: {
+      order_item_id: string | null;
+      product_id: string | null;
+      quantity: number;
+    }[];
   }[];
 };
 
@@ -45,6 +56,85 @@ export type AnalyticsProduct = {
   image_url: string | null;
   is_active: boolean;
 };
+
+export function calculateRealNetProfit(
+  order: AnalyticsOrder,
+  productMap: ReadonlyMap<string, AnalyticsProduct>,
+): number {
+  const itemCost = (item: AnalyticsOrder["items"][number]) => {
+    const fallbackCost = item.product_id
+      ? (productMap.get(item.product_id)?.cost_price ?? 0)
+      : 0;
+    return item.unit_cost > 0 ? item.unit_cost : fallbackCost;
+  };
+
+  const baseProfit =
+    order.items.reduce(
+      (sum, item) =>
+        sum + (item.unit_price - itemCost(item)) * item.quantity,
+      0,
+    ) - order.discount_amount;
+
+  const completedReturns = order.returns.filter(
+    (ret) => ret.status === "refunded" || ret.status === "completed",
+  );
+  if (completedReturns.length === 0) return baseProfit;
+
+  const returnedQuantities = new Map<string, number>();
+  let refundedRevenue = 0;
+  let reversedCogs = 0;
+
+  for (const ret of completedReturns) {
+    refundedRevenue += Math.max(0, ret.refund_amount);
+    for (const returned of ret.items) {
+      const ordered =
+        order.items.find(
+          (item) =>
+            Boolean(returned.order_item_id) &&
+            item.id === returned.order_item_id,
+        ) ??
+        order.items.find(
+          (item) =>
+            Boolean(returned.product_id) &&
+            item.product_id === returned.product_id,
+        );
+      if (!ordered) continue;
+      const quantity = Math.min(
+        ordered.quantity,
+        Math.max(0, returned.quantity),
+      );
+      returnedQuantities.set(
+        ordered.id,
+        (returnedQuantities.get(ordered.id) ?? 0) + quantity,
+      );
+      if (ret.restocked) reversedCogs += itemCost(ordered) * quantity;
+    }
+  }
+
+  const merchandiseNet = Math.max(
+    0,
+    order.items.reduce(
+      (sum, item) => sum + item.unit_price * item.quantity,
+      0,
+    ) - order.discount_amount,
+  );
+  const fullyReturned =
+    order.items.length > 0 &&
+    order.items.every(
+      (item) => (returnedQuantities.get(item.id) ?? 0) >= item.quantity,
+    );
+  const fullyRestocked = completedReturns.every((ret) => ret.restocked);
+
+  if (
+    fullyReturned &&
+    fullyRestocked &&
+    refundedRevenue >= merchandiseNet - 0.01
+  ) {
+    return 0;
+  }
+
+  return baseProfit - refundedRevenue + reversedCogs;
+}
 
 type DateRangeKey = "today" | "7d" | "30d" | "month" | "all";
 
@@ -188,16 +278,8 @@ export function AnalyticsDashboard({
     const shipped = inRange.filter((o) => o.status === "shipped");
     const cancelled = inRange.filter((o) => o.status === "cancelled");
 
-    const calcOrderProfit = (o: AnalyticsOrder) => {
-      const itemProfit = o.items.reduce((sum, it) => {
-        const fallbackCost = it.product_id
-          ? (productMap.get(it.product_id)?.cost_price ?? 0)
-          : 0;
-        const cost = it.unit_cost > 0 ? it.unit_cost : fallbackCost;
-        return sum + (it.unit_price - cost) * it.quantity;
-      }, 0);
-      return itemProfit - o.discount_amount;
-    };
+    const calcOrderProfit = (o: AnalyticsOrder) =>
+      calculateRealNetProfit(o, productMap);
 
     const gross = delivered.reduce((s, o) => s + o.total, 0);
     const profit = delivered.reduce((s, o) => s + calcOrderProfit(o), 0);
@@ -433,7 +515,11 @@ export function AnalyticsDashboard({
               {revenueTrend}%
             </span>
           </div>
-          <p>{isEn ? "Gross Revenue (Delivered)" : "إجمالي الإيرادات (المسلّمة)"}</p>
+          <p>
+            {isEn
+              ? "Gross Sales (Delivered, Before Refunds)"
+              : "إجمالي المبيعات (قبل المرتجعات)"}
+          </p>
           <strong>{money(grossRevenue, currency, lang)}</strong>
           <Sparkline
             values={series.map((s) => s.revenue)}

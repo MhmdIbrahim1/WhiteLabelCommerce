@@ -231,8 +231,8 @@ export function NotificationBell({
     ) {
       return;
     }
-    void syncWebPushSubscription(lang);
-  }, [lang, userId]);
+    void syncWebPushSubscription(lang, storeId);
+  }, [lang, userId, storeId]);
 
   function syncBrowserPermission() {
     if (typeof window === "undefined" || !("Notification" in window)) {
@@ -420,7 +420,7 @@ export function NotificationBell({
     }
 
     setPushState("granted");
-    const result = await syncWebPushSubscription(lang);
+    const result = await syncWebPushSubscription(lang, storeId);
     setPushNotice(result.ok ? t("notifPushEnabled") : t("notifPushUnavailable"));
   }
 

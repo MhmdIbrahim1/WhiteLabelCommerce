@@ -1,6 +1,7 @@
 import Image from "next/image";
 import { Package, Plus, Zap } from "lucide-react";
 import { checked, requireAdmin } from "@/lib/db";
+import { adminDb } from "@/lib/supabase/admin";
 import { money } from "@/lib/brand";
 import { photo } from "@/lib/shop";
 import {
@@ -27,8 +28,9 @@ export default async function Products({
     getServerLang(),
     requireAdmin(),
   ]);
+  const secureDb = adminDb();
   const { from, to, page } = pagination(params.page);
-  const productResult = await db
+  const productResult = await secureDb
     .from("products")
     .select(
       "id,name,name_en,slug,description,description_en,price,cost_price,old_price,flash_sale_price,flash_sale_starts_at,flash_sale_ends_at,stock,category_id,sizes,colors,image_path,specifications,is_active",

@@ -25,6 +25,8 @@ import {
   lineEffectivePrice,
   syncAbandonedCartContact,
   markWebCartRecovered,
+  checkoutAttemptKey,
+  useCartTenant,
 } from "./cart-store";
 import { trackInitiateCheckout, trackPurchase } from "@/lib/analytics";
 import {
@@ -93,6 +95,7 @@ export function Basket({
 }) {
   const router = useRouter();
   const { lang, t } = useLanguage();
+  const tenantId = useCartTenant();
   const isEn = lang === "en";
   const lines = useCart();
 
@@ -176,13 +179,22 @@ export function Basket({
         })),
       });
     }
-    syncAbandonedCartContact({
+    syncAbandonedCartContact(tenantId, {
       name: defaultName,
       email: signedInEmail,
       phone: defaultPhone,
       currency,
     });
-  }, [order, lines, subtotal, currency, defaultName, signedInEmail, defaultPhone]);
+  }, [
+    order,
+    lines,
+    subtotal,
+    currency,
+    defaultName,
+    signedInEmail,
+    defaultPhone,
+    tenantId,
+  ]);
 
   const handleApplyCoupon = async () => {
     if (!couponInput.trim()) return;
@@ -335,7 +347,7 @@ export function Basket({
                   {!order && (
                     <button
                       aria-label={isEn ? "Decrease quantity" : "إنقاص الكمية"}
-                      onClick={() => change(l, -1)}
+                      onClick={() => change(tenantId, l, -1)}
                     >
                       <Minus size={15} />
                     </button>
@@ -352,13 +364,13 @@ export function Basket({
                             .filter((x) => x.id === l.id)
                             .reduce((n, x) => n + x.quantity, 0) >= l.stock
                         }
-                        onClick={() => change(l, 1)}
+                        onClick={() => change(tenantId, l, 1)}
                       >
                         <Plus size={15} />
                       </button>
                       <button
                         aria-label={isEn ? "Remove item" : "حذف المنتج"}
-                        onClick={() => change(l, -l.quantity)}
+                        onClick={() => change(tenantId, l, -l.quantity)}
                       >
                         <Trash2 size={15} />
                       </button>
@@ -514,7 +526,7 @@ export function Basket({
                   )
                     .map((b) => b.toString(16).padStart(2, "0"))
                     .join("");
-                  const key = "nova.checkout." + hash;
+                  const key = checkoutAttemptKey(tenantId, hash);
                   const request =
                     localStorage.getItem(key) || crypto.randomUUID();
                   localStorage.setItem(key, request);
@@ -549,14 +561,14 @@ export function Basket({
                     effectivePaymentMethod === "wallet" ||
                     Number(receipt.total ?? 0) <= 0
                   ) {
-                    markWebCartRecovered(receipt.id);
+                    markWebCartRecovered(tenantId, receipt.id);
                     trackPurchase({
                       orderId: receipt.id,
                       value: Number(receipt.total ?? finalTotal),
                       currency: receipt.currency ?? currency,
                       items: purchasedPixelItems,
                     });
-                    purchased(lines);
+                    purchased(tenantId, lines);
                     localStorage.removeItem(key);
                     router.push(
                       storeHref(
@@ -575,7 +587,7 @@ export function Basket({
                     effectivePaymentMethod === "paymob_wallet"
                   ) {
                     setRedirectingPayment(true);
-                    setPendingOnlineOrder(receipt.id);
+                    setPendingOnlineOrder(tenantId, receipt.id);
                     const initRes = await fetch(
                       "/api/payments/paymob/initiate",
                       {
@@ -614,14 +626,14 @@ export function Basket({
                   }
 
                   // Cash on Delivery Flow: clear cart immediately and redirect to /orders
-                  markWebCartRecovered(receipt.id);
+                  markWebCartRecovered(tenantId, receipt.id);
                   trackPurchase({
                     orderId: receipt.id,
                     value: Number(receipt.total ?? finalTotal),
                     currency: receipt.currency ?? currency,
                     items: purchasedPixelItems,
                   });
-                  purchased(lines);
+                  purchased(tenantId, lines);
                   localStorage.removeItem(key);
                   router.push(
                     storeHref(
@@ -678,7 +690,7 @@ export function Basket({
                   type="tel"
                   defaultValue={defaultPhone}
                   onChange={(e) => {
-                    syncAbandonedCartContact({
+                    syncAbandonedCartContact(tenantId, {
                       phone: e.target.value,
                       name: defaultName,
                       email: signedInEmail,

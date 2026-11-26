@@ -7,6 +7,7 @@ import {
   clearPendingOnlineOrder,
   getPendingOnlineOrder,
   markWebCartRecovered,
+  useCartTenant,
 } from "./cart-store";
 import { trackPurchase } from "@/lib/analytics";
 import { useLanguage } from "@/components/language-provider";
@@ -25,10 +26,11 @@ export function OrdersPaymentSync({
   paidOrderIds: string[];
 }) {
   const { lang, t } = useLanguage();
+  const tenantId = useCartTenant();
   const isEn = lang === "en";
 
   useEffect(() => {
-    const pendingId = getPendingOnlineOrder();
+    const pendingId = getPendingOnlineOrder(tenantId);
     const pendingNowPaid =
       Boolean(pendingId) && paidOrderIds.includes(pendingId!);
 
@@ -37,17 +39,17 @@ export function OrdersPaymentSync({
     if (paymentCallback === "success" || pendingNowPaid) {
       const recoveredOrder = callbackOrder || pendingId || "";
       if (recoveredOrder) {
-        markWebCartRecovered(recoveredOrder);
+        markWebCartRecovered(tenantId, recoveredOrder);
         trackPurchase({
           orderId: recoveredOrder,
           value: 0,
           currency: "EGP",
         });
       }
-      clearCart();
-      clearPendingOnlineOrder();
+      clearCart(tenantId);
+      clearPendingOnlineOrder(tenantId);
     }
-  }, [paymentCallback, callbackOrder, paidOrderIds]);
+  }, [paymentCallback, callbackOrder, paidOrderIds, tenantId]);
 
   if (placedWallet) {
     return (

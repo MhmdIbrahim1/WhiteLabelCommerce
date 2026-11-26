@@ -1,4 +1,5 @@
 import { requireAdmin, checked } from "@/lib/db";
+import { adminDb } from "@/lib/supabase/admin";
 import { getServerLang } from "@/lib/i18n-server";
 import { photo } from "@/lib/shop";
 import { AdminReviewsClient, type AdminReviewItem } from "./reviews-client";
@@ -25,12 +26,12 @@ type RawReviewJoinRow = {
 };
 
 export default async function AdminReviewsPage() {
-  const [{ db, storeId }, lang] = await Promise.all([
+  const [{ storeId }, lang] = await Promise.all([
     requireAdmin(),
     getServerLang(),
   ]);
 
-  const res = await db
+  const res = await adminDb()
     .from("product_reviews")
     .select(
       "id,store_id,product_id,user_id,order_id,author_name,rating,comment,is_verified_purchase,status,admin_reply,admin_replied_at,created_at,updated_at,products(id,name,name_en,image_path)",

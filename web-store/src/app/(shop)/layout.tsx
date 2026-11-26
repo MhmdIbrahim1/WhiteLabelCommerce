@@ -15,6 +15,7 @@ import { Navigation } from "@/components/shop/navigation";
 import { SuspendedStoreGate } from "@/components/shop/suspended-store";
 import { WishlistProvider } from "@/components/shop/wishlist-provider";
 import { StorePixels } from "@/components/shop/store-pixels";
+import { CartTenantProvider } from "@/components/shop/cart-store";
 import "./shop.css";
 
 export const dynamic = "force-dynamic";
@@ -108,17 +109,18 @@ export default async function Layout({
   const dataAttrs = uiConfigDataAttrs(s.uiConfig);
   const href = (path: string) => storeHref(s.basePath, path);
   return (
-    <WishlistProvider
-      storeId={s.storeId}
-      initialProductIds={initialWishlistIds}
-      isSignedIn={Boolean(authUser)}
-    >
-      <div
-        className={`shop ${font.className}`}
-        {...dataAttrs}
-        data-card={brand.presets.productCard}
-        style={style}
+    <CartTenantProvider storeId={s.storeId}>
+      <WishlistProvider
+        storeId={s.storeId}
+        initialProductIds={initialWishlistIds}
+        isSignedIn={Boolean(authUser)}
       >
+        <div
+          className={`shop ${font.className}`}
+          {...dataAttrs}
+          data-card={brand.presets.productCard}
+          style={style}
+        >
         <StorePixels
           storeId={s.storeId}
           metaPixelId={s.pixels.metaPixelId}
@@ -159,7 +161,8 @@ export default async function Layout({
             </nav>
           </div>
         </footer>
-      </div>
-    </WishlistProvider>
+        </div>
+      </WishlistProvider>
+    </CartTenantProvider>
   );
 }

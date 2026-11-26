@@ -94,9 +94,9 @@ async function resolveAdminBuildContext() {
 export async function GET() {
   const ctx = await resolveAdminBuildContext();
   if ("error" in ctx) return ctx.error;
-  const { db, activeStore, unlocked } = ctx;
+  const { activeStore, unlocked } = ctx;
 
-  const { data: builds, error } = await db
+  const { data: builds, error } = await adminDb()
     .from("store_app_builds")
     .select(BUILD_SELECT)
     .eq("store_id", activeStore.store_id)
