@@ -5,55 +5,19 @@ import { serverDb } from "@/lib/db";
 import { adminUser, superAdminUser } from "@/lib/access";
 import { normalizePhone } from "@/lib/phone";
 import { safeRelativePath } from "@/lib/security";
-import { resolveActiveStoreOrDefault, storeHref } from "@/lib/tenant";
+import { resolveActiveStore, resolveActiveStoreOrDefault, storeHref } from "@/lib/tenant";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const OTP_RE = /^[0-9]{6}$/;
+const OTP_RE = /^[0-9]{6,10}$/;
 
 function safeNext(raw: FormDataEntryValue | string | null | undefined): string {
   return safeRelativePath(raw, "");
 }
 
-async function syncProfileForUser(
-  db: Awaited<ReturnType<typeof serverDb>>,
-  overrides?: {
-    fullName?: string;
-    phone?: string;
-    governorate?: string;
-    city?: string;
-    address?: string;
-  },
-) {
-  const {
-    data: { user },
-  } = await db.auth.getUser();
-  if (!user) return;
-  const meta = user.user_metadata ?? {};
-  const metaName =
-    typeof meta.full_name === "string" ? meta.full_name.trim() : "";
-  const metaPhone =
-    typeof meta.phone === "string" ? normalizePhone(meta.phone) : "";
-
-  const store = await resolveActiveStoreOrDefault();
-
-  await db
-    .rpc("sync_customer_profile", {
-      p_full_name: overrides?.fullName ?? metaName,
-      p_phone: overrides?.phone ?? metaPhone,
-      p_city: overrides?.city ?? "",
-      p_address: overrides?.address ?? "",
-      p_governorate: overrides?.governorate ?? "",
-      p_store_id: store.id,
-    })
-    .then(
-      () => {},
-      () => {},
-    );
-}
-
 async function resolvePostAuthRedirect(
   db: Awaited<ReturnType<typeof serverDb>>,
   nextPath: string,
+  account: string,
 ): Promise<string> {
   const [isAdmin, isSuper] = await Promise.all([
     adminUser(db).then(Boolean),
@@ -66,8 +30,8 @@ async function resolvePostAuthRedirect(
     return nextPath;
   }
   if (isAdmin) return nextPath || "/admin";
-  if (nextPath.startsWith("/admin")) return "/account?notice=customer_only";
-  return nextPath || "/account";
+  if (nextPath.startsWith("/admin")) return account + "?notice=customer_only";
+  return nextPath || account;
 }
 
 export type AuthActionResult = {
@@ -82,12 +46,55 @@ export type AuthActionResult = {
     | "name"
     | "phone"
     | "password"
-    | "signup"
+    | "duplicate_email"
+    | "signup_disabled"
+    | "network"
+    | "server"
+    | "weak_password"
     | "otp_send_failed";
   needsConfirmation?: boolean;
   redirectTo?: string;
   retryAfterSeconds?: number;
 };
+
+function authFailure(error: { code?: string; status?: number; name?: string; message: string }): AuthActionResult {
+  if (error.status === 429 || error.code?.includes("rate_limit")) {
+    return { ok: false, errorCode: "rate_limit", retryAfterSeconds: 60 };
+  }
+  const codes = {
+    user_already_exists: "duplicate_email",
+    email_exists: "duplicate_email",
+    weak_password: "weak_password",
+    email_address_invalid: "invalid_email",
+    email_address_not_authorized: "otp_send_failed",
+    signup_disabled: "signup_disabled",
+    email_provider_disabled: "signup_disabled",
+    email_not_confirmed: "unconfirmed",
+    invalid_credentials: "credentials",
+    otp_expired: "otp_expired",
+  } as const;
+  const code = codes[error.code as keyof typeof codes];
+  if (code) return { ok: false, errorCode: code };
+  if (/sending .*email/i.test(error.message)) return { ok: false, errorCode: "otp_send_failed" };
+  if (!error.status || (error.name === "AuthRetryableFetchError" && /fetch|network/i.test(error.message))) {
+    return { ok: false, errorCode: "network" };
+  }
+  console.error("Customer authentication failed", error.code, error.status);
+  return { ok: false, errorCode: "server" };
+}
+
+async function finishSignIn(db: Awaited<ReturnType<typeof serverDb>>, next: string): Promise<AuthActionResult> {
+  const store = await resolveActiveStore();
+  if (!store) return { ok: false, errorCode: "server" };
+  const account = storeHref(store.basePath, "/account");
+  const { data, error } = await db.rpc("initialize_customer_profile", { p_store_id: store.id });
+  revalidatePath("/", "layout");
+  if (error || data === "phone_unavailable") {
+    if (error) console.error("Customer profile initialization failed", error.code);
+    return { ok: true, redirectTo: account + "?result=" + (error ? "profile_setup" : "phone_unavailable") };
+  }
+  return { ok: true, redirectTo: await resolvePostAuthRedirect(db, next, account) };
+}
 
 export async function sendEmailOtpAction(
   emailRaw: string,
@@ -97,24 +104,14 @@ export async function sendEmailOtpAction(
     return { ok: false, errorCode: "invalid_email" };
   }
 
-  const db = await serverDb();
+  const [db, store] = await Promise.all([serverDb(), resolveActiveStore()]);
+  if (!store) return { ok: false, errorCode: "server" };
   const { error } = await db.auth.signInWithOtp({
     email,
-    options: { shouldCreateUser: true },
+    options: { shouldCreateUser: true, data: { signup_store_id: store.id } },
   });
 
-  if (error) {
-    const msg = (error.message ?? "").toLowerCase();
-    if (
-      error.status === 429 ||
-      msg.includes("rate limit") ||
-      msg.includes("security purposes") ||
-      msg.includes("only request this after")
-    ) {
-      return { ok: false, errorCode: "rate_limit", retryAfterSeconds: 60 };
-    }
-    return { ok: false, errorCode: "otp_send_failed" };
-  }
+  if (error) return authFailure(error);
 
   return { ok: true, retryAfterSeconds: 60 };
 }
@@ -142,21 +139,9 @@ export async function verifyEmailOtpAction(
     type: "email",
   });
 
-  if (error) {
-    const msg = (error.message ?? "").toLowerCase();
-    if (msg.includes("expired")) {
-      return { ok: false, errorCode: "otp_expired" };
-    }
-    if (error.status === 429 || msg.includes("rate limit")) {
-      return { ok: false, errorCode: "rate_limit" };
-    }
-    return { ok: false, errorCode: "invalid_otp" };
-  }
+  if (error) return authFailure(error);
 
-  await syncProfileForUser(db);
-  revalidatePath("/", "layout");
-  const redirectTo = await resolvePostAuthRedirect(db, next);
-  return { ok: true, redirectTo };
+  return finishSignIn(db, next);
 }
 
 export async function signInWithPasswordAction(
@@ -170,31 +155,16 @@ export async function signInWithPasswordAction(
   if (!EMAIL_RE.test(email)) {
     return { ok: false, errorCode: "invalid_email" };
   }
-  if (password.length < 6) {
-    return { ok: false, errorCode: "password" };
+  if (!password) {
+    return { ok: false, errorCode: "credentials" };
   }
 
   const db = await serverDb();
   const { error } = await db.auth.signInWithPassword({ email, password });
 
-  if (error) {
-    const msg = (error.message ?? "").toLowerCase();
-    if (
-      error.code === "email_not_confirmed" ||
-      msg.includes("not confirmed")
-    ) {
-      return { ok: false, errorCode: "unconfirmed" };
-    }
-    if (error.status === 429 || msg.includes("rate limit")) {
-      return { ok: false, errorCode: "rate_limit" };
-    }
-    return { ok: false, errorCode: "credentials" };
-  }
+  if (error) return authFailure(error);
 
-  await syncProfileForUser(db);
-  revalidatePath("/", "layout");
-  const redirectTo = await resolvePostAuthRedirect(db, next);
-  return { ok: true, redirectTo };
+  return finishSignIn(db, next);
 }
 
 export async function signUpWithPasswordAction(input: {
@@ -206,7 +176,9 @@ export async function signUpWithPasswordAction(input: {
 }): Promise<AuthActionResult> {
   const fullName = input.fullName.trim();
   const email = input.email.trim().toLowerCase();
-  const phone = normalizePhone(input.phone);
+  const phone = normalizePhone(input.phone)
+    .replace(/^0020/, "20")
+    .replace(/^200?(1[0125][0-9]{8})$/, "0$1");
   const password = input.password;
   const next = safeNext(input.nextPath);
 
@@ -216,7 +188,7 @@ export async function signUpWithPasswordAction(input: {
   if (!EMAIL_RE.test(email)) {
     return { ok: false, errorCode: "invalid_email" };
   }
-  if (!/^[0-9]{8,15}$/.test(phone)) {
+  if (!/^01[0125][0-9]{8}$/.test(phone)) {
     return { ok: false, errorCode: "phone" };
   }
   if (password.length < 6) {
@@ -224,28 +196,19 @@ export async function signUpWithPasswordAction(input: {
   }
 
   const db = await serverDb();
+  const store = await resolveActiveStore();
+  if (!store) return { ok: false, errorCode: "server" };
   const { data, error } = await db.auth.signUp({
     email,
     password,
     options: {
-      data: { full_name: fullName, phone },
+      data: { full_name: fullName, phone, signup_store_id: store.id },
     },
   });
 
-  if (error) {
-    const msg = (error.message ?? "").toLowerCase();
-    if (error.status === 429 || msg.includes("rate limit")) {
-      return { ok: false, errorCode: "rate_limit" };
-    }
-    return { ok: false, errorCode: "signup" };
-  }
+  if (error) return authFailure(error);
 
-  if (data.session) {
-    await syncProfileForUser(db, { fullName, phone });
-    revalidatePath("/", "layout");
-    const redirectTo = await resolvePostAuthRedirect(db, next);
-    return { ok: true, redirectTo };
-  }
+  if (data.session) return finishSignIn(db, next);
 
   return { ok: true, needsConfirmation: true };
 }
@@ -262,31 +225,6 @@ export async function login(form: FormData) {
     );
   }
   redirect(res.redirectTo || "/account");
-}
-
-export async function register(form: FormData) {
-  const fullName = String(form.get("full_name") ?? "").trim();
-  const email = String(form.get("email") ?? "").trim();
-  const phone = normalizePhone(String(form.get("phone") ?? ""));
-  const password = String(form.get("password") ?? "");
-  const next = safeNext(form.get("next"));
-  const nextSuffix = next ? "&next=" + encodeURIComponent(next) : "";
-
-  const res = await signUpWithPasswordAction({
-    fullName,
-    phone,
-    email,
-    password,
-    nextPath: next,
-  });
-
-  if (!res.ok) {
-    redirect(`/register?error=${res.errorCode ?? "signup"}${nextSuffix}`);
-  }
-  if (res.redirectTo) {
-    redirect(res.redirectTo);
-  }
-  redirect("/login?registered=confirm" + nextSuffix);
 }
 
 export async function logout() {

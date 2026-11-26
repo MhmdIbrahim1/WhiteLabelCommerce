@@ -75,13 +75,13 @@ export default async function AccountPage({
             </h1>
             <p>
               {lang === "en"
-                ? "Sign in with a 6-digit email OTP code or password to auto-fill checkout, link past guest orders, and sync across web & mobile."
-                : "سجّل الدخول برمز تحقق من 6 أرقام أو كلمة المرور لملء بيانات الشحن تلقائياً، ربط طلباتك السابقة، والمزامنة بين الموقع والتطبيق."}
+                ? "Sign in to save your shipping details and track orders from this store."
+                : "سجّل الدخول لحفظ بيانات الشحن ومتابعة طلباتك في هذا المتجر."}
             </p>
           </div>
 
           <HybridAuthPanel
-            nextPath="/account"
+            nextPath={storeHref(store.basePath, "/account")}
             storeName={store.name}
             initialError={error}
             initialRegistered={registered}
@@ -249,11 +249,18 @@ export default async function AccountPage({
             </h2>
           </div>
 
+          {(result === "phone_unavailable" || result === "profile_setup") && (
+            <p className="account-notice account-notice--error" role="alert">
+              {result === "phone_unavailable"
+                ? lang === "en" ? "You’re signed in. Enter a different mobile number for this store." : "تم تسجيل دخولك. أدخل رقم موبايل آخر لهذا المتجر."
+                : lang === "en" ? "You’re signed in. Please save your shipping details below to finish setup." : "تم تسجيل دخولك. احفظ بيانات الشحن أدناه لإكمال إعداد الحساب."}
+            </p>
+          )}
           {result === "saved" && (
             <p className="account-notice account-notice--ok" role="status">
               {lang === "en"
-                ? "Profile saved and any matching guest orders were linked."
-                : "تم حفظ بياناتك وربط أي طلبات سابقة مطابقة لرقم هاتفك أو بريدك."}
+                ? "Your profile has been saved."
+                : "تم حفظ بيانات حسابك."}
             </p>
           )}
           {(result === "error" ||

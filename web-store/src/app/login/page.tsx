@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+import { storeHref, tenantAuthEntry } from "@/lib/tenant-shared";
 import Link from "next/link";
 import { Store, LockKeyhole, Sparkles } from "lucide-react";
 import { settings } from "@/lib/shop";
@@ -16,12 +18,14 @@ export default async function Login({ searchParams }: PageProps<"/login">) {
   const registered =
     typeof params.registered === "string" ? params.registered : "";
   const next = typeof params.next === "string" ? params.next : "";
+  const entry = tenantAuthEntry(store.basePath, "/login", next);
+  if (entry) redirect(entry);
 
   return (
     <main className="auth-shell">
       <section className="auth-glass-card">
         <div className="auth-top-row">
-          <Link href="/" className="brand" style={{ textDecoration: "none" }}>
+          <Link href={storeHref(store.basePath, "/")} className="brand" style={{ textDecoration: "none" }}>
             <span className="mark">
               <Store size={20} />
             </span>
@@ -29,7 +33,7 @@ export default async function Login({ searchParams }: PageProps<"/login">) {
           </Link>
           <div className="auth-top-actions">
             <LanguageToggle className="lang-toggle-pill" />
-            <Link href="/" className="auth-back-link">
+            <Link href={storeHref(store.basePath, "/")} className="auth-back-link">
               {t(lang, "backToStore")}
             </Link>
           </div>
@@ -44,7 +48,7 @@ export default async function Login({ searchParams }: PageProps<"/login">) {
         </div>
 
         <HybridAuthPanel
-          nextPath={next || "/account"}
+          nextPath={next}
           storeName={store.name}
           initialError={error}
           initialRegistered={registered}

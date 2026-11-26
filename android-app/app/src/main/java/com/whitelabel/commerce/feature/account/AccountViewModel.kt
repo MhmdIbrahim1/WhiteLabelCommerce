@@ -28,7 +28,7 @@ import javax.inject.Inject
 
 private val EMAIL_REGEX = Regex("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")
 private val EGYPT_MOBILE_REGEX = Regex("^01[0125][0-9]{8}$")
-private val OTP_SIX_DIGITS_REGEX = Regex("^[0-9]{6}$")
+private val OTP_REGEX = Regex("^[0-9]{6,10}$")
 
 enum class AuthTab {
     EMAIL_OTP,
@@ -41,7 +41,7 @@ enum class PasswordAuthMode {
 }
 
 data class AuthFormState(
-    val activeTab: AuthTab = AuthTab.EMAIL_OTP,
+    val activeTab: AuthTab = AuthTab.PASSWORD,
     val passwordMode: PasswordAuthMode = PasswordAuthMode.SIGN_IN,
     // OTP flow
     val otpEmail: String = "",
@@ -191,7 +191,7 @@ class AccountViewModel @Inject constructor(
     }
 
     fun onOtpCodeChange(value: String) {
-        val digits = value.filter { it.isDigit() }.take(6)
+        val digits = value.mapNotNull { it.digitToIntOrNull() }.take(10).joinToString("")
         authFormState.update { it.copy(otpCode = digits, errorMessage = null) }
     }
 
@@ -211,7 +211,7 @@ class AccountViewModel @Inject constructor(
     }
 
     fun onAuthPhoneChange(value: String) {
-        authFormState.update { it.copy(phone = PhoneNormalizer.normalizeForEgyptCheckout(value), errorMessage = null) }
+        authFormState.update { it.copy(phone = value, errorMessage = null) }
     }
 
     fun onPasswordEmailChange(value: String) {
@@ -234,8 +234,8 @@ class AccountViewModel @Inject constructor(
             return
         }
 
+        authFormState.update { it.copy(isSubmitting = true, errorMessage = null, infoMessage = null) }
         viewModelScope.launch {
-            authFormState.update { it.copy(isSubmitting = true, errorMessage = null, infoMessage = null) }
             authRepository.sendEmailOtp(email)
                 .onSuccess {
                     authFormState.update {
@@ -243,8 +243,8 @@ class AccountViewModel @Inject constructor(
                             isSubmitting = false,
                             otpSent = true,
                             infoMessage = localized(
-                                "تم إرسال رمز تحقق مكوّن من 6 أرقام إلى $email",
-                                "A 6-digit verification code was sent to $email",
+                                "تم إرسال رمز تحقق إلى $email",
+                                "A verification code was sent to $email",
                             ),
                         )
                     }
@@ -271,34 +271,27 @@ class AccountViewModel @Inject constructor(
 
         val email = form.otpEmail.trim().lowercase()
         val code = form.otpCode.filter { it.isDigit() }
-        if (!OTP_SIX_DIGITS_REGEX.matches(code)) {
+        if (!OTP_REGEX.matches(code)) {
             authFormState.update {
                 it.copy(
                     errorMessage = localized(
-                        "يرجى إدخال رمز التحقق المكوّن من 6 أرقام.",
-                        "Please enter the 6-digit verification code.",
+                        "يرجى إدخال رمز التحقق.",
+                        "Please enter the verification code.",
                     ),
                 )
             }
             return
         }
 
+        authFormState.update { it.copy(isSubmitting = true, errorMessage = null) }
         viewModelScope.launch {
-            authFormState.update { it.copy(isSubmitting = true, errorMessage = null) }
             authRepository.verifyEmailOtp(email, code)
                 .onSuccess {
                     cooldownJob?.cancel()
                     authFormState.value = AuthFormState()
                     onSignedIn()
                 }
-                .onFailure { err ->
-                    authFormState.update {
-                        it.copy(
-                            isSubmitting = false,
-                            errorMessage = mapAuthError(authErrorDetail(err)),
-                        )
-                    }
-                }
+                .onFailure(::showAuthFailure)
         }
     }
 
@@ -315,7 +308,7 @@ class AccountViewModel @Inject constructor(
             }
             return
         }
-        if (password.length < 6) {
+        if (form.passwordMode == PasswordAuthMode.REGISTER && password.length < 6) {
             authFormState.update {
                 it.copy(
                     errorMessage = localized(
@@ -330,13 +323,13 @@ class AccountViewModel @Inject constructor(
         if (form.passwordMode == PasswordAuthMode.REGISTER) {
             val cleanName = form.fullName.trim()
             val cleanPhone = PhoneNormalizer.normalizeForEgyptCheckout(form.phone)
-            if (cleanName.length < 2) {
+            if (cleanName.length !in 2..100) {
                 authFormState.update {
                     it.copy(errorMessage = localized("يرجى إدخال الاسم بالكامل.", "Please enter your full name."))
                 }
                 return
             }
-            if (!EGYPT_MOBILE_REGEX.matches(cleanPhone)) {
+            if (!form.phone.trim().matches(Regex("""\+?[0-9٠-٩۰-۹\s()-]+""")) || !EGYPT_MOBILE_REGEX.matches(cleanPhone)) {
                 authFormState.update {
                     it.copy(
                         errorMessage = localized(
@@ -348,8 +341,8 @@ class AccountViewModel @Inject constructor(
                 return
             }
 
+            authFormState.update { it.copy(isSubmitting = true, errorMessage = null, infoMessage = null) }
             viewModelScope.launch {
-                authFormState.update { it.copy(isSubmitting = true, errorMessage = null, infoMessage = null) }
                 authRepository.signUpWithPassword(cleanName, cleanPhone, email, password)
                     .onSuccess { outcome ->
                         if (outcome == SignUpOutcome.SIGNED_IN) {
@@ -360,42 +353,39 @@ class AccountViewModel @Inject constructor(
                                 it.copy(
                                     isSubmitting = false,
                                     passwordMode = PasswordAuthMode.SIGN_IN,
+                                    activeTab = AuthTab.EMAIL_OTP,
+                                    otpSent = true,
                                     otpEmail = email,
                                     infoMessage = localized(
-                                        "تم إنشاء الحساب بنجاح! أكّد بريدك الإلكتروني أو استخدم رمز التحقق (6 أرقام) للدخول فوراً.",
-                                        "Account created! Confirm your email or use the 6-digit Email OTP tab to sign in immediately.",
+                                        "تحقق من بريدك الإلكتروني وأدخل رمز التأكيد.",
+                                        "Check your inbox and enter the confirmation code.",
                                     ),
                                 )
                             }
                         }
                     }
-                    .onFailure { err ->
-                        authFormState.update {
-                            it.copy(
-                                isSubmitting = false,
-                                errorMessage = mapAuthError(authErrorDetail(err)),
-                            )
-                        }
-                    }
+                    .onFailure(::showAuthFailure)
             }
             return
         }
 
+        authFormState.update { it.copy(isSubmitting = true, errorMessage = null, infoMessage = null) }
         viewModelScope.launch {
-            authFormState.update { it.copy(isSubmitting = true, errorMessage = null, infoMessage = null) }
             authRepository.signInWithPassword(email, password)
                 .onSuccess {
                     authFormState.value = AuthFormState()
                     onSignedIn()
                 }
-                .onFailure { err ->
-                    authFormState.update {
-                        it.copy(
-                            isSubmitting = false,
-                            errorMessage = mapAuthError(authErrorDetail(err)),
-                        )
-                    }
-                }
+                .onFailure(::showAuthFailure)
+        }
+    }
+
+    private fun showAuthFailure(error: Throwable) {
+        val detail = authErrorDetail(error)
+        val message = mapAuthError(detail)
+        authFormState.update {
+            if (detail == "phone_unavailable" || detail == "profile_setup") AuthFormState(errorMessage = message)
+            else it.copy(isSubmitting = false, errorMessage = message)
         }
     }
 
@@ -454,6 +444,7 @@ class AccountViewModel @Inject constructor(
                     address = form.address.trim(),
                 ),
             ).onSuccess {
+                authFormState.value = AuthFormState()
                 profileFormState.update { it.copy(isSaving = false, saveSuccess = true) }
                 // Reload synced orders immediately so any newly claimed guest orders appear
                 loadAccountOrders()
@@ -492,6 +483,7 @@ class AccountViewModel @Inject constructor(
     fun signOut(onSignedOut: () -> Unit = {}) {
         viewModelScope.launch {
             authRepository.signOut()
+            authFormState.value = AuthFormState()
             ordersState.value = emptyList()
             profileFormState.value = ProfileFormState()
             onSignedOut()
@@ -511,18 +503,32 @@ class AccountViewModel @Inject constructor(
 }
 
 private fun authErrorDetail(error: Throwable): String {
+    if (error.message in setOf("profile_setup", "phone_unavailable")) return error.message.orEmpty()
     val code = (error as? io.github.jan.supabase.auth.exception.AuthRestException)?.errorCode?.value
-    return listOfNotNull(code, error.message).joinToString(" ").lowercase()
+    if (code != null) {
+        if (code == "unexpected_failure" && error.message.orEmpty().contains("sending", ignoreCase = true)) return "email_delivery"
+        return code
+    }
+    if (generateSequence(error) { it.cause }.any { it is java.io.IOException }) return "network"
+    return error.message.orEmpty().lowercase()
 }
 
 internal fun mapAuthError(raw: String): String = when {
+    raw == "network" -> localized("تحقق من اتصالك بالإنترنت ثم أعد المحاولة.", "Check your connection and try again.")
+    raw == "email_address_invalid" -> localized("أدخل بريداً إلكترونياً صحيحاً.", "Enter a valid email address.")
+    raw == "email_address_not_authorized" || raw == "email_delivery" -> localized(
+        "تعذّر إرسال البريد حالياً. استخدم البريد وكلمة المرور للمتابعة.", "Email delivery is unavailable. Use email and password to continue.",
+    )
+    raw == "signup_disabled" || raw == "email_provider_disabled" -> localized("التسجيل غير متاح حالياً.", "Registration is currently unavailable.")
+    raw == "profile_setup" -> localized("تم تسجيل دخولك. احفظ بيانات الشحن لإكمال إعداد الحساب.", "You’re signed in. Save your shipping details to finish setup.")
+    raw == "phone_unavailable" -> localized("تم تسجيل دخولك. أدخل رقم موبايل آخر لهذا المتجر.", "You’re signed in. Enter a different mobile number for this store.")
     "email_not_confirmed" in raw || "not confirmed" in raw -> localized(
-        "يرجى تأكيد بريدك الإلكتروني أولاً، أو الدخول فوراً عبر رمز التحقق (6 أرقام).",
-        "Please confirm your email first, or sign in instantly via the 6-digit Email OTP tab.",
+        "يرجى تأكيد بريدك الإلكتروني باستخدام الرمز المرسل إليك.",
+        "Please confirm your email using the code in your inbox.",
     )
     "rate_limit" in raw || "rate limit" in raw || "security purposes" in raw || "429" in raw -> localized(
-        "تم إرسال محاولات كثيرة. يرجى الانتظار 60 ثانية ثم المحاولة مجدداً.",
-        "Too many attempts. Please wait 60 seconds and try again.",
+        "تم إرسال محاولات كثيرة. يرجى الانتظار قليلاً ثم المحاولة مجدداً.",
+        "Too many attempts. Please wait a little and try again.",
     )
     "weak_password" in raw || "weak password" in raw || "password should be" in raw -> localized("اختر كلمة مرور قوية من 6 أحرف على الأقل.", "Choose a stronger password of at least 6 characters.")
     "email_exists" in raw || "user_already_exists" in raw || "already registered" in raw || "user already exists" in raw -> localized(
@@ -538,8 +544,8 @@ internal fun mapAuthError(raw: String): String = when {
         "This verification code has expired. Please request a new code.",
     )
     "otp" in raw || "token" in raw -> localized(
-        "رمز التحقق غير صحيح. يرجى مراجعة الأرقام الـ 6 وإعادة المحاولة.",
-        "Invalid verification code. Please check the 6 digits and try again.",
+        "رمز التحقق غير صحيح. يرجى مراجعة الأرقام وإعادة المحاولة.",
+        "Invalid verification code. Please check the digits and try again.",
     )
     else -> localized(
         "تعذر إكمال العملية حالياً. حاول مرة أخرى.",

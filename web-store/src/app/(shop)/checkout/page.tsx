@@ -33,16 +33,8 @@ export default async function Checkout() {
       }),
     ]);
     const profile = profileRes.data;
-    defaultName =
-      profile?.full_name ||
-      (typeof user.user_metadata?.full_name === "string"
-        ? user.user_metadata.full_name
-        : "");
-    defaultPhone =
-      profile?.phone ||
-      (typeof user.user_metadata?.phone === "string"
-        ? user.user_metadata.phone
-        : "");
+    defaultName = profile?.full_name ?? "";
+    defaultPhone = profile?.phone ?? "";
     defaultGovernorate = profile?.governorate?.trim() ?? "";
     defaultCity = profile?.city?.trim() ?? "";
     defaultAddress = profile?.address?.trim() ?? "";

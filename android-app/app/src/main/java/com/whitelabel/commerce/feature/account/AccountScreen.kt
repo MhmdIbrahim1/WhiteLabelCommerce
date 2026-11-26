@@ -195,6 +195,7 @@ fun AccountScreen(
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
+                    state.authForm.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     state.errorMessage?.let {
                         Text(it, color = MaterialTheme.colorScheme.error)
                         androidx.compose.material3.TextButton(onClick = viewModel::loadAccountOrders) {
@@ -351,8 +352,8 @@ fun AccountScreen(
                             )
                             Text(
                                 text = localized(
-                                    "تُستخدم هذه البيانات لملء صفحة الدفع تلقائياً وربط أي طلبات سابقة مطابقة لرقم موبايلك.",
-                                    "Used to auto-fill Checkout and automatically claim any past guest orders matching your mobile number.",
+                                    "تُستخدم هذه البيانات لملء عنوان الشحن عند الدفع.",
+                                    "Used to fill in your shipping details at checkout.",
                                 ),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -377,8 +378,8 @@ fun AccountScreen(
                                         )
                                         Text(
                                             text = localized(
-                                                "تم حفظ بياناتك ومزامنة طلباتك بنجاح.",
-                                                "Profile saved and matching guest orders synced.",
+                                                "تم حفظ بيانات حسابك.",
+                                                "Your profile has been saved.",
                                             ),
                                             style = MaterialTheme.typography.bodySmall,
                                             fontWeight = FontWeight.SemiBold,
@@ -521,8 +522,8 @@ fun AccountScreen(
                                 state.orders.isEmpty() -> {
                                     Text(
                                         text = localized(
-                                            "لا توجد طلبات مسجلة على حسابك بعد. أضف رقم موبايلك أعلاه لربط أي طلبات سابقة.",
-                                            "No synced orders on your account yet. Save your mobile number above to link any past guest orders.",
+                                            "لا توجد طلبات مسجلة على حسابك بعد.",
+                                            "No synced orders on your account yet.",
                                         ),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,

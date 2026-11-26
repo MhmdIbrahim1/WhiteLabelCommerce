@@ -53,6 +53,12 @@ export type ManagedStoreSummary = {
   mobile_app_unlocked?: boolean;
 };
 
+// Older storefront links carry their tenant in the relative return path.
+export function tenantAuthEntry(basePath: string, route: "/login" | "/register", next: string) {
+  const prefix = /^\/s\/[a-z0-9-]+(?=\/|$)/i.exec(next)?.[0];
+  return prefix && !basePath ? prefix + route + "?next=" + encodeURIComponent(next) : null;
+}
+
 const PLATFORM_PREFIXES = [
   "/admin",
   "/super-admin",

@@ -134,8 +134,8 @@ fun AuthScreen(
                 )
                 Text(
                     text = localized(
-                        "سجّل الدخول لحفظ عنوان الشحن، مزامنة طلباتك بين الموقع والتطبيق، وربط طلباتك السابقة تلقائياً.",
-                        "Sign in to save your shipping profile, sync orders across web & app, and automatically link past guest orders.",
+                        "سجّل الدخول لحفظ عنوان الشحن ومتابعة طلبات هذا المتجر بين الموقع والتطبيق.",
+                        "Sign in to save your shipping profile and track this store’s orders across web and app.",
                     ),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -152,7 +152,7 @@ fun AuthScreen(
                     onClick = { onSelectTab(AuthTab.EMAIL_OTP) },
                     label = {
                         Text(
-                            text = localized("رمز التحقق (6 أرقام)", "6-Digit Email OTP"),
+                            text = localized("رمز التحقق", "Email OTP"),
                             maxLines = 1,
                         )
                     },
@@ -266,7 +266,7 @@ fun AuthScreen(
                                                 "Wait ${form.resendCooldownSeconds}s",
                                             )
                                         } else {
-                                            localized("إرسال رمز التحقق (6 أرقام)", "Send 6-Digit Code")
+                                            localized("إرسال رمز التحقق", "Send Code")
                                         },
                                     )
                                 }
@@ -290,8 +290,8 @@ fun AuthScreen(
                             OutlinedTextField(
                                 value = form.otpCode,
                                 onValueChange = onOtpCodeChange,
-                                label = { Text(localized("رمز التحقق (6 أرقام)", "6-digit verification code")) },
-                                placeholder = { Text("000000") },
+                                label = { Text(localized("رمز التحقق", "verification code")) },
+                                placeholder = { Text("00000000") },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                                 singleLine = true,
                                 textStyle = MaterialTheme.typography.titleLarge.copy(
@@ -305,7 +305,7 @@ fun AuthScreen(
 
                             Button(
                                 onClick = onVerifyOtp,
-                                enabled = !form.isSubmitting && form.otpCode.length == 6,
+                                enabled = !form.isSubmitting && form.otpCode.length in 6..10,
                                 shape = MaterialTheme.shapes.small,
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -341,7 +341,7 @@ fun AuthScreen(
                                             "Resend code in ${form.resendCooldownSeconds}s",
                                         )
                                     } else {
-                                        localized("إعادة إرسال الرمز", "Resend 6-digit code")
+                                        localized("إعادة إرسال الرمز", "Resend code")
                                     },
                                 )
                             }
@@ -380,7 +380,7 @@ fun AuthScreen(
                             OutlinedTextField(
                                 value = form.phone,
                                 onValueChange = onPhoneChange,
-                                label = { Text(localized("رقم الموبايل (لربط طلباتك السابقة)", "Egyptian mobile (links past orders)")) },
+                                label = { Text(localized("رقم الموبايل", "Egyptian mobile")) },
                                 placeholder = { Text("01012345678") },
                                 leadingIcon = { Icon(Icons.Rounded.Phone, contentDescription = null) },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),

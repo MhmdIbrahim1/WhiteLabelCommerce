@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { normalizeDigits } from "@/lib/phone";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -23,6 +24,7 @@ import {
 
 type AuthMode = "otp" | "password";
 type PasswordSubMode = "signin" | "signup";
+const subscribeToHydration = () => () => {};
 
 function localizedAuthError(
   code: AuthActionResult["errorCode"] | string | undefined,
@@ -35,24 +37,24 @@ function localizedAuthError(
         : "يرجى إدخال بريد إلكتروني صحيح.";
     case "invalid_otp":
       return isEn
-        ? "Invalid 6-digit verification code. Please check your inbox and try again."
-        : "رمز التحقق غير صحيح. يرجى مراجعة الرمز المكوّن من 6 أرقام وإعادة المحاولة.";
+        ? "Invalid verification code. Please check your inbox and try again."
+        : "رمز التحقق غير صحيح. يرجى مراجعة الرمز وإعادة المحاولة.";
     case "otp_expired":
       return isEn
         ? "This verification code has expired. Request a new code below."
         : "انتهت صلاحية رمز التحقق. يرجى طلب رمز جديد أدناه.";
     case "rate_limit":
       return isEn
-        ? "Too many attempts. Please wait 60 seconds before trying again."
-        : "تم إرسال محاولات كثيرة. يرجى الانتظار 60 ثانية قبل المحاولة مجدداً.";
+        ? "Too many attempts. Please wait a little before trying again."
+        : "تم إرسال محاولات كثيرة. يرجى الانتظار قليلاً قبل المحاولة مجدداً.";
     case "unconfirmed":
       return isEn
-        ? "Please confirm your email address first, or sign in instantly using the 6-digit Email OTP tab."
-        : "يرجى تأكيد بريدك الإلكتروني أولاً، أو تسجيل الدخول فوراً عبر رمز التحقق (6 أرقام).";
+        ? "Please confirm your email using the code in your inbox."
+        : "يرجى تأكيد بريدك الإلكتروني باستخدام الرمز المرسل إليك.";
     case "name":
       return isEn
-        ? "Please enter your full name (at least 2 characters)."
-        : "يرجى إدخال الاسم الكامل (حرفين على الأقل).";
+        ? "Please enter your full name (2–100 characters)."
+        : "يرجى إدخال الاسم الكامل (من حرفين إلى 100 حرف).";
     case "phone":
       return isEn
         ? "Please enter a valid Egyptian phone number (e.g. 01012345678)."
@@ -61,16 +63,24 @@ function localizedAuthError(
       return isEn
         ? "Password must be at least 6 characters."
         : "كلمة المرور يجب أن تكون 6 أحرف على الأقل.";
-    case "signup":
+    case "duplicate_email":
+      return isEn ? "This email is already registered. Sign in with your password." : "هذا البريد الإلكتروني مسجّل بالفعل. سجّل الدخول بكلمة المرور.";
+    case "weak_password":
+      return isEn ? "Choose a stronger password and try again." : "اختر كلمة مرور أقوى ثم أعد المحاولة.";
+    case "signup_disabled":
+      return isEn ? "Registration is currently unavailable." : "التسجيل غير متاح حالياً.";
+    case "network":
+      return isEn ? "Check your connection and try again." : "تحقق من اتصالك بالإنترنت ثم أعد المحاولة.";
+    case "server":
+    default:
       return isEn
-        ? "Could not create account. This email may already be registered."
-        : "تعذر إنشاء الحساب. قد يكون البريد الإلكتروني مسجلاً بالفعل.";
+        ? "The account service is temporarily unavailable. Please try again."
+        : "خدمة الحسابات غير متاحة مؤقتاً. يرجى المحاولة مرة أخرى.";
     case "otp_send_failed":
       return isEn
-        ? "Could not send verification code right now. Please try again."
-        : "تعذر إرسال رمز التحقق حالياً. يرجى المحاولة مرة أخرى.";
+        ? "Email delivery is unavailable. Use email and password to continue."
+        : "تعذّر إرسال البريد حالياً. استخدم البريد وكلمة المرور للمتابعة.";
     case "credentials":
-    default:
       return isEn
         ? "Incorrect email or password. Please check your credentials and try again."
         : "البريد الإلكتروني أو كلمة المرور غير صحيحة. يرجى التحقق وإعادة المحاولة.";
@@ -78,23 +88,27 @@ function localizedAuthError(
 }
 
 export function HybridAuthPanel({
-  nextPath = "/account",
+  nextPath = "",
+  initialSignup = false,
   storeName,
   initialError = "",
   initialRegistered = "",
 }: {
   nextPath?: string;
+  initialSignup?: boolean;
   storeName: string;
   initialError?: string;
   initialRegistered?: string;
 }) {
   const router = useRouter();
+  // The server renders the fields before React can handle a submission.
+  const interactive = useSyncExternalStore(subscribeToHydration, () => true, () => false);
   const { lang } = useLanguage();
   const isEn = lang === "en";
   const ArrowIcon = isEn ? ArrowRight : ArrowLeft;
 
-  const [mode, setMode] = useState<AuthMode>("otp");
-  const [pwMode, setPwMode] = useState<PasswordSubMode>("signin");
+  const [mode, setMode] = useState<AuthMode>("password");
+  const [pwMode, setPwMode] = useState<PasswordSubMode>(initialSignup ? "signup" : "signin");
 
   // OTP state
   const [otpEmail, setOtpEmail] = useState("");
@@ -102,22 +116,15 @@ export function HybridAuthPanel({
   const [otpCode, setOtpCode] = useState("");
   const [cooldown, setCooldown] = useState(0);
 
-  // Password state
-  const [pwEmail, setPwEmail] = useState("");
-  const [pwPassword, setPwPassword] = useState("");
-  const [fullName, setFullName] = useState("");
-  const [phone, setPhone] = useState("");
-
   // Feedback
+  const submitting = useRef(false);
   const [busy, setBusy] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string>(
-    initialError ? localizedAuthError(initialError, isEn) : "",
-  );
+  const [errorCode, setErrorCode] = useState(initialError);
   const [infoMsg, setInfoMsg] = useState<string>(
     initialRegistered === "confirm"
       ? isEn
-        ? "Account created! Confirm your email or enter a 6-digit OTP code to sign in."
-        : "تم إنشاء حسابك بنجاح! أكّد بريدك الإلكتروني أو سجّل الدخول عبر رمز التحقق (6 أرقام)."
+        ? "Check your inbox for your confirmation code."
+        : "تحقق من بريدك الإلكتروني للعثور على رمز التأكيد."
       : "",
   );
 
@@ -131,14 +138,15 @@ export function HybridAuthPanel({
 
   const handleSendOtp = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (busy || cooldown > 0) return;
-    setErrorMsg("");
+    if (submitting.current || cooldown > 0) return;
+    setErrorCode("");
     setInfoMsg("");
+    submitting.current = true;
     setBusy(true);
     try {
       const res = await sendEmailOtpAction(otpEmail);
       if (!res.ok) {
-        setErrorMsg(localizedAuthError(res.errorCode, isEn));
+        setErrorCode(res.errorCode ?? "server");
         if (res.retryAfterSeconds) setCooldown(res.retryAfterSeconds);
         return;
       }
@@ -146,42 +154,49 @@ export function HybridAuthPanel({
       setCooldown(res.retryAfterSeconds ?? 60);
       setInfoMsg(
         isEn
-          ? `A 6-digit verification code was sent to ${otpEmail.trim()}.`
-          : `تم إرسال رمز تحقق مكوّن من 6 أرقام إلى ${otpEmail.trim()}.`,
+          ? `A verification code was sent to ${otpEmail.trim()}.`
+          : `تم إرسال رمز تحقق إلى ${otpEmail.trim()}.`,
       );
     } catch {
-      setErrorMsg(localizedAuthError("otp_send_failed", isEn));
+      setErrorCode("network");
     } finally {
+      submitting.current = false;
       setBusy(false);
     }
   };
 
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (busy) return;
-    setErrorMsg("");
+    if (submitting.current) return;
+    setErrorCode("");
     setInfoMsg("");
+    submitting.current = true;
     setBusy(true);
     try {
       const res = await verifyEmailOtpAction(otpEmail, otpCode, nextPath);
       if (!res.ok) {
-        setErrorMsg(localizedAuthError(res.errorCode, isEn));
+        setErrorCode(res.errorCode ?? "server");
         return;
       }
       router.push(res.redirectTo || "/account");
       router.refresh();
     } catch {
-      setErrorMsg(localizedAuthError("invalid_otp", isEn));
+      setErrorCode("network");
     } finally {
+      submitting.current = false;
       setBusy(false);
     }
   };
 
-  const handlePasswordSubmit = async (e: React.FormEvent) => {
+  const handlePasswordSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (busy) return;
-    setErrorMsg("");
+    if (submitting.current) return;
+    const form = new FormData(e.currentTarget);
+    const pwEmail = String(form.get("email") ?? "");
+    const pwPassword = String(form.get("password") ?? "");
+    setErrorCode("");
     setInfoMsg("");
+    submitting.current = true;
     setBusy(true);
     try {
       if (pwMode === "signin") {
@@ -191,21 +206,21 @@ export function HybridAuthPanel({
           nextPath,
         );
         if (!res.ok) {
-          setErrorMsg(localizedAuthError(res.errorCode, isEn));
+          setErrorCode(res.errorCode ?? "server");
           return;
         }
         router.push(res.redirectTo || "/account");
         router.refresh();
       } else {
         const res = await signUpWithPasswordAction({
-          fullName,
-          phone,
+          fullName: String(form.get("full_name") ?? ""),
+          phone: String(form.get("phone") ?? ""),
           email: pwEmail,
           password: pwPassword,
           nextPath,
         });
         if (!res.ok) {
-          setErrorMsg(localizedAuthError(res.errorCode, isEn));
+          setErrorCode(res.errorCode ?? "server");
           return;
         }
         if (res.redirectTo) {
@@ -215,15 +230,20 @@ export function HybridAuthPanel({
         }
         setInfoMsg(
           isEn
-            ? "Account created! Check your email for the confirmation link or switch to 6-Digit Email OTP."
-            : "تم إنشاء الحساب بنجاح! تحقق من بريدك الإلكتروني للتأكيد أو استخدم رمز التحقق (6 أرقام).",
+            ? "Check your inbox and enter the confirmation code."
+            : "تحقق من بريدك الإلكتروني وأدخل رمز التأكيد.",
         );
+        setMode("otp");
+        setOtpSent(true);
+        setOtpCode("");
+        setCooldown(60);
         setOtpEmail(pwEmail.trim());
         setPwMode("signin");
       }
     } catch {
-      setErrorMsg(localizedAuthError("credentials", isEn));
+      setErrorCode("network");
     } finally {
+      submitting.current = false;
       setBusy(false);
     }
   };
@@ -242,11 +262,11 @@ export function HybridAuthPanel({
           className={`hybrid-auth-tab ${mode === "otp" ? "is-active" : ""}`}
           onClick={() => {
             setMode("otp");
-            setErrorMsg("");
+            setErrorCode("");
           }}
         >
           <Mail size={15} aria-hidden="true" />
-          <span>{isEn ? "6-Digit Email OTP" : "رمز التحقق (6 أرقام)"}</span>
+          <span>{isEn ? "Email OTP" : "رمز التحقق"}</span>
         </button>
         <button
           type="button"
@@ -255,7 +275,7 @@ export function HybridAuthPanel({
           className={`hybrid-auth-tab ${mode === "password" ? "is-active" : ""}`}
           onClick={() => {
             setMode("password");
-            setErrorMsg("");
+            setErrorCode("");
           }}
         >
           <KeyRound size={15} aria-hidden="true" />
@@ -268,9 +288,9 @@ export function HybridAuthPanel({
           {infoMsg}
         </p>
       )}
-      {errorMsg && (
+      {errorCode && (
         <p className="auth-alert auth-alert--error" role="alert">
-          {errorMsg}
+          {localizedAuthError(errorCode, isEn)}
         </p>
       )}
 
@@ -299,7 +319,7 @@ export function HybridAuthPanel({
               ) : (
                 <>
                   <span>
-                    {isEn ? "Send 6-Digit Code" : "إرسال رمز التحقق"}
+                    {isEn ? "Send Code" : "إرسال رمز التحقق"}
                   </span>
                   <ArrowIcon size={17} />
                 </>
@@ -324,7 +344,7 @@ export function HybridAuthPanel({
                 onClick={() => {
                   setOtpSent(false);
                   setOtpCode("");
-                  setErrorMsg("");
+                  setErrorCode("");
                   setInfoMsg("");
                 }}
               >
@@ -332,7 +352,7 @@ export function HybridAuthPanel({
               </button>
             </div>
             <label>
-              {isEn ? "6-Digit Verification Code" : "رمز التحقق المكوّن من 6 أرقام"}
+              {isEn ? "Verification Code" : "رمز التحقق"}
               <input
                 type="text"
                 inputMode="numeric"
@@ -341,17 +361,17 @@ export function HybridAuthPanel({
                 className="otp-code-input"
                 value={otpCode}
                 onChange={(e) =>
-                  setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+                  setOtpCode(normalizeDigits(e.target.value).replace(/\D/g, "").slice(0, 10))
                 }
-                placeholder="000000"
-                maxLength={6}
+                placeholder="00000000"
+                maxLength={10}
                 required
               />
             </label>
             <button
               type="submit"
               className="auth-submit-btn"
-              disabled={busy || otpCode.length !== 6}
+              disabled={busy || otpCode.length < 6}
             >
               {busy ? (
                 <Loader2 size={17} className="spin-icon" aria-hidden="true" />
@@ -376,7 +396,7 @@ export function HybridAuthPanel({
                       ? `Resend code in ${cooldown}s`
                       : `إعادة الإرسال خلال ${cooldown} ثانية`
                     : isEn
-                      ? "Resend 6-digit code"
+                      ? "Resend code"
                       : "إعادة إرسال الرمز"}
                 </span>
               </button>
@@ -391,7 +411,7 @@ export function HybridAuthPanel({
               className={pwMode === "signin" ? "is-active" : ""}
               onClick={() => {
                 setPwMode("signin");
-                setErrorMsg("");
+                setErrorCode("");
               }}
             >
               {isEn ? "Sign In" : "تسجيل الدخول"}
@@ -401,7 +421,7 @@ export function HybridAuthPanel({
               className={pwMode === "signup" ? "is-active" : ""}
               onClick={() => {
                 setPwMode("signup");
-                setErrorMsg("");
+                setErrorCode("");
               }}
             >
               <UserPlus size={14} aria-hidden="true" />
@@ -409,15 +429,14 @@ export function HybridAuthPanel({
             </button>
           </div>
 
-          <form onSubmit={handlePasswordSubmit} className="auth-form">
+          <form onSubmit={handlePasswordSubmit} method="post" noValidate className="auth-form">
             {pwMode === "signup" && (
               <>
                 <label>
                   {isEn ? "Full Name" : "الاسم الكامل"}
                   <input
                     type="text"
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
+                    name="full_name"
                     placeholder={isEn ? "e.g. Ahmed Mahmoud" : "مثال: أحمد محمود"}
                     autoComplete="name"
                     minLength={2}
@@ -427,13 +446,12 @@ export function HybridAuthPanel({
                 </label>
                 <label>
                   {isEn
-                    ? "Mobile Phone (links past guest orders)"
-                    : "رقم الموبايل (يربط طلباتك السابقة تلقائياً)"}
+                    ? "Mobile phone"
+                    : "رقم الموبايل"}
                   <input
                     type="tel"
                     dir="ltr"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
+                    name="phone"
                     placeholder="01012345678"
                     autoComplete="tel"
                     maxLength={24}
@@ -448,8 +466,7 @@ export function HybridAuthPanel({
               <input
                 type="email"
                 dir="ltr"
-                value={pwEmail}
-                onChange={(e) => setPwEmail(e.target.value)}
+                name="email"
                 placeholder="name@example.com"
                 autoComplete="email"
                 required
@@ -460,8 +477,7 @@ export function HybridAuthPanel({
               <input
                 type="password"
                 dir="ltr"
-                value={pwPassword}
-                onChange={(e) => setPwPassword(e.target.value)}
+                name="password"
                 placeholder={isEn ? "At least 6 characters" : "6 أحرف على الأقل"}
                 autoComplete={
                   pwMode === "signup" ? "new-password" : "current-password"
@@ -470,7 +486,7 @@ export function HybridAuthPanel({
                 required
               />
             </label>
-            <button type="submit" className="auth-submit-btn" disabled={busy}>
+            <button type="submit" className="auth-submit-btn" disabled={!interactive || busy}>
               {busy ? (
                 <Loader2 size={17} className="spin-icon" aria-hidden="true" />
               ) : (

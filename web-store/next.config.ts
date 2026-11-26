@@ -16,6 +16,8 @@ const securityHeaders = [
 
 const config: NextConfig = {
   allowedDevOrigins: ["127.0.0.1"],
+  // Auth Server Function arguments include passwords and email codes.
+  logging: { serverFunctions: false },
   experimental: { serverActions: { bodySizeLimit: "6mb" } },
   async headers() {
     return [

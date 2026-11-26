@@ -24,8 +24,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -50,8 +48,6 @@ class AuthRepositoryImpl @Inject constructor(
                         if (uid.isBlank()) {
                             _sessionState.value = AuthSessionState.SignedOut
                         } else {
-                            val metaName = user?.userMetadata?.get("full_name")?.jsonPrimitive?.contentOrNull.orEmpty()
-                            val metaPhone = user?.userMetadata?.get("phone")?.jsonPrimitive?.contentOrNull.orEmpty()
                             val existing = (_sessionState.value as? AuthSessionState.SignedIn)
                                 ?.takeIf { it.userId == uid }
                                 ?.profile
@@ -59,12 +55,12 @@ class AuthRepositoryImpl @Inject constructor(
                                 userId = uid,
                                 email = email,
                                 profile = existing ?: CustomerProfile(
-                                    fullName = metaName,
-                                    phone = metaPhone,
+                                    fullName = "",
+                                    phone = "",
                                     email = email,
                                 ),
                             )
-                            loadProfileInternal(uid, email, metaName, metaPhone)
+                            loadProfileInternal(uid, email, "", "")
                         }
                     }
 
@@ -92,6 +88,7 @@ class AuthRepositoryImpl @Inject constructor(
         supabase.auth.signInWith(OTP) {
             this.email = cleanEmail
             createUser = true
+            data = buildJsonObject { put("signup_store_id", BuildConfig.STORE_ID) }
         }
     }
 
@@ -104,7 +101,6 @@ class AuthRepositoryImpl @Inject constructor(
             token = cleanToken,
         )
         syncProfileAfterAuth()
-        refreshProfile()
     }
 
     override suspend fun signInWithPassword(email: String, password: String): Result<Unit> = runSuspendCatching {
@@ -114,7 +110,6 @@ class AuthRepositoryImpl @Inject constructor(
             this.password = password
         }
         syncProfileAfterAuth()
-        refreshProfile()
     }
 
     override suspend fun signUpWithPassword(
@@ -133,18 +128,12 @@ class AuthRepositoryImpl @Inject constructor(
             this.data = buildJsonObject {
                 put("full_name", cleanName)
                 put("phone", cleanPhone)
+                put("signup_store_id", BuildConfig.STORE_ID)
             }
         }
 
         if (supabase.auth.currentSessionOrNull() != null) {
-            syncProfileRpc(
-                fullName = cleanName,
-                phone = cleanPhone,
-                governorate = "",
-                city = "",
-                address = "",
-            )
-            refreshProfile()
+            syncProfileAfterAuth()
             SignUpOutcome.SIGNED_IN
         } else {
             SignUpOutcome.NEEDS_EMAIL_CONFIRMATION
@@ -153,9 +142,7 @@ class AuthRepositoryImpl @Inject constructor(
 
     override suspend fun refreshProfile(): Result<CustomerProfile?> = runSuspendCatching {
         val user = supabase.auth.currentUserOrNull() ?: return@runSuspendCatching null
-        val metaName = user.userMetadata?.get("full_name")?.jsonPrimitive?.contentOrNull.orEmpty()
-        val metaPhone = user.userMetadata?.get("phone")?.jsonPrimitive?.contentOrNull.orEmpty()
-        loadProfileInternal(user.id, user.email.orEmpty(), metaName, metaPhone)
+        loadProfileInternal(user.id, user.email.orEmpty(), "", "")
     }
 
     override suspend fun saveProfile(profile: CustomerProfile): Result<CustomerProfile> = runSuspendCatching {
@@ -188,20 +175,14 @@ class AuthRepositoryImpl @Inject constructor(
     }
 
     private suspend fun syncProfileAfterAuth() {
-        val user = supabase.auth.currentUserOrNull() ?: return
-        val metaName = user.userMetadata?.get("full_name")?.jsonPrimitive?.contentOrNull.orEmpty()
-        val metaPhone = user.userMetadata?.get("phone")?.jsonPrimitive?.contentOrNull
-            ?.let(PhoneNormalizer::normalize)
-            .orEmpty()
-        runCatching {
-            syncProfileRpc(
-                fullName = metaName,
-                phone = metaPhone,
-                governorate = "",
-                city = "",
-                address = "",
-            )
-        }
+        val result = runSuspendCatching {
+            supabase.postgrest.rpc(
+                function = "initialize_customer_profile",
+                parameters = buildJsonObject { put("p_store_id", BuildConfig.STORE_ID) },
+            ).decodeAs<String>()
+        }.getOrElse { throw IllegalStateException("profile_setup", it) }
+        refreshProfile().getOrThrow()
+        if (result == "phone_unavailable") error("phone_unavailable")
     }
 
     private suspend fun syncProfileRpc(
