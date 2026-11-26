@@ -14,7 +14,7 @@ export default async function TicketsPage({
   const [params, lang, { db, storeId }] = await Promise.all([
     searchParams,
     getServerLang(),
-    requireAdmin(),
+    requireAdmin("manage_customers"),
   ]);
   const isEn = lang === "en";
   const { from, to, page } = pagination(params.page);

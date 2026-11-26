@@ -17,7 +17,7 @@ begin
   insert into auth.users(id,email,email_confirmed_at) values(shopper,shopper::text||'@example.invalid',now());
   perform set_config('request.jwt.claim.sub',shopper::text,true);
   for tenant in select id from public.stores where slug in ('nova-store','omar-a7a') order by slug loop
-    insert into public.store_members(store_id,user_id,role) values(tenant,shopper,'admin');
+    insert into public.store_members(store_id,user_id,role,permissions) values(tenant,shopper,'catalog','{"manage_products":true}');
     update public.store_settings set default_max_order_qty=5 where store_id=tenant;
     fields := jsonb_build_object('name','QA limit','name_en','QA limit','slug',gen_random_uuid()::text,'stock',18,'price',10,
       'cost_price',0,'description','','description_en','','specifications','[]'::jsonb,'sizes',array[]::text[],

@@ -30,7 +30,7 @@ type RawReviewJoinRow = {
 
 export default async function AdminReviewsPage() {
   const [{ storeId, activeStore }, lang] = await Promise.all([
-    requireAdmin(),
+    requireAdmin("manage_products"),
     getServerLang(),
   ]);
 

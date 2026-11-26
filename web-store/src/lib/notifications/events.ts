@@ -101,6 +101,7 @@ export async function notifyOrderCreated(orderId: string): Promise<void> {
           ? "عند الاستلام"
           : "دفع إلكتروني";
     await notifyStoreAdmins({
+      permission: "manage_orders",
       storeId: order.store_id,
       titleAr: `طلب جديد ${codeAr}`,
       titleEn: `New Order ${code}`,
@@ -124,6 +125,7 @@ export async function notifyOrderCreated(orderId: string): Promise<void> {
       if (!prod || prod.stock > 3) continue;
       const prodNameEn = prod.name_en?.trim() || prod.name;
       await notifyStoreAdmins({
+        permission: "manage_products",
         storeId: order.store_id,
         titleAr: `تنبيه انخفاض المخزون (${prod.stock} متبقي)`,
         titleEn: `Low Stock Alert (${prod.stock} left)`,

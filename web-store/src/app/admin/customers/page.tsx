@@ -43,7 +43,7 @@ export default async function AdminCustomersPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const [{ db, storeId }, lang] = await Promise.all([requireAdmin(), getServerLang()]);
+  const [{ db, storeId }, lang] = await Promise.all([requireAdmin("manage_customers"), getServerLang()]);
   const isEn = lang === "en";
   const [params, settingsRes, customersRes, ordersRes] = await Promise.all([
     searchParams,

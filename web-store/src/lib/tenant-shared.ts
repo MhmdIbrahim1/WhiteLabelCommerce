@@ -66,6 +66,7 @@ export function tenantAuthEntry(basePath: string, route: "/login" | "/register",
 const PLATFORM_PREFIXES = [
   "/admin",
   "/super-admin",
+  "/invite",
   "/create-store",
   "/login",
   "/register",

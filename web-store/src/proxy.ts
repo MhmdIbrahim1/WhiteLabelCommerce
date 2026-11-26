@@ -67,7 +67,8 @@ export async function proxy(request: NextRequest) {
   const platform = classification === "platform";
   const landing = platform && !alias && path === "/";
   const asset = assetPath.test(path);
-  const admin = controlPlane.test(path);
+  const invite = /^\/invite(?:\/|$)/.test(path);
+  const admin = controlPlane.test(path) || invite;
   const api = path.startsWith("/api/");
   const platformUrl = platformOrigin(host, root);
   const scheme = isLocalHost(host.hostname) ? "http" : "https";
@@ -140,7 +141,7 @@ export async function proxy(request: NextRequest) {
     },
   });
 
-  if (admin && !api) {
+  if (admin && !api && !invite) {
     const { data: { user } } = await db.auth.getUser();
     const login = "/login?next=" + encodeURIComponent(path + request.nextUrl.search);
     let redirectTo = !user ? login : "";
@@ -154,6 +155,7 @@ export async function proxy(request: NextRequest) {
   } else if (request.cookies.getAll().some(c => c.name.startsWith("sb-"))) {
     await db.auth.getUser();
   }
+  if (invite || request.nextUrl.searchParams.get("next")?.startsWith("/invite/")) response.headers.set("Referrer-Policy", "no-referrer");
   if (cookieSlug && request.cookies.get(STORE_SLUG_COOKIE)?.value !== cookieSlug) {
     response.cookies.set(STORE_SLUG_COOKIE, cookieSlug, { path: "/", sameSite: "lax", httpOnly: true, secure: scheme === "https" });
   }

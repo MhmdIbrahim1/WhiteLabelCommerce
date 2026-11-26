@@ -1,7 +1,7 @@
 import type { Lang } from "./i18n";
 
 export const planCodes = ["starter", "pro", "business"] as const;
-export const quotaKeys = ["max_products", "max_monthly_orders", "max_monthly_apk_builds"] as const;
+export const quotaKeys = ["max_products", "max_monthly_orders", "max_monthly_apk_builds", "max_staff_members"] as const;
 export const cycles = ["monthly", "annual"] as const;
 export const subscriptionStatuses = ["trialing", "active", "past_due", "canceled"] as const;
 export type PlanCode = (typeof planCodes)[number];
@@ -21,14 +21,15 @@ export type Subscription = {
   quota_overrides: QuotaOverrides; admin_notes: string | null; revision: number;
 };
 export type StoreBilling = Pick<Subscription, "billing_cycle" | "status" | "trial_ends_at" | "current_period_start" | "current_period_end" | "quota_overrides"> & {
-  plan: Plan; entitlements: Entitlements; products: number; orders: number; apk_builds: number; period_ym: string;
+  plan: Plan; entitlements: Entitlements; products: number; orders: number; apk_builds: number; staff_members: number; period_ym: string;
 };
 
 export const quotaResources = {
-  max_products: "products", max_monthly_orders: "orders", max_monthly_apk_builds: "apk_builds",
+  max_products: "products", max_monthly_orders: "orders", max_monthly_apk_builds: "apk_builds", max_staff_members: "staff_members",
 } as const;
 export type Resource = (typeof quotaResources)[QuotaKey] | "custom_domains";
 const resourceNames: Record<Resource, Record<Lang, string>> = {
+  staff_members: { en: "Staff seats", ar: "مقاعد الفريق" },
   products: { en: "Active products", ar: "المنتجات المنشورة" },
   orders: { en: "Monthly orders", ar: "الطلبات الشهرية" },
   apk_builds: { en: "Monthly APK builds", ar: "عمليات بناء التطبيق الشهرية" },
@@ -48,7 +49,7 @@ export function limitLabel(limit: number | null, lang: Lang) {
 }
 export function resolveEntitlements(plan: Entitlements, overrides: QuotaOverrides): Entitlements {
   return {
-    max_products: plan.max_products, max_monthly_orders: plan.max_monthly_orders,
+    max_staff_members: plan.max_staff_members, max_products: plan.max_products, max_monthly_orders: plan.max_monthly_orders,
     max_monthly_apk_builds: plan.max_monthly_apk_builds, custom_domains_enabled: plan.custom_domains_enabled, ...overrides,
   };
 }
@@ -77,6 +78,7 @@ export function quotaMessage(resource: Resource, lang: Lang, featureDisabled = f
   if (resource === "custom_domains") return en ? "Your plan does not include adding a custom domain." : "باقتك الحالية لا تشمل إضافة نطاق مخصص.";
   if (resource === "apk_builds" && featureDisabled) return en ? "The Android builder is disabled for this store." : "بناء تطبيق أندرويد معطّل لهذا المتجر.";
   if (resource === "apk_builds") return en ? "You’ve used this month’s APK build allowance." : "استهلكت رصيد بناء التطبيق لهذا الشهر.";
+  if (resource === "staff_members") return en ? "All staff seats are in use. Free a seat or change the store limit." : "جميع مقاعد الفريق مستخدمة. أخلِ مقعداً أو عدّل حد المتجر.";
   if (resource === "products") return en ? "You’ve reached your active product limit. You can still save drafts." : "وصلت إلى حد المنتجات المنشورة. يمكنك الاستمرار في حفظ المسودات.";
   return en ? "This store has reached its monthly order limit. Please contact the store before trying again." : "بلغ المتجر حد الطلبات لهذا الشهر. يُرجى التواصل مع المتجر قبل المحاولة مجدداً.";
 }
@@ -126,7 +128,7 @@ export function parsePlan(form: FormData): Omit<Plan, "revision"> {
     description_ar: boundedText(form, "description_ar", 1000), description_en: boundedText(form, "description_en", 1000),
     monthly_price_egp: integer(form, "monthly_price_egp"), annual_price_egp: integer(form, "annual_price_egp"),
     trial_days: integer(form, "trial_days"), sort_order: integer(form, "sort_order", true),
-    max_products: caps.max_products ?? null, max_monthly_orders: caps.max_monthly_orders ?? null, max_monthly_apk_builds: caps.max_monthly_apk_builds ?? null,
+    max_staff_members: caps.max_staff_members ?? null, max_products: caps.max_products ?? null, max_monthly_orders: caps.max_monthly_orders ?? null, max_monthly_apk_builds: caps.max_monthly_apk_builds ?? null,
     custom_domains_enabled: checkbox(form, "custom_domains_enabled"), is_active: checkbox(form, "is_active"),
   };
 }

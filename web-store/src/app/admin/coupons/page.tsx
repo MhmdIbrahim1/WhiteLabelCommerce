@@ -24,7 +24,7 @@ export default async function AdminCouponsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const [{ db, storeId }, lang] = await Promise.all([requireAdmin(), getServerLang()]);
+  const [{ db, storeId }, lang] = await Promise.all([requireAdmin("manage_products"), getServerLang()]);
   const isEn = lang === "en";
   const [params, settingsRes, couponsRes] = await Promise.all([
     searchParams,

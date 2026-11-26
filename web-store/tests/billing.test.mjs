@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { annualSavings, cycleName, limitLabel, limitReached, parsePlan, parseSubscription, quotaFailure,
   quotaKeys, quotaMessage, resolveEntitlements, statusNames } from "../src/lib/billing.ts";
 
-const defaults = { max_products: 50, max_monthly_orders: 100, max_monthly_apk_builds: 2, custom_domains_enabled: false };
+const defaults = { max_staff_members: 1, max_products: 50, max_monthly_orders: 100, max_monthly_apk_builds: 2, custom_domains_enabled: false };
 function planForm() {
   const form = new FormData();
   for (const [key, value] of Object.entries({
@@ -29,7 +29,7 @@ test("inherited limits immediately follow the catalog, including an unlimited pl
 test("a store can set a zero cap, override to unlimited, and turn off an included domain", () => {
   const pro = { ...defaults, custom_domains_enabled: true };
   const overrides = { max_products: null, max_monthly_orders: 0, custom_domains_enabled: false };
-  assert.deepEqual(resolveEntitlements(pro, overrides), { ...overrides, max_monthly_apk_builds: 2 });
+  assert.deepEqual(resolveEntitlements(pro, overrides), { ...overrides, max_monthly_apk_builds: 2, max_staff_members: 1 });
   assert.equal(resolveEntitlements({ ...pro, max_products: 500 }, overrides).max_products, null);
   assert.equal(pro.max_products, 50);
 });

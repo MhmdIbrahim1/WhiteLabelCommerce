@@ -84,6 +84,10 @@ function authFailure(error: { code?: string; status?: number; name?: string; mes
 }
 
 async function finishSignIn(db: Awaited<ReturnType<typeof serverDb>>, next: string): Promise<AuthActionResult> {
+  if (/^\/invite\/[a-f0-9]{64}$/.test(next)) {
+    revalidatePath("/", "layout");
+    return { ok: true, redirectTo: next };
+  }
   const store = await resolveActiveStore();
   if (!store) return { ok: false, errorCode: "server" };
   const account = storeHref(store.basePath, "/account");

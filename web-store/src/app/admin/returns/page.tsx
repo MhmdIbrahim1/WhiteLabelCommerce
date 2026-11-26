@@ -24,7 +24,7 @@ type CustomerMetaRow = {
 
 export default async function AdminReturnsPage() {
   const [{ db, storeId }, lang] = await Promise.all([
-    requireAdmin(),
+    requireAdmin("manage_orders"),
     getServerLang(),
   ]);
 

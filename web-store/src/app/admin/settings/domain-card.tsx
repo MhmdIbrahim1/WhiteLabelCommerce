@@ -37,8 +37,8 @@ function CopyValue({ label, value, en }: { label: string; value: string; en: boo
   </div>;
 }
 
-export function DomainCard({ storeId, en, subdomain, target, rows, unavailable, canAdd }: {
-  storeId: string; en: boolean; subdomain: string; target: string | null; rows: DomainRow[]; unavailable: boolean; canAdd: boolean;
+export function DomainCard({ storeId, en, subdomain, target, rows, unavailable, canAdd, canViewBilling }: {
+  storeId: string; en: boolean; subdomain: string; target: string | null; rows: DomainRow[]; unavailable: boolean; canAdd: boolean; canViewBilling: boolean;
 }) {
   const [result, act, pending] = useActionState(manageDomain.bind(null, storeId), "");
   const t = (english: string, arabic: string) => en ? english : arabic;
@@ -54,7 +54,7 @@ export function DomainCard({ storeId, en, subdomain, target, rows, unavailable, 
       <summary><span>{t("Custom domains", "النطاقات المخصصة")}</span><ChevronDown size={17} /></summary>
       {unavailable ? <p role="status">{messages.unavailable[ix]}</p> : <>
         <p>{t("Connect an address you own. Your store subdomain stays available.", "اربط عنواناً تملكه بمتجرك. يبقى النطاق الفرعي متاحاً.")}</p>
-        {(!canAdd || typeof result === "object") && <QuotaPrompt resource="custom_domains" lang={en ? "en" : "ar"} />}
+        {(!canAdd || typeof result === "object") && <QuotaPrompt canViewBilling={canViewBilling} resource="custom_domains" lang={en ? "en" : "ar"} />}
         {canAdd && <form action={act} className="domain-add">
           <label htmlFor="new-domain">{t("Domain name", "اسم النطاق")}</label>
           <input id="new-domain" name="domain" dir="ltr" type="text" inputMode="url" autoCapitalize="none"

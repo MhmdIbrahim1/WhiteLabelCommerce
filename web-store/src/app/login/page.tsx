@@ -47,6 +47,7 @@ export default async function Login({ searchParams }: PageProps<"/login">) {
         <HybridAuthPanel
           basePath={store.basePath}
           nextPath={next}
+          initialOtp={params.method === "otp"}
           storeName={store.name}
           initialError={error}
           initialRegistered={registered}

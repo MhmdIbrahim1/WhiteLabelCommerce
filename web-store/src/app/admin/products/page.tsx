@@ -3,7 +3,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { Package, Plus, Zap } from "lucide-react";
 import { checked, requireAdmin } from "@/lib/db";
-import { getStoreBilling } from "@/lib/billing-data";
+import { getResourceAllowance } from "@/lib/billing-data";
 import { limitLabel, limitReached } from "@/lib/billing";
 import { QuotaPrompt } from "@/components/quota-prompt";
 import { adminDb } from "@/lib/supabase/admin";
@@ -28,10 +28,10 @@ import {
 export default async function Products({
   searchParams,
 }: PageProps<"/admin/products">) {
-  const [params, lang, { db, storeId }] = await Promise.all([
+  const [params, lang, { db, storeId, permissions }] = await Promise.all([
     searchParams,
     getServerLang(),
-    requireAdmin(),
+    requireAdmin("manage_products"),
   ]);
   const secureDb = adminDb();
   const { from, to, page } = pagination(params.page);
@@ -50,11 +50,11 @@ export default async function Products({
   }
   const [productResult, billing] = await Promise.all([
     query.order("name").order("id").range(from, to),
-    getStoreBilling(storeId),
+    getResourceAllowance(storeId, "products"),
   ]);
   const products: AdminProductItem[] = checked(productResult);
-  const cap = billing.entitlements.max_products;
-  const atLimit = limitReached(billing.products, cap);
+  const cap = billing.cap;
+  const atLimit = limitReached(billing.used, cap);
   const denied = params.result === "plan_limit_reached" || params.result === "limit_reached";
   const categories: AdminCategoryItem[] = [];
   for (let offset = 0; ; offset += 200) {
@@ -87,10 +87,10 @@ export default async function Products({
             color: atLimit ? "#b91c1c" : "var(--primary)",
           }}
         >
-          {lang === "en" ? "Active products" : "المنتجات المنشورة"} · <bdi>{limitLabel(billing.products, lang)} / {limitLabel(cap, lang)}</bdi>
+          {lang === "en" ? "Active products" : "المنتجات المنشورة"} · <bdi>{limitLabel(billing.used, lang)} / {limitLabel(cap, lang)}</bdi>
         </span>
       </div>
-      {(atLimit || denied) && <QuotaPrompt resource="products" lang={lang} />}
+      {(atLimit || denied) && <QuotaPrompt canViewBilling={Boolean(permissions.manage_billing)} resource="products" lang={lang} />}
       {!denied && <Notice result={params.result} />}
       <details className="card">
         <summary>

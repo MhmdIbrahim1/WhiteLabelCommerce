@@ -4,6 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
+  UsersRound,
+  Globe,
   Boxes,
   ClipboardList,
   Users,
@@ -22,6 +24,7 @@ import {
   CreditCard,
 } from "lucide-react";
 import { useLanguage } from "@/components/language-provider";
+import { canOpenAdmin, type Permissions } from "@/lib/team";
 import type { DictKey } from "@/lib/i18n";
 
 const sections: {
@@ -46,16 +49,20 @@ const sections: {
   { url: "/admin/tickets", key: "adminTickets", icon: MessagesSquare },
   { url: "/admin/customizer", key: "adminCustomizer", icon: Palette, tourId: "nav-customizer" },
   { url: "/admin/mobile-app", key: "adminMobileApp", icon: Smartphone, isMobileApp: true },
+  { url: "/admin/team", key: "adminTeam", icon: UsersRound },
+  { url: "/admin/settings/domains", key: "adminDomains", icon: Globe },
   { url: "/admin/billing", key: "adminBilling", icon: CreditCard },
   { url: "/admin/settings", key: "adminSettings", icon: Settings, tourId: "nav-settings" },
 ];
 
 export default function Navigation({
+  permissions,
   isSuperAdmin = false,
   mobileAppUnlocked = true,
   pendingReturnsCount = 0,
   openAbandonedCartsCount = 0,
 }: {
+  permissions: Permissions;
   isSuperAdmin?: boolean;
   mobileAppUnlocked?: boolean;
   pendingReturnsCount?: number;
@@ -65,10 +72,10 @@ export default function Navigation({
   const { lang, t } = useLanguage();
   const isEn = lang === "en";
   return (
-    <nav aria-label="Admin navigation">
-      {sections.map(({ url, key, icon: Icon, tourId, isMobileApp, isReturns, isAbandonedCarts }) => {
+    <nav aria-label={isEn ? "Admin navigation" : "تنقّل الإدارة"}>
+      {sections.filter(item => canOpenAdmin(item.url, permissions)).map(({ url, key, icon: Icon, tourId, isMobileApp, isReturns, isAbandonedCarts }) => {
         const active =
-          path === url || (url !== "/admin" && path.startsWith(url + "/"));
+          path === url || (url !== "/admin" && url !== "/admin/settings" && path.startsWith(url + "/"));
         return (
           <Link
             key={url}

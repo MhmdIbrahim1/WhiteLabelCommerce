@@ -1,3 +1,4 @@
+import { notificationPermissions } from "@/lib/team";
 import { requireAdmin } from "@/lib/db";
 import { adminDb } from "@/lib/supabase/admin";
 import { CampaignStudio } from "./campaign-studio";
@@ -20,7 +21,7 @@ type NotificationLogRow = {
 };
 
 export default async function AdminNotificationsPage() {
-  const { db, storeId, activeStore } = await requireAdmin();
+  const { db, storeId, activeStore } = await requireAdmin(...notificationPermissions);
   const svc = adminDb();
 
   const { data: storeRow } = await db

@@ -1,4 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
+import { hasStoreNotificationAccess } from "@/lib/access";
 import { cookies } from "next/headers";
 import { serverDb } from "@/lib/db";
 import { ADMIN_STORE_COOKIE, getManagedStores } from "@/lib/tenant";
@@ -63,6 +64,7 @@ export async function POST(req: Request) {
     managedStores.find((m) => m.store_id === cookieStoreId)?.store_id ??
     managedStores[0].store_id;
 
+  if (!(await hasStoreNotificationAccess(db, activeAdminStoreId))) return Response.json({ error: "Forbidden" }, { status: 403 });
   const summary = await runRecoveryAutomations(activeAdminStoreId);
   return Response.json(
     { ok: true, storeId: activeAdminStoreId, ...summary },

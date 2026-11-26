@@ -9,7 +9,7 @@ import { BillingControls } from "./controls";
 import "./billing.css";
 
 export default async function BillingPage({ searchParams }: { searchParams: Promise<{ tab?: string; store?: string }> }) {
-  const [{ storeId, activeStore, isSuperAdmin }, lang, params] = await Promise.all([requireAdmin(), getServerLang(), searchParams]);
+  const [{ storeId, activeStore, isSuperAdmin }, lang, params] = await Promise.all([requireAdmin("manage_billing"), getServerLang(), searchParams]);
   const en = lang === "en";
   const manage = isSuperAdmin && params.tab === "manage";
   const heading = <header className="billing-heading"><h1>{en ? "Billing" : "الفوترة"}</h1>
@@ -57,6 +57,7 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
           {cap === null ? <div className="billing-unlimited-track" aria-hidden="true" /> :
             <progress aria-labelledby={key} value={cap === 0 ? 1 : Math.min(used, cap)} max={Math.max(1, cap)}
               aria-valuetext={limitLabel(used, lang) + " / " + limitLabel(cap, lang)} />}
+          {resource === "staff_members" && <small>{en ? "Staff and unexpired invitations. Owners are exempt." : "الموظفون والدعوات السارية. مقاعد المالكين مجانية."}</small>}
           {Object.hasOwn(bill.quota_overrides, key) && <small>{en ? "Store-specific limit" : "حد مخصص لهذا المتجر"}</small>}
         </div>;
       })}</div>

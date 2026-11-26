@@ -5,7 +5,7 @@ import { AdminMarketingClient } from "./marketing-client";
 
 export default async function AdminMarketingPage() {
   const [{ db, storeId, activeStore }, lang] = await Promise.all([
-    requireAdmin(),
+    requireAdmin("manage_settings"),
     getServerLang(),
   ]);
 

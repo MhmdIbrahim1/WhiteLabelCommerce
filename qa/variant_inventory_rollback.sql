@@ -12,7 +12,7 @@ declare
 begin
   insert into auth.users(id,email,email_confirmed_at) values(merchant,merchant::text||'@example.invalid',now());
   for tenant in select id from public.stores where slug in ('nova-store','omar-a7a') order by slug loop
-    insert into public.store_members(store_id,user_id,role) values(tenant,merchant,'admin');
+    insert into public.store_members(store_id,user_id,role,permissions) values(tenant,merchant,'catalog','{"manage_products":true}');
     perform set_config('request.jwt.claim.sub',merchant::text,true);
     fields := jsonb_build_object('name','QA','name_en','QA','slug',gen_random_uuid()::text,'stock',6,'price',10,'cost_price',0,
       'description','','description_en','','specifications','[]'::jsonb,'sizes',array['M'],'colors',array['Blue','Red'],

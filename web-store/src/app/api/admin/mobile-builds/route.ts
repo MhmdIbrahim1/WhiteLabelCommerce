@@ -1,8 +1,9 @@
+import { hasStorePermission } from "@/lib/access";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { serverDb } from "@/lib/db";
 import { adminDb } from "@/lib/supabase/admin";
-import { getStoreBilling } from "@/lib/billing-data";
+import { getResourceAllowance } from "@/lib/billing-data";
 import { limitReached, quotaFailure, quotaMessage, type QuotaFailure } from "@/lib/billing";
 import {
   ADMIN_STORE_COOKIE,
@@ -79,15 +80,20 @@ async function resolveAdminBuildContext() {
     managedStores.find((s) => s.store_id === DEFAULT_STORE_ID) ??
     managedStores[0];
 
+  if (!(await hasStorePermission(db, activeStore.store_id, "manage_mobile_app"))) {
+    return { error: NextResponse.json({ error: "forbidden", message_en: "Mobile app access is restricted.",
+      message_ar: "صلاحية إدارة التطبيق مطلوبة." }, { status: 403 }) };
+  }
+
   const { data: unlockedRpc, error: rpcErr } = await db.rpc(
     "store_has_mobile_app_access",
     { p_store_id: activeStore.store_id },
   );
-  const billing = await getStoreBilling(activeStore.store_id).catch(() => null);
+  const billing = await getResourceAllowance(activeStore.store_id, "apk_builds").catch(() => null);
   if (rpcErr || !billing) return { error: NextResponse.json({ error: "billing_unavailable",
     message_en: "Build allowances are temporarily unavailable.", message_ar: "تعذّر تحميل رصيد البناء مؤقتاً." }, { status: 503 }) };
   return { db, user, activeStore, unlocked: unlockedRpc === true,
-    quota: { current: billing.apk_builds, limit: billing.entitlements.max_monthly_apk_builds } };
+    quota: { current: billing.used, limit: billing.cap } };
 }
 
 function quotaResponse(failure: QuotaFailure) {
@@ -101,7 +107,7 @@ export async function GET() {
   if ("error" in ctx) return ctx.error;
   const { activeStore, unlocked } = ctx;
 
-  const { data: builds, error } = await adminDb()
+  const { data: builds, error } = await ctx.db
     .from("store_app_builds")
     .select(BUILD_SELECT)
     .eq("store_id", activeStore.store_id)
@@ -235,6 +241,7 @@ export async function POST(req: Request) {
     .single<StoreAppBuildRow>();
 
   if (insertError || !created) {
+    if (insertError?.code === "42501") return NextResponse.json({ error: "forbidden" }, { status: 403 });
     const failure = quotaFailure(insertError);
     if (failure) return quotaResponse(failure);
     if (insertError?.message === "build_in_progress") return NextResponse.json({ error: "build_in_progress",

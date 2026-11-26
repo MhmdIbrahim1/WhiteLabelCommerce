@@ -27,7 +27,7 @@ export default async function OrderDetails({
 }: PageProps<"/admin/orders/[id]">) {
   const [{ id }, { db, storeId, activeStore }, lang, query] = await Promise.all([
     params,
-    requireAdmin(),
+    requireAdmin("manage_orders"),
     getServerLang(),
     searchParams,
   ]);

@@ -1,6 +1,7 @@
 import { LogOut, PanelTop, UserRound, AlertTriangle } from "lucide-react";
 import brand from "@/lib/brand";
 import { requireAdmin, checked } from "@/lib/db";
+import { canManageNotifications, canSeeOverview } from "@/lib/team";
 import { getStoreBilling } from "@/lib/billing-data";
 import { localizedText, t } from "@/lib/i18n";
 import { getServerLang } from "@/lib/i18n-server";
@@ -13,7 +14,7 @@ import { AdminStoreSwitcher } from "./store-switcher";
 import { AdminGuidedTour, AdminTourTrigger } from "./guided-tour";
 
 export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
-  const [{ db, user, storeId, activeStore, managedStores, isSuperAdmin }, lang] =
+  const [{ db, user, storeId, activeStore, managedStores, isSuperAdmin, permissions }, lang] =
     await Promise.all([requireAdmin(), getServerLang()]);
   const isEn = lang === "en";
   const [settingsRes, pendingReturnsRes, openAbandonedRes, liveUrl, billing] = await Promise.all([
@@ -22,26 +23,26 @@ export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
       .select("store_id,store_name")
       .eq("store_id", storeId)
       .single<{ store_id?: string | null; store_name: string }>(),
-    db
+    permissions.manage_orders ? db
       .from("return_requests")
       .select("id", { count: "exact", head: true })
       .eq("store_id", storeId)
-      .eq("status", "pending"),
-    db
+      .eq("status", "pending") : null,
+    permissions.manage_customers ? db
       .from("abandoned_carts")
       .select("id", { count: "exact", head: true })
       .eq("store_id", storeId)
-      .eq("status", "open"),
+      .eq("status", "open") : null,
     merchantStorefrontUrl(activeStore.slug),
-    getStoreBilling(storeId).catch(() => null),
+    permissions.manage_billing ? getStoreBilling(storeId).catch(() => null) : null,
   ]);
   const settings = checked(settingsRes);
-  const pendingReturnsCount = pendingReturnsRes.error
+  const pendingReturnsCount = pendingReturnsRes?.error
     ? 0
-    : (pendingReturnsRes.count ?? 0);
-  const openAbandonedCartsCount = openAbandonedRes.error
+    : (pendingReturnsRes?.count ?? 0);
+  const openAbandonedCartsCount = openAbandonedRes?.error
     ? 0
-    : (openAbandonedRes.count ?? 0);
+    : (openAbandonedRes?.count ?? 0);
   const storeTitle =
     localizedText(lang, settings.store_name || activeStore.name_ar, activeStore.name_en) ||
     brand.storeName;
@@ -57,6 +58,7 @@ export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
           isSuperAdmin={isSuperAdmin}
         />
         <Navigation
+          permissions={permissions}
           isSuperAdmin={isSuperAdmin}
           mobileAppUnlocked={activeStore.mobile_app_unlocked !== false}
           pendingReturnsCount={pendingReturnsCount}
@@ -74,8 +76,8 @@ export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
             <PanelTop size={17} /> {storeTitle}
           </span>
           <div className="admin-top-actions">
-            <AdminTourTrigger storeId={storeId} />
-            <NotificationBell storeId={storeId} userId={user.id} scope="admin" />
+            {canSeeOverview(permissions) && <AdminTourTrigger storeId={storeId} />}
+            {canManageNotifications(permissions) && <NotificationBell storeId={storeId} userId={user.id} scope="admin" />}
             <LanguageToggle className="lang-toggle-pill" />
             <span className="admin-top-email" dir="ltr" title={user.email ?? ""}>
               <UserRound size={16} />
@@ -83,7 +85,7 @@ export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
             </span>
           </div>
         </header>
-        <AdminGuidedTour storeId={storeId} />
+        {canSeeOverview(permissions) && <AdminGuidedTour storeId={storeId} />}
         <main className="content">
           {activeStore.status === "suspended" && (
             <div

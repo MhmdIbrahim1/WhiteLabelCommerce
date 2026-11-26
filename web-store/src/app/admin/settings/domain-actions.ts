@@ -16,7 +16,7 @@ export type DomainResult = "" | DnsError | "added" | "verified" | "activated" | 
   "primary_saved" | "invalid" | "taken" | "changed" | "unavailable" | QuotaFailure;
 
 export async function manageDomain(expectedStore: string, _previous: DomainResult, form: FormData): Promise<DomainResult> {
-  const { db, storeId } = await requireAdmin();
+  const { db, storeId, user } = await requireAdmin("manage_domains");
   if (storeId !== expectedStore) return "changed";
   const action = form.get("action");
   const id = String(form.get("id") || "");
@@ -51,10 +51,10 @@ export async function manageDomain(expectedStore: string, _previous: DomainResul
       const failure = await verifyDomainTxt(row.domain, row.verification_token);
       const status = failure ? "error" : action === "activate" ? "active" : "verified";
       // The authorized row is the entire write scope. DNS results cannot cross a remove/re-add or concurrent transition.
-      const { data: updated, error: saveError } = await adminDb().from("store_domains")
-        .update({ status, last_error: failure }).eq("id", id).eq("store_id", storeId)
-        .eq("verification_token", row.verification_token).eq("status", row.status).eq("updated_at", row.updated_at)
-        .select("id").maybeSingle();
+      const { data: updated, error: saveError } = await adminDb().rpc("record_store_domain_dns", {
+        p_store: storeId, p_actor: user.id, p_id: id, p_token: row.verification_token,
+        p_expected_status: row.status, p_updated_at: row.updated_at, p_status: status, p_error: failure,
+      });
       if (saveError || !updated) return saveError ? "unavailable" : "changed";
       result = failure ?? (status === "active" ? "activated" : "verified");
     } else return "invalid";

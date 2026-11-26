@@ -1,8 +1,8 @@
+import { hasStorePermission } from "@/lib/access";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { serverDb } from "@/lib/db";
-import { adminDb } from "@/lib/supabase/admin";
-import { getStoreBilling } from "@/lib/billing-data";
+import { getResourceAllowance } from "@/lib/billing-data";
 import { validateImageMagicBytes } from "@/lib/security";
 import {
   ADMIN_STORE_COOKIE,
@@ -60,6 +60,11 @@ async function resolveActiveAdminStore() {
     managedStores.find((s) => s.store_id === DEFAULT_STORE_ID) ??
     managedStores[0];
 
+  if (!(await hasStorePermission(db, activeStore.store_id, "manage_mobile_app"))) {
+    return { error: NextResponse.json({ error: "forbidden", message_en: "Mobile app access is restricted.",
+      message_ar: "صلاحية إدارة التطبيق مطلوبة." }, { status: 403 }) };
+  }
+
   const { data: unlockedRpc, error: rpcErr } = await db.rpc(
     "store_has_mobile_app_access",
     { p_store_id: activeStore.store_id },
@@ -69,12 +74,12 @@ async function resolveActiveAdminStore() {
   const unlocked = unlockedRpc === true;
 
   if (!unlocked) {
-    const billing = await getStoreBilling(activeStore.store_id);
+    const billing = await getResourceAllowance(activeStore.store_id, "apk_builds");
     return {
       error: NextResponse.json(
         {
           error: "feature_not_in_plan",
-          code: "feature_not_in_plan", resource: "apk_builds", current: billing.apk_builds, limit: 0,
+          code: "feature_not_in_plan", resource: "apk_builds", current: billing.used, limit: 0,
           message_ar:
             "بناء تطبيق أندرويد معطّل لهذا المتجر.",
           message_en:
@@ -145,14 +150,7 @@ export async function POST(req: Request) {
 
   const storagePath = `app-icons/${activeStore.store_id}/${crypto.randomUUID()}.${verified.ext}`;
 
-  let storageClient = db;
-  try {
-    storageClient = adminDb();
-  } catch {
-    storageClient = db;
-  }
-
-  const bucket = storageClient.storage.from("product-images");
+  const bucket = db.storage.from("product-images");
   const { error: uploadError } = await bucket.upload(storagePath, buffer, {
     contentType: verified.mime,
     cacheControl: "3600",
@@ -202,14 +200,7 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  let storageClient = db;
-  try {
-    storageClient = adminDb();
-  } catch {
-    storageClient = db;
-  }
-
-  await storageClient.storage
+  await db.storage
     .from("product-images")
     .remove([path])
     .catch(() => undefined);

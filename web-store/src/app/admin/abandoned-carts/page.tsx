@@ -22,7 +22,7 @@ export default async function AdminAbandonedCartsPage({
 }: PageProps<"/admin/abandoned-carts">) {
   const [params, { db, storeId, activeStore }, lang] = await Promise.all([
     searchParams,
-    requireAdmin(),
+    requireAdmin("manage_customers"),
     getServerLang(),
   ]);
   const statusRaw = typeof params.status === "string" ? params.status : "all";

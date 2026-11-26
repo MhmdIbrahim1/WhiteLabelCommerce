@@ -1,3 +1,4 @@
+import type { Permission } from "./team";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 
 export async function adminUser(
@@ -10,36 +11,21 @@ export async function adminUser(
     : authenticatedUser;
   if (!user) return null;
 
-  if (targetStoreId) {
-    const { data, error: rpcErr } = await db.rpc("is_store_admin", {
-      target_store_id: targetStoreId,
-    });
-    if (!rpcErr) {
-      return data === true ? user : null;
-    }
-    if (rpcErr.code !== "42883" && rpcErr.code !== "PGRST202") {
-      return null;
-    }
-  } else {
-    const { data, error: rpcErr } = await db.rpc("is_admin");
-    if (!rpcErr) {
-      return data === true ? user : null;
-    }
-    if (rpcErr.code !== "42883" && rpcErr.code !== "PGRST202") {
-      return null;
-    }
-  }
+  const result = targetStoreId
+    ? await db.rpc("my_store_permissions", { p_store: targetStoreId })
+    : await db.rpc("is_admin");
+  if (result.error) return null;
+  return (targetStoreId ? result.data !== null : result.data === true) ? user : null;
+}
 
-  // Fallback ONLY for pre-migration environments where RPC is missing
-  const { data: profile, error: profileError } = await db
-    .from("profiles")
-    .select("role,store_id")
-    .eq("id", user.id)
-    .maybeSingle<{ role: string; store_id?: string | null }>();
-  if (profileError) return null;
-  if (profile?.role !== "admin") return null;
-  if (targetStoreId && profile.store_id !== targetStoreId) return null;
-  return user;
+export async function hasStorePermission(db: SupabaseClient, storeId: string, permission: Permission) {
+  const { data, error } = await db.rpc("has_store_permission", { p_store: storeId, p_permission: permission });
+  return !error && data === true;
+}
+
+export async function hasStoreNotificationAccess(db: SupabaseClient, storeId: string) {
+  const { data, error } = await db.rpc("can_manage_store_notifications", { tenant: storeId });
+  return !error && data === true;
 }
 
 export async function superAdminUser(

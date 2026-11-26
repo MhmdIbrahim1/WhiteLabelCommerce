@@ -55,7 +55,7 @@ async function OrdersPage({
   const [params, lang, { db, storeId }] = await Promise.all([
     searchParams,
     getServerLang(),
-    requireAdmin(),
+    requireAdmin("manage_orders"),
   ]);
   const isEn = lang === "en";
   const ArrowIcon = isEn ? ArrowRight : ArrowLeft;

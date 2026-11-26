@@ -3,6 +3,7 @@ import { actionError } from "@/lib/action-error";
 import { randomBytes } from "node:crypto";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { notificationPermissions } from "@/lib/team";
 import { revalidatePath } from "next/cache";
 import { templates, isTemplate } from "@/lib/theme-templates";
 import {
@@ -85,7 +86,7 @@ function numberField(value: string, integer = false) {
     : null;
 }
 export async function saveCategory(f: FormData) {
-  const { db, storeId } = await requireAdmin(),
+  const { db, storeId } = await requireAdmin("manage_products"),
     id = text(f, "id");
   const row = {
     name: text(f, "name"),
@@ -103,7 +104,7 @@ export async function saveCategory(f: FormData) {
   finish(catalog, !result.error);
 }
 export async function deleteCategory(f: FormData) {
-  const { db, storeId } = await requireAdmin();
+  const { db, storeId } = await requireAdmin("manage_products");
   const result = await db
     .from("categories")
     .delete()
@@ -131,7 +132,7 @@ function orderLimitField(form: FormData, name: string, destination: string) {
 
 export async function saveProduct(f: FormData) {
   const destination = productListDestination(f);
-  const { db, storeId } = await requireAdmin(),
+  const { db, storeId } = await requireAdmin("manage_products"),
     id = text(f, "id"),
     oldPrice = text(f, "old_price"),
     costPriceRaw = text(f, "cost_price"),
@@ -337,7 +338,7 @@ export async function saveProduct(f: FormData) {
 }
 export async function deleteProduct(f: FormData) {
   const destination = productListDestination(f);
-  const { db, storeId } = await requireAdmin();
+  const { db, storeId } = await requireAdmin("manage_products");
   const result = await db
     .from("products")
     .delete()
@@ -358,7 +359,7 @@ export async function deleteProduct(f: FormData) {
   finish(destination, !result.error);
 }
 export async function updateOrder(f: FormData) {
-  const { db, storeId } = await requireAdmin(),
+  const { db, storeId } = await requireAdmin("manage_orders"),
     id = text(f, "id"),
     prev = text(f, "previous"),
     status = text(f, "status"),
@@ -498,7 +499,7 @@ export async function updateOrder(f: FormData) {
 }
 
 export async function ensureDeliveryToken(f: FormData) {
-  const { db, storeId } = await requireAdmin(),
+  const { db, storeId } = await requireAdmin("manage_orders"),
     id = text(f, "id");
   const destination = "/admin/orders/" + encodeURIComponent(id);
   if (!id) finish("/admin/orders", false);
@@ -514,7 +515,7 @@ export async function ensureDeliveryToken(f: FormData) {
   finish(destination, !result.error);
 }
 export async function updateTicket(f: FormData) {
-  const { db, storeId } = await requireAdmin(),
+  const { db, storeId } = await requireAdmin("manage_customers"),
     id = text(f, "id"),
     prev = text(f, "previous"),
     status = text(f, "status");
@@ -535,7 +536,7 @@ export async function updateTicket(f: FormData) {
   finish("/admin/tickets", !result.error);
 }
 export async function saveSettings(f: FormData) {
-  const { db, storeId } = await requireAdmin();
+  const { db, storeId } = await requireAdmin("manage_settings");
   const banners = text(f, "banners")
     .split(/\r?\n/)
     .map((s) => s.trim())
@@ -574,7 +575,7 @@ export async function saveSettings(f: FormData) {
 export async function saveReturnWindowDaysAction(
   daysRaw: number,
 ): Promise<{ ok: true; days: number } | { ok: false; error: string }> {
-  const { db, storeId } = await requireAdmin();
+  const { db, storeId } = await requireAdmin("manage_settings");
   const days = Math.trunc(Number(daysRaw));
   if (!Number.isSafeInteger(days) || days < 0 || days > 365) {
     return { ok: false, error: "invalid_return_window_days" };
@@ -594,7 +595,7 @@ export async function saveReturnWindowDaysAction(
 }
 
 export async function savePaymentSettings(f: FormData) {
-  const { db, storeId } = await requireAdmin();
+  const { db, storeId } = await requireAdmin("manage_settings");
 
   const codEnabled = f.has("cod_enabled");
   const paymobEnabled = f.has("paymob_enabled");
@@ -653,7 +654,7 @@ export async function savePaymentSettings(f: FormData) {
 }
 
 export async function saveWalletIncentiveSettings(f: FormData) {
-  const { db, storeId } = await requireAdmin();
+  const { db, storeId } = await requireAdmin("manage_settings");
 
   const cartIncentiveEnabled = f.has("cart_incentive_enabled");
   const cashbackEnabled = f.has("cashback_enabled");
@@ -694,7 +695,7 @@ export async function adjustCustomerWallet(input: {
   noteAr?: string;
   noteEn?: string;
 }): Promise<AdjustWalletResult> {
-  const { db, storeId } = await requireAdmin();
+  const { db, storeId } = await requireAdmin("manage_customers");
   const cleanUserId = (input.userId ?? "").trim();
   const amount = Number(input.amount);
   if (!UUID_REGEX.test(cleanUserId) || !Number.isFinite(amount) || amount === 0) {
@@ -731,7 +732,7 @@ export async function adjustCustomerWallet(input: {
   };
 }
 export async function applyTemplate(form: FormData) {
-  const { db, storeId } = await requireAdmin();
+  const { db, storeId } = await requireAdmin("manage_settings");
   const id = form.get("template");
   if (!isTemplate(id)) finish("/admin/settings", false);
   const preset = templates[id];
@@ -780,7 +781,7 @@ export type UploadHeroBannerResult =
 export async function uploadHeroBannerImage(
   f: FormData,
 ): Promise<UploadHeroBannerResult> {
-  const { db, storeId } = await requireAdmin();
+  const { db, storeId } = await requireAdmin("manage_settings");
   const file = f.get("file");
   if (!(file instanceof File) || !file.size || file.size > 5 * 1024 * 1024) {
     return { ok: false, error: "invalid_file" };
@@ -808,7 +809,7 @@ export async function uploadHeroBannerImage(
 export async function saveUiConfig(
   raw: unknown,
 ): Promise<SaveUiConfigResult> {
-  const { db, storeId } = await requireAdmin();
+  const { db, storeId } = await requireAdmin("manage_settings");
   const config = resolveUiConfig(raw);
   const { error } = await db
     .from("store_settings")
@@ -836,7 +837,7 @@ export async function saveUiConfig(
 
 
 export async function saveCustomerNotes(f: FormData) {
-  const { db, storeId } = await requireAdmin();
+  const { db, storeId } = await requireAdmin("manage_customers");
   const id = text(f, "id");
   const notes = text(f, "notes").slice(0, 1000);
   if (!id || !UUID_REGEX.test(id)) finish("/admin/customers", false);
@@ -849,7 +850,7 @@ export async function saveCustomerNotes(f: FormData) {
 }
 
 export async function saveCoupon(f: FormData) {
-  const { db, storeId } = await requireAdmin();
+  const { db, storeId } = await requireAdmin("manage_products");
   const id = text(f, "id");
   const code = text(f, "code").toUpperCase();
   const discountType = text(f, "discount_type");
@@ -903,7 +904,7 @@ export async function saveCoupon(f: FormData) {
 }
 
 export async function toggleCoupon(f: FormData) {
-  const { db, storeId } = await requireAdmin();
+  const { db, storeId } = await requireAdmin("manage_products");
   const id = text(f, "id");
   const nextActive = text(f, "next_active") === "true";
   if (!id) finish("/admin/coupons", false);
@@ -918,7 +919,7 @@ export async function toggleCoupon(f: FormData) {
 }
 
 export async function deleteCoupon(f: FormData) {
-  const { db, storeId } = await requireAdmin();
+  const { db, storeId } = await requireAdmin("manage_products");
   const id = text(f, "id");
   if (!id) finish("/admin/coupons", false);
   const { error } = await db
@@ -943,7 +944,7 @@ export type CampaignSendResult =
 export async function sendPromoCampaign(
   f: FormData,
 ): Promise<CampaignSendResult> {
-  const { storeId } = await requireAdmin();
+  const { storeId } = await requireAdmin(...notificationPermissions);
 
   const titleAr = text(f, "title_ar").slice(0, 120);
   const titleEn = text(f, "title_en").slice(0, 120);
@@ -1079,7 +1080,7 @@ export async function triggerRecoveryScan(): Promise<{
   abandonedCartsNotified: number;
   unpaidOrdersNotified: number;
 }> {
-  const { storeId } = await requireAdmin();
+  const { storeId } = await requireAdmin(...notificationPermissions);
   const result = await runRecoveryAutomations(storeId);
   revalidatePath("/admin/notifications");
   return { ok: true, ...result };
@@ -1100,7 +1101,7 @@ const UUID_REGEX =
 export async function deleteAdminNotifications(
   input: DeleteAdminNotificationsInput,
 ): Promise<DeleteAdminNotificationsResult> {
-  const { storeId } = await requireAdmin();
+  const { storeId } = await requireAdmin(...notificationPermissions);
   const svc = adminDb();
 
   try {
@@ -1153,7 +1154,7 @@ export async function moderateReviewAction(input: {
   status: "published" | "hidden";
   adminReply?: string;
 }): Promise<ModerateReviewResult> {
-  const { db, storeId } = await requireAdmin();
+  const { db, storeId } = await requireAdmin("manage_products");
   const cleanId = (input.reviewId ?? "").trim();
   if (!UUID_REGEX.test(cleanId)) {
     return { ok: false, error: "invalid_review" };
@@ -1233,7 +1234,7 @@ export async function processReturnRequestAction(input: {
   adminNotes?: string | null;
   restock?: boolean;
 }): Promise<ProcessReturnResult> {
-  const { db, storeId } = await requireAdmin();
+  const { db, storeId } = await requireAdmin("manage_orders");
   const cleanId = (input.returnId ?? "").trim();
   if (!UUID_REGEX.test(cleanId)) {
     return { ok: false, error: "invalid_return_id" };
@@ -1345,7 +1346,7 @@ export async function saveMarketingPixelsAction(input: {
   tiktokPixelId: string;
   ga4MeasurementId: string;
 }): Promise<SaveMarketingPixelsResult> {
-  const { db, storeId } = await requireAdmin();
+  const { db, storeId } = await requireAdmin("manage_settings");
 
   const meta = validateMetaPixelId(input.metaPixelId);
   const tiktok = validateTiktokPixelId(input.tiktokPixelId);
@@ -1400,7 +1401,7 @@ export async function updateAbandonedCartAction(input: {
   action: "mark_reminded" | "dismiss";
   couponCode?: string | null;
 }): Promise<UpdateAbandonedCartResult> {
-  const { db, storeId } = await requireAdmin();
+  const { db, storeId } = await requireAdmin("manage_customers");
   const cleanId = (input.cartId ?? "").trim();
   if (!UUID_REGEX.test(cleanId)) {
     return { ok: false, error: "invalid_cart_id" };

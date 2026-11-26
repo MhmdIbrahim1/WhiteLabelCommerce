@@ -44,8 +44,8 @@ type PaymentSecretRow = {
 export default async function Settings({
   searchParams,
 }: PageProps<"/admin/settings">) {
-  const [{ db, storeId, activeStore }, lang, params] = await Promise.all([
-    requireAdmin(),
+  const [{ db, storeId, activeStore, permissions }, lang, params] = await Promise.all([
+    requireAdmin("manage_settings"),
     getServerLang(),
     searchParams,
   ]);
@@ -81,7 +81,7 @@ export default async function Settings({
       />
       <h1>{isEn ? "Store Settings" : "إعدادات المتجر"}</h1>
       <Notice result={params.result} />
-      <DomainSettings storeId={storeId} slug={activeStore.slug} en={isEn} />
+      {permissions.manage_domains && <DomainSettings storeId={storeId} slug={activeStore.slug} en={isEn} />}
       <TemplateGallery
         active={
           isTemplate(s.theme_template) ? s.theme_template : "modern-minimal"

@@ -1,3 +1,4 @@
+import { canSeeOverview, permissionKeys, permissionNames, type Permission } from "@/lib/team";
 import { Suspense } from "react";
 import { RouteSkeleton } from "@/components/route-skeleton";
 import Link from "next/link";
@@ -149,7 +150,19 @@ async function Overview({
     : "30d";
   const now = new Date();
   const dateWindow = dashboardWindow(range, now);
-  const { db, storeId, activeStore } = await requireAdmin();
+  const { db, storeId, activeStore, permissions } = await requireAdmin();
+  if (!canSeeOverview(permissions)) {
+    const lang = await getServerLang();
+    const routes: Record<Permission, string> = { manage_products: "products", manage_orders: "orders",
+      manage_customers: "customers", manage_settings: "settings", manage_domains: "settings/domains",
+      manage_billing: "billing", manage_staff: "team", manage_mobile_app: "mobile-app" };
+    return <section className="card"><h1>{lang === "en" ? "Your workspace" : "مساحة عملك"}</h1>
+      <p>{lang === "en" ? activeStore.name_en || activeStore.name_ar : activeStore.name_ar}</p>
+      <ul>{permissionKeys.filter(key => permissions[key]).map(key =>
+        <li key={key}><Link href={"/admin/" + routes[key]}>{permissionNames[key][lang]}</Link></li>)}</ul>
+      {!Object.keys(permissions).length && <p>{lang === "en" ? "Ask the owner to assign access to your role." : "اطلب من مالك المتجر تحديد صلاحيات دورك."}</p>}
+    </section>;
+  }
 
   const [
     settingsRes,

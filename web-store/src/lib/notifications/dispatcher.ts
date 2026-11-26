@@ -632,6 +632,7 @@ export async function dispatchPushForExistingNotification(params: {
  * Helper to alert all store admins for a specific store_id.
  */
 export async function notifyStoreAdmins(params: {
+  permission: "manage_orders" | "manage_products";
   storeId: string;
   titleAr: string;
   titleEn: string;
@@ -642,42 +643,10 @@ export async function notifyStoreAdmins(params: {
   data?: Record<string, string | number | boolean | null>;
 }): Promise<void> {
   const db = adminDb();
-  const [memberRes, profileRes] = await Promise.all([
-    db
-      .from("store_members")
-      .select("user_id")
-      .eq("store_id", params.storeId)
-      .in("role", ["owner", "admin"]),
-    db
-      .from("profiles")
-      .select("id")
-      .eq("store_id", params.storeId)
-      .eq("role", "admin"),
-  ]);
-
-  const adminIds = Array.from(
-    new Set([
-      ...((memberRes.data ?? []) as { user_id: string }[]).map((m) => m.user_id),
-      ...((profileRes.data ?? []) as { id: string }[]).map((a) => a.id),
-    ]),
-  );
-  if (adminIds.length === 0) {
-    await dispatchNotification({
-      storeId: params.storeId,
-      userId: null,
-      targetRole: "admin",
-      category: "admin_alert",
-      titleAr: params.titleAr,
-      titleEn: params.titleEn,
-      bodyAr: params.bodyAr,
-      bodyEn: params.bodyEn,
-      deepLink: params.deepLink,
-      dedupeKey: params.dedupeKey,
-      data: params.data,
-      bypassQuietHours: true,
-    });
-    return;
-  }
+  const { data: members, error } = await db.from("store_members").select("user_id")
+    .eq("store_id", params.storeId).contains("permissions", { [params.permission]: true });
+  if (error) throw new Error("Could not resolve store notification recipients");
+  const adminIds = (members ?? []).map(member => String(member.user_id));
 
   await Promise.all(
     adminIds.map((adminId) =>

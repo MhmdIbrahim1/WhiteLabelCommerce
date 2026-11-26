@@ -749,6 +749,7 @@ export function MobileAppStudio({
   preview,
   unlocked,
   isSuperAdmin,
+  canViewBilling,
   githubConfigured,
   initialBuilds,
   initialQuota,
@@ -757,6 +758,7 @@ export function MobileAppStudio({
   preview: StorePreviewProps;
   unlocked: boolean;
   isSuperAdmin: boolean;
+  canViewBilling: boolean;
   githubConfigured: boolean;
   initialBuilds: StoreAppBuildRow[];
   initialQuota: { current: number; limit: number | null };
@@ -1067,7 +1069,7 @@ export function MobileAppStudio({
   if (!unlocked || builderDisabled) {
     return <section className="card">
       <h1>{isEn ? "Android Mobile App Studio" : "استوديو تطبيق أندرويد"}</h1>
-      <QuotaPrompt resource="apk_builds" lang={lang} disabled />
+      <QuotaPrompt canViewBilling={canViewBilling} resource="apk_builds" lang={lang} disabled />
       {PreviewControlsBar}
       <AndroidPhoneMockup appName={appName} iconUrl={iconUrl} store={store} preview={preview}
         isEn={isEn} darkMode={previewDarkMode} locked />
@@ -1185,7 +1187,7 @@ export function MobileAppStudio({
         </div>
       </div>
 
-      {limitReached(quota.current, quota.limit) && <QuotaPrompt resource="apk_builds" lang={lang} usage={quota} />}
+      {limitReached(quota.current, quota.limit) && <QuotaPrompt canViewBilling={canViewBilling} resource="apk_builds" lang={lang} usage={quota} />}
       {!githubConfigured && (
         <div
           role="status"

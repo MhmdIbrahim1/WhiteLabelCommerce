@@ -1,6 +1,5 @@
 import { requireAdmin } from "@/lib/db";
-import { getStoreBilling } from "@/lib/billing-data";
-import { adminDb } from "@/lib/supabase/admin";
+import { getResourceAllowance } from "@/lib/billing-data";
 import brand from "@/lib/brand";
 import { photo } from "@/lib/shop";
 import { isTemplate } from "@/lib/theme-templates";
@@ -40,8 +39,7 @@ type RawPreviewProduct = {
 };
 
 export default async function AdminMobileAppPage() {
-  const { db, storeId, activeStore, isSuperAdmin } = await requireAdmin();
-  const secureDb = adminDb();
+  const { db, storeId, activeStore, isSuperAdmin, permissions } = await requireAdmin("manage_mobile_app");
 
   const [settingsRes, accessRes, buildsRes, productsRes, billing] = await Promise.all([
     db
@@ -52,7 +50,7 @@ export default async function AdminMobileAppPage() {
       .eq("store_id", storeId)
       .maybeSingle<StoreSettingsSelect>(),
     db.rpc("store_has_mobile_app_access", { p_store_id: storeId }),
-    secureDb
+    db
       .from("store_app_builds")
       .select(
         "id,store_id,app_name,app_id_suffix,package_id,icon_url,version_code,version_name,status,apk_download_url,github_run_url,created_at,updated_at,completed_at",
@@ -69,7 +67,7 @@ export default async function AdminMobileAppPage() {
       .eq("is_active", true)
       .order("created_at", { ascending: false })
       .limit(4),
-    getStoreBilling(storeId),
+    getResourceAllowance(storeId, "apk_builds"),
   ]);
 
   const unlocked =
@@ -146,14 +144,14 @@ export default async function AdminMobileAppPage() {
 
   return (
     <MobileAppStudio
-      key={[storeId, billing.period_ym, billing.entitlements.max_monthly_apk_builds, billing.apk_builds, unlocked].join(":")}
+      key={[storeId, billing.period_ym, billing.cap, billing.used, unlocked].join(":")}
       store={{
         storeId: activeStore.store_id,
         slug: activeStore.slug,
         nameAr: s?.store_name || activeStore.name_ar,
         nameEn: activeStore.name_en || s?.store_name || activeStore.name_ar,
-        planNameAr: billing.plan.name_ar,
-        planNameEn: billing.plan.name_en,
+        planNameAr: billing.plan_name_ar,
+        planNameEn: billing.plan_name_en,
         logoUrl: lastUploadedIcon,
         primaryColor: uiConfig.global.primaryButtonBg,
         primaryText: uiConfig.global.primaryButtonText,
@@ -190,10 +188,11 @@ export default async function AdminMobileAppPage() {
         products: previewProducts,
       }}
       unlocked={unlocked}
+      canViewBilling={Boolean(permissions.manage_billing)}
       isSuperAdmin={isSuperAdmin}
       githubConfigured={githubConfigured}
       initialBuilds={builds}
-      initialQuota={{ current: billing.apk_builds, limit: billing.entitlements.max_monthly_apk_builds }}
+      initialQuota={{ current: billing.used, limit: billing.cap }}
     />
   );
 }

@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
+import { readPermissions, type Permission } from "./team";
 import {
   ADMIN_STORE_COOKIE,
   DEFAULT_STORE_ID,
@@ -31,7 +32,7 @@ export const serverDb = cache(async () => {
   );
 });
 
-export const requireAdmin = cache(async () => {
+const adminContext = cache(async () => {
   const [db, jar] = await Promise.all([serverDb(), cookies()]);
   const {
     data: { user },
@@ -54,7 +55,12 @@ export const requireAdmin = cache(async () => {
     managedStores.find((s) => s.store_id === DEFAULT_STORE_ID) ??
     managedStores[0];
 
+  const access = await db.rpc("my_store_permissions", { p_store: activeStore.store_id });
+  const permissions = readPermissions(access.data);
+  if (access.error || !permissions) redirect("/account?notice=customer_only");
   return {
+    permissions,
+    owner: isSuperAdmin || activeStore.role === "owner",
     db,
     user,
     storeId: activeStore.store_id,
@@ -63,6 +69,12 @@ export const requireAdmin = cache(async () => {
     isSuperAdmin,
   };
 });
+
+export async function requireAdmin(...required: Permission[]) {
+  const context = await adminContext();
+  if (!required.every(permission => context.permissions[permission])) redirect("/admin/restricted");
+  return context;
+}
 
 export const requireSuperAdmin = cache(async () => {
   const db = await serverDb();

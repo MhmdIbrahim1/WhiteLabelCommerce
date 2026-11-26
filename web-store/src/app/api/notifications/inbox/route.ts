@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { serverDb } from "@/lib/db";
-import { adminUser } from "@/lib/access";
+import { adminUser, hasStoreNotificationAccess } from "@/lib/access";
 import { settings } from "@/lib/shop";
 import { ADMIN_STORE_COOKIE, getManagedStores } from "@/lib/tenant";
 import { UUID_RE } from "@/lib/paymob";
@@ -52,7 +52,7 @@ export async function GET(req: Request) {
       return Response.json({ items: [], unreadCount: 0 }, { status: 401 });
     }
     const activeAdminStoreId = await resolveActiveAdminStoreId(db);
-    if (!activeAdminStoreId) {
+    if (!activeAdminStoreId || !(await hasStoreNotificationAccess(db, activeAdminStoreId))) {
       return Response.json({ items: [], unreadCount: 0 }, { status: 403 });
     }
 
@@ -157,7 +157,7 @@ export async function PATCH(req: Request) {
       return Response.json({ error: "Unauthorized." }, { status: 401 });
     }
     const activeAdminStoreId = await resolveActiveAdminStoreId(db);
-    if (!activeAdminStoreId) {
+    if (!activeAdminStoreId || !(await hasStoreNotificationAccess(db, activeAdminStoreId))) {
       return Response.json({ error: "Forbidden." }, { status: 403 });
     }
     targetStoreId = activeAdminStoreId;
@@ -241,6 +241,7 @@ export async function DELETE(req: Request) {
   const user = authData.user;
 
   if (!user) {
+    if (scope === "admin") return Response.json({ error: "Unauthorized." }, { status: 401 });
     return Response.json({ ok: true, deletedCount: 0 }, { status: 200 });
   }
 
@@ -251,7 +252,7 @@ export async function DELETE(req: Request) {
       return Response.json({ error: "Unauthorized." }, { status: 401 });
     }
     const activeAdminStoreId = await resolveActiveAdminStoreId(db);
-    if (!activeAdminStoreId) {
+    if (!activeAdminStoreId || !(await hasStoreNotificationAccess(db, activeAdminStoreId))) {
       return Response.json({ error: "Forbidden." }, { status: 403 });
     }
     targetStoreId = activeAdminStoreId;

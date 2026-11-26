@@ -3,7 +3,7 @@ begin read only;
 do $unit$
 declare
   plan public.saas_plans;
-  base jsonb := '{"max_products":50,"max_monthly_orders":100,"max_monthly_apk_builds":2,"custom_domains_enabled":true}';
+  base jsonb := '{"max_products":50,"max_monthly_orders":100,"max_monthly_apk_builds":2,"max_staff_members":1,"custom_domains_enabled":true}';
   changed jsonb := '{"max_products":null,"max_monthly_orders":0,"custom_domains_enabled":false}';
   bad jsonb;
   detail text;
@@ -75,7 +75,7 @@ begin
   subscription := public.billing_admin_subscription(fixture);
   if subscription.store_id is distinct from fixture or (billing->>'products')::integer is distinct from actual_products
     or billing->'plan'->>'code' is distinct from subscription.plan_code or billing ? 'admin_notes'
-    or not (billing->'entitlements' ?& array['max_products','max_monthly_orders','max_monthly_apk_builds','custom_domains_enabled'])
+    or not (billing->'entitlements' ?& array['max_products','max_monthly_orders','max_monthly_apk_builds','max_staff_members','custom_domains_enabled'])
     then raise exception 'billing read contract'; end if;
   perform set_config('request.jwt.claim.sub',gen_random_uuid()::text,true);
   begin

@@ -8,7 +8,8 @@ select s.id as tenant, gen_random_uuid() as review, gen_random_uuid() as author,
 from public.stores s where slug in ('nova-store','omar-a7a');
 insert into auth.users(id,email,email_confirmed_at)
 select merchant, merchant::text || '@example.invalid', now() from review_cases;
-insert into public.store_members(store_id,user_id,role) select tenant, merchant, 'admin' from review_cases;
+insert into public.store_members(store_id,user_id,role,permissions)
+select tenant, merchant, 'catalog','{"manage_products":true}'::jsonb from review_cases;
 insert into public.product_reviews (id, store_id, product_id, user_id, author_name, rating)
 select c.review, c.tenant, (select id from public.products where store_id = c.tenant and is_active limit 1),
        c.author, 'Rollback follow-up QA', 5 from review_cases c;

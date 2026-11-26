@@ -34,7 +34,7 @@ type RawProductRow = {
 };
 
 export default async function CustomizerPage() {
-  const { db, storeId, activeStore } = await requireAdmin();
+  const { db, storeId, activeStore } = await requireAdmin("manage_settings");
 
   const settingsQuery = await db
     .from("store_settings")

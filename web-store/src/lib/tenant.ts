@@ -140,34 +140,5 @@ export async function getManagedStores(
     });
   }
 
-  // Fail closed on unexpected RPC errors; only fall back if RPC does not exist yet
-  if (error && error.code !== "42883" && error.code !== "PGRST202") {
-    return [];
-  }
-
-  // Graceful fallback before migration is applied
-  const {
-    data: { user },
-  } = await db.auth.getUser();
-  if (!user) return [];
-  const { data: profile } = await db
-    .from("profiles")
-    .select("role,store_id")
-    .eq("id", user.id)
-    .maybeSingle<{ role: string; store_id?: string | null }>();
-  if (profile?.role !== "admin") return [];
-  return [
-    {
-      store_id: profile.store_id || DEFAULT_STORE_ID,
-      slug: DEFAULT_STORE_SLUG,
-      name_ar: "Nova Store",
-      name_en: "Nova Store",
-      plan: "starter",
-      status: "active",
-      max_products: 50,
-      role: "admin",
-      mobile_app_access: "plan",
-      mobile_app_unlocked: false,
-    },
-  ];
+  return [];
 }

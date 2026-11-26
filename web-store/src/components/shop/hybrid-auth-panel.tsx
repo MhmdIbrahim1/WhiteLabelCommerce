@@ -91,6 +91,7 @@ function localizedAuthError(
 
 export function HybridAuthPanel({
   nextPath = "",
+  initialOtp = false,
   basePath,
   initialSignup = false,
   storeName,
@@ -98,6 +99,7 @@ export function HybridAuthPanel({
   initialRegistered = "",
 }: {
   nextPath?: string;
+  initialOtp?: boolean;
   basePath: string;
   initialSignup?: boolean;
   storeName: string;
@@ -111,7 +113,7 @@ export function HybridAuthPanel({
   const isEn = lang === "en";
   const ArrowIcon = isEn ? ArrowRight : ArrowLeft;
 
-  const [mode, setMode] = useState<AuthMode>("password");
+  const [mode, setMode] = useState<AuthMode>(initialOtp ? "otp" : "password");
   const [pwMode, setPwMode] = useState<PasswordSubMode>(initialSignup ? "signup" : "signin");
 
   // OTP state
