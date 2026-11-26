@@ -9,11 +9,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Notifications
-import androidx.compose.material.icons.rounded.Search
+import com.whitelabel.commerce.core.designsystem.components.SearchAction
 import androidx.compose.material.icons.rounded.Storefront
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -69,6 +70,8 @@ import com.whitelabel.commerce.feature.home.parseHeroCategoryParam
 import com.whitelabel.commerce.feature.notifications.NotificationsScreen
 import com.whitelabel.commerce.feature.orders.OrderDetailScreen
 import com.whitelabel.commerce.feature.orders.OrdersScreen
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.whitelabel.commerce.feature.support.TicketDetailsScreen
 import com.whitelabel.commerce.feature.support.SupportScreen
 import com.whitelabel.commerce.feature.wishlist.WishlistScreen
 import kotlinx.coroutines.launch
@@ -103,8 +106,9 @@ fun WhiteLabelAppShell(
     // Cross-tab handoff states
     var pendingCategoryId by remember { mutableStateOf<String?>(null) }
     var pendingFlashDealsOnly by remember { mutableStateOf(false) }
-    var pendingFocusSearch by remember { mutableStateOf(false) }
     var pendingTrackOrder by remember { mutableStateOf<Triple<String, String, PaymentFlowOutcome?>?>(null) }
+
+    fun openSearch() = navController.navigate(AppRoutes.SEARCH, AppRoutes.searchOptions)
 
     fun navigateToTab(route: String) {
         navController.navigate(route) {
@@ -232,17 +236,7 @@ fun WhiteLabelAppShell(
                         }
                     },
                     actions = {
-                        IconButton(
-                            onClick = {
-                                pendingFocusSearch = true
-                                navigateToTab(AppRoutes.CATEGORIES)
-                            },
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Search,
-                                contentDescription = localized("بحث", "Search"),
-                            )
-                        }
+                        SearchAction(::openSearch)
                         IconButton(onClick = { navController.navigate(AppRoutes.WISHLIST) }) {
                             if (isSignedIn && wishlistCount > 0) {
                                 BadgedBox(
@@ -304,6 +298,15 @@ fun WhiteLabelAppShell(
                         titleContentColor = MaterialTheme.colorScheme.onSurface,
                         actionIconContentColor = MaterialTheme.colorScheme.primary,
                     ),
+                )
+            } else if (currentDestination?.route == AppRoutes.SEARCH) {
+                TopAppBar(
+                    title = { Text(localized("بحث", "Search")) },
+                    navigationIcon = {
+                        IconButton(onClick = { navController.popBackStack() }) {
+                            Icon(Icons.AutoMirrored.Rounded.ArrowBack, localized("رجوع", "Back"))
+                        }
+                    },
                 )
             }
         },
@@ -406,12 +409,19 @@ fun WhiteLabelAppShell(
                     onConsumeInitialCategory = { pendingCategoryId = null },
                     initialFlashDealsOnly = pendingFlashDealsOnly,
                     onConsumeInitialFlashDeals = { pendingFlashDealsOnly = false },
-                    focusSearchRequest = pendingFocusSearch,
-                    onConsumeFocusSearch = { pendingFocusSearch = false },
                     onProductClick = { productId ->
                         navController.navigate(AppRoutes.productDetail(productId))
                     },
                     onShowMessage = { msg -> showSnackbar(msg, showCartAction = true) },
+                    onWishlistSignInPrompt = ::promptSignInForWishlist,
+                )
+            }
+
+            composable(AppRoutes.SEARCH) {
+                CatalogScreen(
+                    autofocusSearch = true,
+                    onProductClick = { navController.navigate(AppRoutes.productDetail(it)) },
+                    onShowMessage = { showSnackbar(it, showCartAction = true) },
                     onWishlistSignInPrompt = ::promptSignInForWishlist,
                 )
             }
@@ -460,6 +470,7 @@ fun WhiteLabelAppShell(
                 OrderDetailScreen(
                     orderId = orderId,
                     onBack = { navController.popBackStack() },
+                    onSearch = ::openSearch,
                     onOpenSupport = { id -> navController.navigate(AppRoutes.support(id)) },
                     onOpenAccount = {
                         navController.popBackStack()
@@ -475,6 +486,7 @@ fun WhiteLabelAppShell(
             ) {
                 ProductDetailScreen(
                     onBack = { navController.popBackStack() },
+                    onSearch = ::openSearch,
                     onAddedToCart = { msg -> showSnackbar(msg, showCartAction = true) },
                     onProductClick = { nextId ->
                         navController.navigate(AppRoutes.productDetail(nextId))
@@ -488,6 +500,7 @@ fun WhiteLabelAppShell(
             composable(AppRoutes.CHECKOUT) {
                 CheckoutScreen(
                     onBack = { navController.popBackStack() },
+                    onSearch = ::openSearch,
                     onOpenAccount = { navigateToTab(AppRoutes.ACCOUNT) },
                     onTrackOrder = { orderNumber, phone, paymentOutcome ->
                         pendingTrackOrder = Triple(orderNumber, phone, paymentOutcome)
@@ -495,8 +508,7 @@ fun WhiteLabelAppShell(
                         navigateToTab(AppRoutes.ORDERS)
                     },
                     onContinueShopping = {
-                        navController.popBackStack()
-                        navigateToTab(AppRoutes.HOME)
+                        navController.popBackStack(AppRoutes.HOME, inclusive = false)
                     },
                     onShowMessage = { msg -> showSnackbar(msg) },
                 )
@@ -526,6 +538,7 @@ fun WhiteLabelAppShell(
             composable(AppRoutes.WISHLIST) {
                 WishlistScreen(
                     onBack = { navController.popBackStack() },
+                    onSearch = ::openSearch,
                     onProductClick = { productId ->
                         navController.navigate(AppRoutes.productDetail(productId))
                     },
@@ -544,6 +557,7 @@ fun WhiteLabelAppShell(
             composable(AppRoutes.NOTIFICATIONS) {
                 NotificationsScreen(
                     onBack = { navController.popBackStack() },
+                    onSearch = ::openSearch,
                     onOpenDeepLink = { deepLink ->
                         navController.popBackStack()
                         handleHeroRoute(deepLink)
@@ -562,8 +576,22 @@ fun WhiteLabelAppShell(
                 ),
             ) {
                 SupportScreen(
+                    onOpenTicket = { navController.navigate(AppRoutes.supportTicket(it)) { launchSingleTop = true } },
                     onBack = { navController.popBackStack() },
+                    onSearch = ::openSearch,
                     onShowMessage = { msg -> showSnackbar(msg) },
+                )
+            }
+            composable(
+                AppRoutes.SUPPORT_TICKET,
+                arguments = listOf(navArgument("ticketId") { type = NavType.StringType }),
+            ) { entry ->
+                val parent = remember(entry) { navController.getBackStackEntry(AppRoutes.SUPPORT) }
+                TicketDetailsScreen(
+                    ticketId = requireNotNull(entry.arguments?.getString("ticketId")),
+                    onBack = { navController.popBackStack() },
+                    onSearch = ::openSearch,
+                    viewModel = hiltViewModel(parent),
                 )
             }
         }

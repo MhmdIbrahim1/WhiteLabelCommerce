@@ -69,6 +69,7 @@ enum class TopLevelDestination(
 object AppRoutes {
     const val HOME = "home"
     const val CATEGORIES = "categories"
+    const val SEARCH = "search"
     const val CART = "cart"
     const val ORDERS = "orders"
 
@@ -79,6 +80,12 @@ object AppRoutes {
     const val WISHLIST = "wishlist"
     const val NOTIFICATIONS = "notifications"
     const val SUPPORT = "support?orderId={orderId}"
+
+    const val SUPPORT_TICKET = "support/ticket/{ticketId}"
+
+    fun supportTicket(id: String) = "support/ticket/${Uri.encode(id)}"
+
+    val searchOptions = androidx.navigation.navOptions { launchSingleTop = true }
 
     val topLevelRoutes: Set<String> = setOf(HOME, CATEGORIES, CART, ORDERS, ACCOUNT)
 

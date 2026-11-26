@@ -40,6 +40,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import com.whitelabel.commerce.core.notifications.PushIssue
+import com.whitelabel.commerce.core.designsystem.components.SearchAction
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -61,6 +63,7 @@ import com.whitelabel.commerce.core.notifications.AppNotification
 @Composable
 fun NotificationsScreen(
     onBack: () -> Unit,
+    onSearch: () -> Unit,
     onOpenDeepLink: (String) -> Unit,
     modifier: Modifier = Modifier,
     viewModel: NotificationsViewModel = hiltViewModel(),
@@ -90,6 +93,7 @@ fun NotificationsScreen(
                     }
                 },
                 actions = {
+                    SearchAction(onSearch)
                     IconButton(onClick = viewModel::refresh) {
                         Icon(
                             imageVector = Icons.Rounded.Refresh,
@@ -126,6 +130,20 @@ fun NotificationsScreen(
                 .fillMaxSize()
                 .padding(innerPadding),
         ) {
+            state.pushIssue?.let { issue ->
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    Text(when (issue) {
+                        PushIssue.APP_CONFIGURATION -> localized("التنبيهات الفورية غير مُفعّلة في هذه النسخة.", "Push notifications are unavailable in this build.")
+                        PushIssue.PLAY_SERVICES -> localized("تحتاج التنبيهات الفورية إلى خدمات Google Play محدّثة.", "Push notifications need up-to-date Google Play services.")
+                        PushIssue.REGISTRATION -> localized("تعذر تفعيل التنبيهات الفورية. تحقق من اتصالك ثم أعد المحاولة.", "Push notifications could not be enabled. Check your connection and try again.")
+                    })
+                    if (issue != PushIssue.APP_CONFIGURATION) {
+                        androidx.compose.material3.TextButton(onClick = viewModel::retryPush) {
+                            Text(localized("إعادة المحاولة", "Retry"))
+                        }
+                    }
+                }
+            }
             if (state.isRefreshing) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }

@@ -23,7 +23,10 @@ import androidx.compose.material.icons.automirrored.rounded.Chat
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Email
-import androidx.compose.material.icons.rounded.MarkEmailRead
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -42,6 +45,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import com.whitelabel.commerce.core.designsystem.components.SearchAction
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -63,6 +67,8 @@ private val WhatsAppGreen = Color(0xFF16A34A)
 @Composable
 fun SupportScreen(
     onBack: () -> Unit,
+    onSearch: () -> Unit,
+    onOpenTicket: (String) -> Unit,
     onShowMessage: (String) -> Unit,
     modifier: Modifier = Modifier,
     viewModel: SupportViewModel = hiltViewModel(),
@@ -83,6 +89,7 @@ fun SupportScreen(
                         style = MaterialTheme.typography.titleLarge,
                     )
                 },
+                actions = { SearchAction(onSearch) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -336,7 +343,13 @@ fun SupportScreen(
                 }
             }
 
-            // 3. Submitted Tickets & Admin Replies
+            if (state.form.ticketLoadFailed) {
+                item {
+                    Text(localized("تعذر تحديث التذاكر.", "Tickets could not be refreshed."))
+                    OutlinedButton(onClick = viewModel::refreshTickets) { Text(localized("إعادة المحاولة", "Retry")) }
+                }
+            }
+
             if (state.allTickets.isNotEmpty()) {
                 item {
                     Text(
@@ -347,7 +360,7 @@ fun SupportScreen(
                 }
 
                 items(state.allTickets, key = { it.id }) { ticket ->
-                    SupportTicketCard(ticket = ticket)
+                    SupportTicketCard(ticket, state.storeSettings.locale) { onOpenTicket(ticket.id) }
                 }
             }
         }
@@ -355,9 +368,11 @@ fun SupportScreen(
 }
 
 @Composable
-private fun SupportTicketCard(ticket: SupportTicket) {
+private fun SupportTicketCard(ticket: SupportTicket, locale: String, onClick: () -> Unit) {
+    val content = ticket.presentation()
     val brandColors = LocalBrandColors.current
     Card(
+        onClick = onClick,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, brandColors.hairline),
         shape = MaterialTheme.shapes.medium,
@@ -373,7 +388,9 @@ private fun SupportTicketCard(ticket: SupportTicket) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = ticket.subject,
+                    text = content.subject,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f),
@@ -381,61 +398,70 @@ private fun SupportTicketCard(ticket: SupportTicket) {
                 TicketStatusBadge(status = ticket.status)
             }
 
-            ticket.orderId?.takeIf { it.isNotBlank() }?.let { linked ->
-                Text(
-                    text = localized("مرتبطة بالطلب #${linked.take(8)}", "Linked to order #${linked.take(8)}"),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
-
+            TicketMetadata(content.orderNumber, formatTicketDate(ticket.createdAt, locale))
             Text(
-                text = ticket.message,
+                text = content.body,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
             )
-
-            Text(
-                text = ticket.createdAt.take(16),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-
             if (ticket.adminReply.isNotBlank()) {
-                HorizontalDivider(color = brandColors.hairline)
-                Surface(
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
-                    shape = MaterialTheme.shapes.small,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Column(
-                        modifier = Modifier.padding(10.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.MarkEmailRead,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(16.dp),
-                            )
-                            Text(
-                                text = localized("رد فريق الدعم", "Support reply"),
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                        Text(
-                            text = ticket.adminReply,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
+                Text(localized("رد فريق الدعم", "Support reply"), color = MaterialTheme.colorScheme.primary)
+            }
+        }
+    }
+}
+
+@Composable
+private fun TicketMetadata(number: String?, date: String?) {
+    number?.let { Text(localized("الطلب $it", "Order $it"), style = MaterialTheme.typography.labelMedium) }
+    date?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun TicketDetailsScreen(ticketId: String, onBack: () -> Unit, onSearch: () -> Unit, viewModel: SupportViewModel) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val ticket = state.allTickets.firstOrNull { it.id == ticketId }
+    LaunchedEffect(ticketId) { viewModel.refreshTickets() }
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(localized("تفاصيل التذكرة", "Ticket details")) },
+                actions = { SearchAction(onSearch) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, localized("رجوع", "Back"))
                     }
+                },
+            )
+        },
+    ) { padding ->
+        Column(
+            Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            if (ticket != null) {
+                val content = ticket.presentation()
+                Text(content.subject, style = MaterialTheme.typography.headlineSmall)
+                TicketStatusBadge(status = ticket.status)
+                TicketMetadata(content.orderNumber, formatTicketDate(ticket.createdAt, state.storeSettings.locale))
+                HorizontalDivider()
+                Text(localized("رسالتك", "Your message"), style = MaterialTheme.typography.titleMedium)
+                Text(content.body)
+                if (ticket.adminReply.isNotBlank()) {
+                    HorizontalDivider()
+                    Text(localized("رد فريق الدعم", "Support reply"), style = MaterialTheme.typography.titleMedium)
+                    Text(ticket.adminReply)
                 }
+            } else if (state.form.isLoadingTickets) {
+                CircularProgressIndicator()
+            } else {
+                Text(localized("تعذر عرض هذه التذكرة.", "This ticket could not be opened."))
+            }
+            if (state.form.ticketLoadFailed) {
+                Text(localized("تعذر تحديث التذاكر.", "Tickets could not be refreshed."))
+                OutlinedButton(onClick = viewModel::refreshTickets) { Text(localized("إعادة المحاولة", "Retry")) }
             }
         }
     }

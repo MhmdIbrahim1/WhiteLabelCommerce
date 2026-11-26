@@ -56,6 +56,12 @@ sealed interface SwitchToCodOutcome {
     data object Failure : SwitchToCodOutcome
 }
 
+internal fun receiptListKey(orderNumber: String) = "receipt:${orderNumber.trim().lowercase()}"
+internal fun accountListKey(orderId: String) = "order:${orderId.trim().lowercase()}"
+
+internal fun <T> List<T>.distinctOrders(id: (T) -> String): List<T> =
+    filter { id(it).isNotBlank() }.distinctBy { id(it).trim().lowercase() }
+
 data class OrdersUiState(
     val tracking: OrderTrackingFormState = OrderTrackingFormState(),
     val localReceipts: List<SavedOrderReceipt> = emptyList(),
@@ -87,8 +93,10 @@ class OrdersViewModel @Inject constructor(
         authRepository.sessionState,
     ) { tracking, receipts, settings, session ->
         OrdersUiState(
-            tracking = tracking,
-            localReceipts = receipts,
+            tracking = tracking.copy(accountOrders = if (session is AuthSessionState.SignedIn) {
+                tracking.accountOrders.filter { it.userId == session.userId }.distinctOrders { it.id }
+            } else emptyList()),
+            localReceipts = receipts.distinctOrders { it.orderNumber },
             storeSettings = settings,
             isSignedIn = session is AuthSessionState.SignedIn,
         )
@@ -102,7 +110,6 @@ class OrdersViewModel @Inject constructor(
     )
 
     init {
-        loadAccountOrders()
         viewModelScope.launch {
             authRepository.sessionState.collect { session ->
                 when (session) {

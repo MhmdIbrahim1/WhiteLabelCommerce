@@ -277,7 +277,7 @@ class ProductDetailViewModel @Inject constructor(
             val variantKey = listOfNotNull(state.selectedSize, state.selectedColor)
                 .filter { it.isNotBlank() }
                 .joinToString(" / ")
-            val token = fcmTokenManager.fetchTokenOrNull()
+            val token = fcmTokenManager.syncCurrentToken()
             notificationRepository.subscribeBackInStock(
                 productId = product.id,
                 variantKey = variantKey,

@@ -37,7 +37,7 @@ data class OrderDto(
     @SerialName("payment_status") val paymentStatus: String = "unpaid",
     @SerialName("tracking_number") val trackingNumber: String? = null,
     @SerialName("shipping_carrier") val carrier: String? = null,
-    @SerialName("id") val id: String,
+    @SerialName("id") val id: String? = null,
     @SerialName("user_id") val userId: String? = null,
     @SerialName("status") val status: String = "pending",
     @SerialName("shipping_address") val shippingAddress: String,
@@ -50,27 +50,29 @@ data class OrderDto(
     @SerialName("cashback_earned") val cashbackEarned: Double = 0.0,
     @SerialName("total") val total: Double? = null,
     @SerialName("guest_tracking") val guestTracking: Boolean = false,
-    @SerialName("created_at") val createdAt: String,
-    @SerialName("order_items") val orderItems: List<OrderItemDto> = emptyList(),
+    @SerialName("created_at") val createdAt: String? = null,
+    @SerialName("order_items") val orderItems: List<OrderItemDto?>? = null,
 ) {
-    fun toDomain(): Order = Order(
-        paymentStatus = paymentStatus, trackingNumber = trackingNumber, carrier = carrier,
-        id = id,
-        userId = userId,
-        status = OrderStatus.fromRaw(status),
-        shippingAddress = shippingAddress,
-        phone = phone,
-        paymentMethod = PaymentMethod.fromRaw(paymentMethod),
-        currency = currency,
-        subtotal = subtotal,
-        shippingFee = shippingFee,
-        walletDiscount = walletDiscount,
-        cashbackEarned = cashbackEarned,
-        total = total,
-        guestTracking = guestTracking,
-        createdAt = createdAt,
-        items = orderItems.map { it.toDomain() },
-    )
+    fun toDomainOrNull(): Order? = id?.trim()?.takeIf { it.isNotEmpty() }?.let { orderId ->
+        Order(
+            paymentStatus = paymentStatus, trackingNumber = trackingNumber, carrier = carrier,
+            id = orderId,
+            userId = userId,
+            status = OrderStatus.fromRaw(status),
+            shippingAddress = shippingAddress,
+            phone = phone,
+            paymentMethod = PaymentMethod.fromRaw(paymentMethod),
+            currency = currency,
+            subtotal = subtotal,
+            shippingFee = shippingFee,
+            walletDiscount = walletDiscount,
+            cashbackEarned = cashbackEarned,
+            total = total,
+            guestTracking = guestTracking,
+            createdAt = createdAt.orEmpty(),
+            items = orderItems.orEmpty().filterNotNull().map { it.toDomain() },
+        )
+    }
 }
 
 /**

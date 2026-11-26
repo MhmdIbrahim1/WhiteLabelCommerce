@@ -13,7 +13,6 @@ import com.google.firebase.messaging.RemoteMessage
 import com.whitelabel.commerce.MainActivity
 import com.whitelabel.commerce.R
 import dagger.Lazy
-import com.whitelabel.commerce.core.domain.repository.StoreRepository
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -27,15 +26,12 @@ class CommerceFirebaseMessagingService : FirebaseMessagingService() {
     @Inject
     lateinit var tokenManager: Lazy<FcmTokenManager>
 
-    @Inject
-    lateinit var stores: Lazy<StoreRepository>
-
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onRegistered(token: String) {
         super.onRegistered(token)
         serviceScope.launch {
-            tokenManager.get().syncExplicitToken(token = token, locale = stores.get().storeSettings.value.locale)
+            tokenManager.get().syncCurrentToken(registeredId = token)
         }
     }
 
@@ -50,16 +46,7 @@ class CommerceFirebaseMessagingService : FirebaseMessagingService() {
             ?: message.data["body"]
             ?: return
 
-        val category = message.data["category"].orEmpty()
-        val channelId = when (message.data["channel_id"]) {
-            NotificationChannels.PROMOTIONS_CHANNEL_ID -> NotificationChannels.PROMOTIONS_CHANNEL_ID
-            NotificationChannels.ORDERS_CHANNEL_ID -> NotificationChannels.ORDERS_CHANNEL_ID
-            else -> if (category == "promo_campaign" || category == "abandoned_cart") {
-                NotificationChannels.PROMOTIONS_CHANNEL_ID
-            } else {
-                NotificationChannels.ORDERS_CHANNEL_ID
-            }
-        }
+        val channelId = NotificationChannels.forPayload(message.data)
 
         val deepLink = message.data["deep_link"]?.takeIf { it.isNotBlank() } ?: "/"
         val notificationId = message.data["notification_id"]
@@ -81,7 +68,7 @@ class CommerceFirebaseMessagingService : FirebaseMessagingService() {
         )
 
         val builder = NotificationCompat.Builder(this, channelId)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
@@ -105,6 +92,8 @@ class CommerceFirebaseMessagingService : FirebaseMessagingService() {
 
         runCatching {
             NotificationManagerCompat.from(this).notify(requestCode, builder.build())
+        }.onFailure { error ->
+            android.util.Log.w("CommercePush", "Notification could not be displayed (${error.javaClass.simpleName})")
         }
     }
 }

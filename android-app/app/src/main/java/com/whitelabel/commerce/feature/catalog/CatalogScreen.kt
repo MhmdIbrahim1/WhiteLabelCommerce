@@ -66,6 +66,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.withResumed
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.whitelabel.commerce.core.designsystem.LocalBrandColors
@@ -81,12 +82,11 @@ import com.whitelabel.commerce.core.domain.model.WishlistToggleOutcome
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun CatalogScreen(
-    initialCategoryId: String?,
-    onConsumeInitialCategory: () -> Unit,
+    initialCategoryId: String? = null,
+    onConsumeInitialCategory: () -> Unit = {},
     initialFlashDealsOnly: Boolean = false,
     onConsumeInitialFlashDeals: () -> Unit = {},
-    focusSearchRequest: Boolean = false,
-    onConsumeFocusSearch: () -> Unit = {},
+    autofocusSearch: Boolean = false,
     onProductClick: (String) -> Unit,
     onShowMessage: (String) -> Unit,
     onWishlistSignInPrompt: () -> Unit = {},
@@ -97,6 +97,9 @@ fun CatalogScreen(
     val brandColors = LocalBrandColors.current
     val storeSettings = LocalStoreSettings.current
     val searchFocusRequester = remember { FocusRequester() }
+    var needsFocus by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(autofocusSearch) }
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
     var showFilterSheet by remember { mutableStateOf(false) }
 
     LaunchedEffect(initialCategoryId) {
@@ -110,13 +113,6 @@ fun CatalogScreen(
         if (initialFlashDealsOnly) {
             viewModel.applyExternalFlashDealsOnly()
             onConsumeInitialFlashDeals()
-        }
-    }
-
-    LaunchedEffect(focusSearchRequest) {
-        if (focusSearchRequest) {
-            runCatching { searchFocusRequester.requestFocus() }
-            onConsumeFocusSearch()
         }
     }
 
@@ -176,6 +172,16 @@ fun CatalogScreen(
                                 .weight(1f)
                                 .focusRequester(searchFocusRequester),
                         )
+
+                        if (needsFocus) {
+                            LaunchedEffect(Unit) {
+                                lifecycle.withResumed {
+                                    searchFocusRequester.requestFocus()
+                                    keyboard?.show()
+                                    needsFocus = false
+                                }
+                            }
+                        }
 
                         BadgedBox(
                             badge = {

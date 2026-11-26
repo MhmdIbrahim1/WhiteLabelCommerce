@@ -128,7 +128,7 @@ fun OrdersScreen(
     modifier: Modifier = Modifier,
     viewModel: OrdersViewModel = hiltViewModel(),
 ) {
-    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val state = viewModel.uiState.collectAsStateWithLifecycle().value
     val brandColors = LocalBrandColors.current
     val clipboard = LocalClipboardManager.current
     var pendingRetryChooser by remember { mutableStateOf<PendingRetrySelection?>(null) }
@@ -483,7 +483,7 @@ fun OrdersScreen(
                 )
             }
 
-            items(state.localReceipts, key = { it.orderNumber }) { receipt ->
+            items(state.localReceipts, key = { receiptListKey(it.orderNumber) }) { receipt ->
                 SavedReceiptCard(
                     receipt = receipt,
                     locale = state.storeSettings.locale,
@@ -522,7 +522,7 @@ fun OrdersScreen(
                     fontWeight = FontWeight.Bold,
                 )
             }
-            items(state.tracking.accountOrders, key = { it.id }) { order ->
+            items(state.tracking.accountOrders, key = { accountListKey(it.id) }) { order ->
                 AccountOrderCard(
                     order = order,
                     returnRequest = state.tracking.returnsByOrderId[order.id],

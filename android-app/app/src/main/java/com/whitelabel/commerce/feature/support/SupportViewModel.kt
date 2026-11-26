@@ -8,6 +8,8 @@ import androidx.lifecycle.viewModelScope
 import com.whitelabel.commerce.core.domain.model.SavedOrderReceipt
 import com.whitelabel.commerce.core.domain.model.StoreSettings
 import com.whitelabel.commerce.core.domain.model.SupportTicket
+import com.whitelabel.commerce.core.domain.model.AuthSessionState
+import com.whitelabel.commerce.core.domain.repository.AuthRepository
 import com.whitelabel.commerce.core.domain.repository.OrderRepository
 import com.whitelabel.commerce.core.domain.repository.StoreRepository
 import com.whitelabel.commerce.core.domain.repository.SupportRepository
@@ -15,6 +17,10 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -32,6 +38,7 @@ data class SupportFormState(
     val submitSuccess: Boolean = false,
     val remoteTickets: List<SupportTicket> = emptyList(),
     val isLoadingTickets: Boolean = false,
+    val ticketLoadFailed: Boolean = false,
 )
 
 data class SupportUiState(
@@ -51,6 +58,7 @@ data class SupportUiState(
 class SupportViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val supportRepository: SupportRepository,
+    private val authRepository: AuthRepository,
     orderRepository: OrderRepository,
     storeRepository: StoreRepository,
 ) : ViewModel() {
@@ -69,9 +77,11 @@ class SupportViewModel @Inject constructor(
         supportRepository.localSubmittedTickets,
         orderRepository.savedLocalOrders,
         storeRepository.storeSettings,
-    ) { form, localTickets, orders, settings ->
+        authRepository.sessionState,
+    ) { form, localTickets, orders, settings, session ->
+        val owner = (session as? AuthSessionState.SignedIn)?.userId
         SupportUiState(
-            form = form,
+            form = form.copy(remoteTickets = form.remoteTickets.filter { owner != null && it.customerId == owner }),
             localTickets = localTickets,
             recentOrders = orders,
             storeSettings = settings,
@@ -85,8 +95,17 @@ class SupportViewModel @Inject constructor(
         ),
     )
 
+    private var ticketRefresh: Job? = null
+
     init {
-        refreshTickets()
+        viewModelScope.launch {
+            authRepository.sessionState.filter { it !is AuthSessionState.Loading }
+                .map { (it as? AuthSessionState.SignedIn)?.userId }.distinctUntilChanged().collect {
+                    ticketRefresh?.cancel()
+                    formState.update { form -> form.copy(remoteTickets = emptyList()) }
+                    refreshTickets()
+                }
+        }
     }
 
     fun onSubjectChange(value: String) {
@@ -108,14 +127,15 @@ class SupportViewModel @Inject constructor(
     }
 
     fun refreshTickets() {
-        viewModelScope.launch {
-            formState.update { it.copy(isLoadingTickets = true) }
+        if (ticketRefresh?.isActive == true || authRepository.sessionState.value is AuthSessionState.Loading) return
+        ticketRefresh = viewModelScope.launch {
+            formState.update { it.copy(isLoadingTickets = true, ticketLoadFailed = false) }
             supportRepository.getMyTickets()
                 .onSuccess { remote ->
                     formState.update { it.copy(remoteTickets = remote, isLoadingTickets = false) }
                 }
                 .onFailure {
-                    formState.update { it.copy(isLoadingTickets = false) }
+                    formState.update { it.copy(isLoadingTickets = false, ticketLoadFailed = true) }
                 }
         }
     }

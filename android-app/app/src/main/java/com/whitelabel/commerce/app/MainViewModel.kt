@@ -82,9 +82,7 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             authRepository.sessionState.collect { session ->
                 if (session is AuthSessionState.Loading) return@collect
-                val locale = storeRepository.storeSettings.value.locale
-                val phone = (session as? AuthSessionState.SignedIn)?.profile?.phone
-                fcmTokenManager.syncCurrentToken(locale = locale, phone = phone)
+                syncPushToken()
                 notificationRepository.refresh()
                 wishlistRepository.refreshWishlistIds()
             }
@@ -110,12 +108,12 @@ class MainViewModel @Inject constructor(
 
     fun setLanguage(locale: String) {
         storeRepository.setLanguage(locale)
-        syncPushToken(locale)
+        syncPushToken()
     }
 
-    fun syncPushToken(locale: String) {
+    fun syncPushToken() {
         viewModelScope.launch {
-            fcmTokenManager.syncCurrentToken(locale = locale)
+            fcmTokenManager.syncCurrentToken()
         }
     }
 

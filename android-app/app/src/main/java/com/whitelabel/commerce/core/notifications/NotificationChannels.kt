@@ -11,6 +11,15 @@ object NotificationChannels {
     const val EXTRA_DEEP_LINK = "deep_link"
     const val EXTRA_NOTIFICATION_ID = "notification_id"
 
+    internal fun forPayload(data: Map<String, String>): String = when (data["channel_id"]) {
+        PROMOTIONS_CHANNEL_ID -> PROMOTIONS_CHANNEL_ID
+        ORDERS_CHANNEL_ID -> ORDERS_CHANNEL_ID
+        else -> when (data["category"]) {
+            "promo_campaign", "abandoned_cart" -> PROMOTIONS_CHANNEL_ID
+            else -> ORDERS_CHANNEL_ID
+        }
+    }
+
     fun ensureCreated(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager

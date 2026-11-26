@@ -93,7 +93,7 @@ class MainActivity : ComponentActivity() {
                 contract = ActivityResultContracts.RequestPermission(),
             ) { granted ->
                 if (granted) {
-                    mainViewModel.syncPushToken(uiState.storeSettings.locale)
+                    mainViewModel.syncPushToken()
                 }
             }
 
@@ -120,6 +120,7 @@ class MainActivity : ComponentActivity() {
 
             androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
                 mainViewModel.refreshStoreSettings()
+                mainViewModel.syncPushToken()
                 onPauseOrDispose {}
             }
 

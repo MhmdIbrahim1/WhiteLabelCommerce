@@ -164,7 +164,7 @@ class NotificationRepositoryImpl @Inject constructor(
         guestSessionId: String?,
         phone: String?,
     ): Result<Unit> = runSuspendCatching {
-        if (token.trim().length < 16) return@runSuspendCatching
+        require(token.trim().length >= 16)
         supabase.postgrest.rpc(
             "register_push_subscription",
             buildJsonObject {

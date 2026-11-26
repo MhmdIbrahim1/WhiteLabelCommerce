@@ -53,6 +53,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import com.whitelabel.commerce.core.designsystem.components.SearchAction
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -90,6 +91,7 @@ import com.whitelabel.commerce.core.domain.model.WishlistToggleOutcome
 @Composable
 fun ProductDetailScreen(
     onBack: () -> Unit,
+    onSearch: () -> Unit,
     onAddedToCart: (String) -> Unit,
     onProductClick: (String) -> Unit = {},
     onOpenAccount: () -> Unit = {},
@@ -130,6 +132,7 @@ fun ProductDetailScreen(
                     }
                 },
                 actions = {
+                    SearchAction(onSearch)
                     if (state.product != null) {
                         WishlistHeartIconButton(
                             isWishlisted = state.isWishlisted,

@@ -242,7 +242,9 @@ async function sendSingleFcmMessage(params: {
 }): Promise<{ ok: boolean; invalidToken: boolean }> {
   const channelId = androidChannelFor(params.category);
   const message: Record<string, unknown> = {
-    token: params.token,
+    ...(params.platform === "android" && /^[\w-]{22}$/.test(params.token)
+      ? { fid: params.token }
+      : { token: params.token }),
     notification: {
       title: params.title,
       body: params.body,

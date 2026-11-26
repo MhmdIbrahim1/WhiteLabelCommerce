@@ -3,6 +3,8 @@ package com.whitelabel.commerce.feature.notifications
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.whitelabel.commerce.core.notifications.AppNotification
+import com.whitelabel.commerce.core.notifications.FcmTokenManager
+import com.whitelabel.commerce.core.notifications.PushIssue
 import com.whitelabel.commerce.core.notifications.NotificationRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,11 +18,13 @@ import javax.inject.Inject
 data class NotificationsUiState(
     val items: List<AppNotification> = emptyList(),
     val isRefreshing: Boolean = false,
+    val pushIssue: PushIssue? = null,
 )
 
 @HiltViewModel
 class NotificationsViewModel @Inject constructor(
     private val notificationRepository: NotificationRepository,
+    private val push: FcmTokenManager,
 ) : ViewModel() {
 
     private val isRefreshing = MutableStateFlow(false)
@@ -28,8 +32,9 @@ class NotificationsViewModel @Inject constructor(
     val uiState: StateFlow<NotificationsUiState> = combine(
         notificationRepository.notifications,
         isRefreshing,
-    ) { items, refreshing ->
-        NotificationsUiState(items = items, isRefreshing = refreshing)
+        push.issue,
+    ) { items, refreshing, issue ->
+        NotificationsUiState(items = items, isRefreshing = refreshing, pushIssue = issue)
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
@@ -46,6 +51,10 @@ class NotificationsViewModel @Inject constructor(
             notificationRepository.refresh()
             isRefreshing.value = false
         }
+    }
+
+    fun retryPush() {
+        viewModelScope.launch { push.syncCurrentToken() }
     }
 
     fun markAsRead(id: String) {

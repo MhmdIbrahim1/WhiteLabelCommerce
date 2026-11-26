@@ -53,6 +53,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
+import com.whitelabel.commerce.core.designsystem.components.SearchAction
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -92,6 +93,7 @@ import com.whitelabel.commerce.core.domain.model.StoreSettings
 fun OrderDetailScreen(
     orderId: String,
     onBack: () -> Unit,
+    onSearch: () -> Unit,
     onOpenSupport: (orderId: String) -> Unit,
     onOpenAccount: () -> Unit,
     onShowMessage: (String) -> Unit,
@@ -132,6 +134,7 @@ fun OrderDetailScreen(
                     }
                 },
                 actions = {
+                    SearchAction(onSearch)
                     IconButton(onClick = { viewModel.loadOrderDetail(orderId) }) {
                         Icon(
                             imageVector = Icons.Rounded.Refresh,

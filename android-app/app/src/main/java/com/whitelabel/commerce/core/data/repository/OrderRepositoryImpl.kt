@@ -176,13 +176,17 @@ class OrderRepositoryImpl @Inject constructor(
 
         supabase
             .from("orders")
-            .select(columns = Columns.raw("*, order_items(*)")) {
+            .select(columns = Columns.raw(
+                "id,user_id,status,shipping_address,phone,payment_method,currency,subtotal,shipping_fee," +
+                    "wallet_discount,cashback_earned,total,guest_tracking,created_at,payment_status," +
+                    "tracking_number,shipping_carrier,order_items(id,order_id,product_id,product_name,unit_price,quantity,size,color)",
+            )) {
                 filter { eq("user_id", userId)
                     eq("store_id", com.whitelabel.commerce.BuildConfig.STORE_ID) }
                 order(column = "created_at", order = SortOrder.DESCENDING)
             }
             .decodeList<OrderDto>()
-            .map { it.toDomain() }.onEach { syncReceipt(it.id, it.status, it.paymentStatus, it.paymentMethod?.rawValue ?: "cod", it.carrier, it.trackingNumber, it.createdAt) }
+            .mapNotNull { it.toDomainOrNull() }.onEach { syncReceipt(it.id, it.status, it.paymentStatus, it.paymentMethod?.rawValue ?: "cod", it.carrier, it.trackingNumber, it.createdAt) }
     }
 
     override suspend fun saveLocalOrderReceipt(receipt: SavedOrderReceipt) {

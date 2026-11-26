@@ -1,3 +1,4 @@
+import groovy.json.JsonSlurper
 import org.gradle.api.GradleException
 import java.io.File
 import java.util.Properties
@@ -19,7 +20,17 @@ val resolvedAppIdSuffix = (
     if (raw.startsWith(".")) raw else ".$raw"
 }
 
-if (file("google-services.json").exists() && resolvedAppIdSuffix == null) {
+val baseApplicationId = "com.whitelabel.commerce"
+val appPackage = baseApplicationId + resolvedAppIdSuffix.orEmpty()
+val firebaseConfig = file("google-services.json")
+val hasFirebaseClient = firebaseConfig.isFile && run {
+    val config = JsonSlurper().parse(firebaseConfig) as Map<*, *>
+    (config["client"] as List<*>).any { client ->
+        val info = (client as Map<*, *>)["client_info"] as Map<*, *>
+        (info["android_client_info"] as? Map<*, *>)?.get("package_name") == appPackage
+    }
+}
+if (hasFirebaseClient) {
     apply(plugin = "com.google.gms.google-services")
 }
 
@@ -121,7 +132,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.whitelabel.commerce"
+        applicationId = baseApplicationId
         if (resolvedAppIdSuffix != null) {
             applicationIdSuffix = resolvedAppIdSuffix
         }

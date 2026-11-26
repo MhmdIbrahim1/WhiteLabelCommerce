@@ -46,6 +46,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import com.whitelabel.commerce.core.designsystem.components.SearchAction
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -77,6 +78,7 @@ private val WALLET_INPUT_REGEX = Regex("^01[0125][0-9]{8}$")
 @Composable
 fun CheckoutScreen(
     onBack: () -> Unit,
+    onSearch: () -> Unit,
     onOpenAccount: () -> Unit,
     onTrackOrder: (orderNumber: String, phone: String, paymentOutcome: PaymentFlowOutcome?) -> Unit,
     onContinueShopping: () -> Unit,
@@ -136,6 +138,7 @@ fun CheckoutScreen(
                         style = MaterialTheme.typography.titleLarge,
                     )
                 },
+                actions = { SearchAction(onSearch) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(

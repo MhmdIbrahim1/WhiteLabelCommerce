@@ -20,6 +20,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import com.whitelabel.commerce.core.designsystem.components.SearchAction
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -37,6 +38,7 @@ import com.whitelabel.commerce.core.designsystem.localized
 @Composable
 fun WishlistScreen(
     onBack: () -> Unit,
+    onSearch: () -> Unit,
     onProductClick: (String) -> Unit,
     onBrowseCatalog: () -> Unit,
     onOpenAccount: () -> Unit,
@@ -58,6 +60,7 @@ fun WishlistScreen(
                         fontWeight = FontWeight.Bold,
                     )
                 },
+                actions = { SearchAction(onSearch) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
