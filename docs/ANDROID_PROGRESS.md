@@ -300,3 +300,9 @@
 - Store language follows the saved customer preference across settings, sheets, currency and FCM. The catalog cancels obsolete requests and previews the draft category. Wishlist, account and checkout display retry or connectivity feedback. Receipt refresh uses Realtime and bounded polling.
 - Regression coverage includes the profile contract, public projections, build guard, payment confirmation, catalog reset, wallet and currency labels, auth errors, and international Egyptian phone numbers.
 - QA passed for 57 Android unit tests, both debug distribution flavors, and two tenant APKs. Generated metadata identified the Demo and Omar packages as com.whitelabel.commerce.demoshop and com.whitelabel.commerce.omara7a. Both disable backup and use version code 46. The release resource disables cleartext and the merged label preserves an ampersand in the merchant name. A custom tenant build without a package suffix failed at configuration as expected.
+
+### Nova Store v1.4.3 (47)
+
+- Cold launch initializes the store and HTTP client off the main thread. Session and receipt encryption also run on the IO dispatcher.
+- Product detail uses a loading skeleton. Catalog, support, wishlist and order failures display localized recovery messages.
+- Nova devices running v1.4.2 (46) can discover this release through the GitHub updater. Merchant APKs keep their independently assigned versions.
