@@ -143,6 +143,28 @@ data class ProductSpecification(
         get() = (keyAr.isNotBlank() || keyEn.isNotBlank()) && (valueAr.isNotBlank() || valueEn.isNotBlank())
 }
 
+@androidx.compose.runtime.Immutable
+data class ProductVariant(val color: String, val size: String, val stock: Int)
+
+@androidx.compose.runtime.Immutable
+class VariantInventory(variants: List<ProductVariant>) {
+    private val pairs = variants.associate { (it.color to it.size) to it.stock }
+    private val colorTotals = variants.groupingBy { it.color }.fold(0) { n, v -> n + v.stock }
+    private val firstSizes = variants.filter { it.stock > 0 }.associate { it.color to it.size }
+    val first = variants.firstOrNull { it.stock > 0 }
+    val tracked = pairs.isNotEmpty()
+    fun stock(color: String?, size: String?, fallback: Int) =
+        if (tracked) pairs[color.orEmpty() to size.orEmpty()] ?: 0 else fallback
+    fun colorStock(color: String, fallback: Int) = if (tracked) colorTotals[color] ?: 0 else fallback
+    fun firstSize(color: String) = firstSizes[color]?.ifEmpty { null }
+}
+
+fun stockLabel(stock: Int): String = when {
+    stock <= 0 -> localized("نفذت الكمية", "Out of Stock")
+    stock <= 5 -> localized("على وشك النفاد", "Almost gone")
+    else -> localized("متوفر", "In Stock")
+}
+
 data class Product(
     val id: String,
     val categoryId: String,
@@ -167,7 +189,13 @@ data class Product(
     val reviewCount: Int = 0,
     val matchType: String? = null,
     val createdAt: String? = null,
+    val variants: List<ProductVariant> = emptyList(),
+    val colorImages: Map<String, String> = emptyMap(),
+    val galleryUrls: List<String> = emptyList(),
 ) {
+    val inventory = VariantInventory(variants)
+    fun imageFor(color: String?) = colorImages[color] ?: imageUrl ?: galleryUrls.firstOrNull()
+
     val hasReviews: Boolean
         get() = reviewCount > 0
 

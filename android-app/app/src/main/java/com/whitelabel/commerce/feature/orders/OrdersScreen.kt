@@ -1,5 +1,6 @@
 package com.whitelabel.commerce.feature.orders
 
+import com.whitelabel.commerce.core.designsystem.components.BannerFeedback
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.BorderStroke
@@ -310,13 +311,7 @@ fun OrdersScreen(
                         modifier = Modifier.fillMaxWidth(),
                     )
 
-                    state.tracking.trackingError?.let { error ->
-                        Text(
-                            text = error,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    }
+                    state.tracking.trackingError?.let { BannerFeedback(it) }
 
                     Button(
                         onClick = viewModel::trackOrder,

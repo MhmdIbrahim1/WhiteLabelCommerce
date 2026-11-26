@@ -1,5 +1,6 @@
 "use client";
 
+import { showToast, ToastFeedback } from "@/components/floating-toast";
 import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 import {
@@ -17,7 +18,6 @@ import {
   Activity,
   LayoutDashboard,
   CheckCircle2,
-  AlertTriangle,
   Smartphone,
   Lock,
   UserPlus,
@@ -210,6 +210,7 @@ export function SuperAdminPortal({
         : "/login";
     try {
       await navigator.clipboard.writeText(loginUrl);
+      showToast({ kind: "success", message: document.documentElement.lang.startsWith("en") ? "Copied to clipboard" : "تم النسخ" });
       setCopiedLoginLink(true);
       setTimeout(() => setCopiedLoginLink(false), 2000);
     } catch {
@@ -379,37 +380,7 @@ export function SuperAdminPortal({
           </div>
         </header>
 
-        {feedback && (
-          <div
-            role="status"
-            className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm font-semibold ${
-              feedback.kind === "ok"
-                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                : "border-rose-200 bg-rose-50 text-rose-800"
-            }`}
-          >
-            <span className="inline-flex items-center gap-2">
-              {feedback.kind === "ok" ? (
-                <CheckCircle2 size={16} />
-              ) : (
-                <AlertTriangle size={16} />
-              )}
-              {feedback.text}
-            </span>
-            <button
-              type="button"
-              onClick={() => setFeedback(null)}
-              style={{
-                background: "transparent",
-                color: "inherit",
-                padding: "0.2rem",
-              }}
-              aria-label="Dismiss"
-            >
-              <X size={15} />
-            </button>
-          </div>
-        )}
+        {feedback && <ToastFeedback message={feedback.text} kind={feedback.kind === "ok" ? "success" : "error"} />}
 
         {/* Platform KPI Cards */}
         <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

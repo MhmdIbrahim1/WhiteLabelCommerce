@@ -1,5 +1,6 @@
 package com.whitelabel.commerce.feature.account
 
+import com.whitelabel.commerce.core.designsystem.components.BannerFeedback
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -391,20 +392,7 @@ fun AccountScreen(
                                 }
                             }
 
-                            profileForm.saveError?.let { err ->
-                                Surface(
-                                    color = MaterialTheme.colorScheme.errorContainer,
-                                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                                    shape = MaterialTheme.shapes.small,
-                                    modifier = Modifier.fillMaxWidth(),
-                                ) {
-                                    Text(
-                                        text = err,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        modifier = Modifier.padding(10.dp),
-                                    )
-                                }
-                            }
+                            profileForm.saveError?.let { BannerFeedback(it) }
 
                             OutlinedTextField(
                                 value = profileForm.fullName,

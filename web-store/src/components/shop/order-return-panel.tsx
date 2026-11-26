@@ -1,5 +1,6 @@
 "use client";
 
+import { ToastFeedback } from "@/components/floating-toast";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
@@ -584,11 +585,7 @@ export function OrderReturnPanel({
                   </button>
                 </div>
 
-                {error && (
-                  <p role="alert" className="return-error-banner">
-                    {error}
-                  </p>
-                )}
+                {error && <ToastFeedback message={error} kind="error" />}
               </form>
             </div>
           </div>,

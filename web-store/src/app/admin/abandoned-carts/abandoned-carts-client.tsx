@@ -1,5 +1,6 @@
 "use client";
 
+import { showToast, ToastFeedback } from "@/components/floating-toast";
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -120,6 +121,7 @@ export function AdminAbandonedCartsClient({
     const url = getAbsoluteCartUrl(chosenCoupon || undefined);
     try {
       await navigator.clipboard.writeText(url);
+      showToast({ kind: "success", message: document.documentElement.lang.startsWith("en") ? "Copied to clipboard" : "تم النسخ" });
       setCopiedId(cart.id);
       setTimeout(() => setCopiedId(null), 1800);
     } catch {}
@@ -368,22 +370,7 @@ export function AdminAbandonedCartsClient({
           })}
         </div>
 
-        {notice && (
-          <div
-            role="status"
-            style={{
-              padding: "0.45rem 0.85rem",
-              borderRadius: "10px",
-              fontSize: "0.84rem",
-              fontWeight: 600,
-              background: notice.kind === "ok" ? "#ecfdf5" : "#fef2f2",
-              color: notice.kind === "ok" ? "#047857" : "#b91c1c",
-              border: `1px solid ${notice.kind === "ok" ? "#a7f3d0" : "#fecaca"}`,
-            }}
-          >
-            {notice.text}
-          </div>
-        )}
+        {notice && <ToastFeedback message={notice.text} kind={notice.kind === "ok" ? "success" : "error"} />}
       </div>
 
       {/* Cart Cards */}

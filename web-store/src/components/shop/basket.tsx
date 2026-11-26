@@ -1,5 +1,6 @@
 "use client";
 
+import { ToastFeedback } from "@/components/floating-toast";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useRef } from "react";
@@ -373,7 +374,7 @@ export function Basket({
                         aria-label={isEn ? "Increase quantity" : "زيادة الكمية"}
                         disabled={
                           lines
-                            .filter((x) => x.id === l.id)
+                            .filter((x) => x.id === l.id && (!l.variantStock || (x.size === l.size && x.color === l.color)))
                             .reduce((n, x) => n + x.quantity, 0) >= l.stock
                         }
                         onClick={() => change(tenantId, l, 1)}
@@ -856,7 +857,7 @@ export function Basket({
                         : "إتمام الطلب برصيد المحفظة"
                       : t("confirmOrderBtn")}
               </button>
-              {result.error && <p role="alert">{result.error}</p>}
+              {result.error && <ToastFeedback kind="error" message={result.error} />}
             </form>
           ) : (
             <p>

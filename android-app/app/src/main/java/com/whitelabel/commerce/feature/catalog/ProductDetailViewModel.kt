@@ -55,10 +55,11 @@ data class ProductDetailUiState(
     val reviewSubmitError: String? = null,
     val relatedProducts: List<Product> = emptyList(),
 ) {
+    val selectedStock: Int get() = product?.let { it.inventory.stock(selectedColor, selectedSize, it.stock) } ?: 0
     val canAddToCart: Boolean
         get() {
             val p = product ?: return false
-            if (!p.isInStock || quantity <= 0 || quantity > p.stock) return false
+            if (!p.isInStock || quantity <= 0 || quantity > selectedStock) return false
             if (p.sizes.isNotEmpty() && selectedSize.isNullOrBlank()) return false
             if (p.colors.isNotEmpty() && selectedColor.isNullOrBlank()) return false
             return true
@@ -139,8 +140,8 @@ class ProductDetailViewModel @Inject constructor(
                         _uiState.update {
                             it.copy(
                                 product = product,
-                                selectedSize = product.sizes.firstOrNull(),
-                                selectedColor = product.colors.firstOrNull(),
+                                selectedSize = product.inventory.first?.size?.ifEmpty { null } ?: product.sizes.firstOrNull(),
+                                selectedColor = product.inventory.first?.color?.ifEmpty { null } ?: product.colors.firstOrNull(),
                                 quantity = if (product.stock > 0) 1 else 0,
                                 reviews = reviewsResult.getOrDefault(it.reviews),
                                 relatedProducts = relatedResult.getOrDefault(emptyList()),
@@ -161,16 +162,20 @@ class ProductDetailViewModel @Inject constructor(
     }
 
     fun selectSize(size: String) {
-        _uiState.update { it.copy(selectedSize = size) }
+        _uiState.update { it.copy(selectedSize = size, quantity = 1) }
     }
 
     fun selectColor(color: String) {
-        _uiState.update { it.copy(selectedColor = color) }
+        _uiState.update { state ->
+            val p = state.product ?: return@update state
+            val size = if (p.inventory.stock(color, state.selectedSize, p.stock) > 0) state.selectedSize else p.inventory.firstSize(color)
+            state.copy(selectedColor = color, selectedSize = size, quantity = 1)
+        }
     }
 
     fun incrementQuantity() {
         _uiState.update { state ->
-            val maxStock = state.product?.stock ?: 1
+            val maxStock = state.selectedStock
             if (state.quantity < maxStock) state.copy(quantity = state.quantity + 1) else state
         }
     }

@@ -3,8 +3,8 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Star } from "lucide-react";
 import { serverDb, checked } from "@/lib/db";
-import { settings, photo, productFields, type Product } from "@/lib/shop";
-import { localizedText, t } from "@/lib/i18n";
+import { settings, productFields, type Product } from "@/lib/shop";
+import { localizedText } from "@/lib/i18n";
 import { getServerLang } from "@/lib/i18n-server";
 import { storeHref } from "@/lib/tenant";
 import {
@@ -13,8 +13,7 @@ import {
   type ReviewEligibility,
 } from "@/lib/reviews-wishlist";
 import { Price, Grid } from "@/components/shop/cards";
-import { ProductGallery } from "@/components/shop/gallery";
-import { Buy } from "@/components/shop/buy";
+import { ProductPurchase } from "@/components/shop/gallery";
 import { ProductSpecsTable } from "@/components/shop/product-specs";
 import { WishlistHeartButton } from "@/components/shop/wishlist-heart";
 import { ProductReviewsSection } from "@/components/shop/product-reviews";
@@ -29,7 +28,7 @@ const loadProduct = cache(async (storeId: string, id: string) => {
   const isUuid = UUID_RE.test(id);
   const query = db
     .from("products")
-    .select(productFields + ",image_paths")
+    .select(productFields + ",image_paths,color_images,product_variants(color,size,stock)")
     .eq("store_id", storeId)
     .eq("is_active", true);
   return (isUuid ? query.eq("id", id) : query.eq("slug", id))
@@ -140,14 +139,7 @@ export default async function Details({ params }: PageProps<"/products/[id]">) {
         price={resolveEffectivePrice(p)}
         currency={s.currency}
       />
-      <section className="details-grid">
-        <ProductGallery
-          key={p.id}
-          sources={[...new Set([p.image_path, ...(p.image_paths ?? [])]
-            .map((path) => photo(path?.trim() || null)).filter((src): src is string => Boolean(src)))]}
-          alt={title}
-        />
-        <div>
+      <ProductPurchase key={p.id} product={p} title={title} basePath={s.basePath}>
           <h1>{title}</h1>
 
           <div className="detail-meta-bar">
@@ -169,12 +161,7 @@ export default async function Details({ params }: PageProps<"/products/[id]">) {
 
           <Price p={p} currency={s.currency} lang={lang} variant="detail" />
           <p>{desc}</p>
-          <p className="detail-stock-line">
-            {t(lang, "inStockLabel")} · <strong>{p.stock}</strong>
-          </p>
-          <Buy p={p} detail basePath={s.basePath} />
-        </div>
-      </section>
+      </ProductPurchase>
 
       <ProductSpecsTable specs={p.specifications} />
 

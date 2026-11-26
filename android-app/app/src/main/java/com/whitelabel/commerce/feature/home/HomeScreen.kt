@@ -105,7 +105,7 @@ fun HomeScreen(
     onCategoryClick: (String?) -> Unit,
     onViewAllFlashDeals: () -> Unit = { onCategoryClick(null) },
     onHeroRoute: (String) -> Unit,
-    onShowMessage: (String) -> Unit,
+    onShowMessage: (String, String?) -> Unit,
     onWishlistSignInPrompt: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: HomeViewModel = hiltViewModel(),
@@ -240,6 +240,7 @@ fun HomeScreen(
                                             "تمت إضافة \"${product.displayName}\" إلى السلة",
                                             "Added \"${product.displayName}\" to cart",
                                         ),
+                                        product.imageUrl,
                                     )
                                 }
                             },
@@ -347,6 +348,7 @@ fun HomeScreen(
                                                             "تمت إضافة \"${deal.displayName}\" إلى السلة",
                                                             "Added \"${deal.displayName}\" to cart",
                                                         ),
+                                                        deal.imageUrl,
                                                     )
                                                 }
                                             },
@@ -496,6 +498,7 @@ fun HomeScreen(
                                                 "تمت إضافة \"${product.displayName}\" إلى السلة",
                                                 "Added \"${product.displayName}\" to cart",
                                             ),
+                                            product.imageUrl,
                                         )
                                     }
                                 },

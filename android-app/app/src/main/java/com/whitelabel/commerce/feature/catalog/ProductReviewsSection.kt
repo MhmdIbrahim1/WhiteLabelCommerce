@@ -1,5 +1,6 @@
 package com.whitelabel.commerce.feature.catalog
 
+import com.whitelabel.commerce.core.designsystem.components.BannerFeedback
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -290,13 +291,7 @@ fun ProductReviewsSection(
             }
         }
 
-        submitError?.let { err ->
-            Text(
-                text = err,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-            )
-        }
+        submitError?.let { BannerFeedback(it) }
 
         // Star Filter Chips
         if (stats.total > 0) {

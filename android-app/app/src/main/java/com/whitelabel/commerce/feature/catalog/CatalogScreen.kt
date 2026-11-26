@@ -88,7 +88,7 @@ fun CatalogScreen(
     onConsumeInitialFlashDeals: () -> Unit = {},
     autofocusSearch: Boolean = false,
     onProductClick: (String) -> Unit,
-    onShowMessage: (String) -> Unit,
+    onShowMessage: (String, String?) -> Unit,
     onWishlistSignInPrompt: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: CatalogViewModel = hiltViewModel(),
@@ -485,6 +485,7 @@ fun CatalogScreen(
                                             "تمت إضافة \"${product.displayName}\" إلى السلة",
                                             "Added \"${product.displayName}\" to cart",
                                         ),
+                                        product.imageUrl,
                                     )
                                 }
                             },

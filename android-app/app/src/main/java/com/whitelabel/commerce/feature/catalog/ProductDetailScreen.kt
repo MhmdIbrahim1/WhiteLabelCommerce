@@ -1,5 +1,6 @@
 package com.whitelabel.commerce.feature.catalog
 
+import com.whitelabel.commerce.core.designsystem.components.BannerFeedback
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -96,7 +97,7 @@ import com.whitelabel.commerce.core.domain.model.WishlistToggleOutcome
 fun ProductDetailScreen(
     onBack: () -> Unit,
     onSearch: () -> Unit,
-    onAddedToCart: (String) -> Unit,
+    onAddedToCart: (String, String?) -> Unit,
     onProductClick: (String) -> Unit = {},
     onOpenAccount: () -> Unit = {},
     onShowMessage: (String) -> Unit = {},
@@ -209,7 +210,7 @@ fun ProductDetailScreen(
                             }
 
                             Button(
-                                onClick = { viewModel.addToCart(onAddedToCart) },
+                                onClick = { viewModel.addToCart { text -> onAddedToCart(text, product.imageFor(state.selectedColor)) } },
                                 enabled = state.canAddToCart,
                                 shape = MaterialTheme.shapes.small,
                                 modifier = Modifier
@@ -270,6 +271,9 @@ fun ProductDetailScreen(
 
             else -> {
                 val product = state.product!!
+                val inventory = remember(product) { product.inventory }
+                val gallery = remember(product) { (listOfNotNull(product.imageUrl) + product.galleryUrls + product.colorImages.values).distinct() }
+                var activeImage by remember(product, state.selectedColor) { mutableStateOf(product.imageFor(state.selectedColor)) }
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
@@ -286,9 +290,9 @@ fun ProductDetailScreen(
                             .clip(MaterialTheme.shapes.large)
                             .background(MaterialTheme.colorScheme.surfaceVariant),
                     ) {
-                        if (!product.imageUrl.isNullOrBlank()) {
+                        if (!activeImage.isNullOrBlank()) {
                             SubcomposeAsyncImage(
-                                model = product.imageUrl,
+                                model = activeImage,
                                 contentDescription = product.displayName,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize(),
@@ -436,6 +440,17 @@ fun ProductDetailScreen(
                             )
                         }
 
+                        if (gallery.size > 1) {
+                            androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                items(gallery.size, key = { gallery[it] }) { index ->
+                                    IconButton(onClick = { activeImage = gallery[index] }) {
+                                        coil.compose.AsyncImage(gallery[index], localized("صورة المنتج", "Product image") + " " + (index + 1),
+                                            Modifier.size(42.dp), contentScale = ContentScale.Crop)
+                                    }
+                                }
+                            }
+                        }
+
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -443,28 +458,18 @@ fun ProductDetailScreen(
                             Surface(
                                 color = when {
                                     !product.isInStock -> MaterialTheme.colorScheme.errorContainer
-                                    product.isLowStock -> brandColors.warning.copy(alpha = 0.16f)
+                                    state.selectedStock in 1..5 -> brandColors.warning.copy(alpha = 0.16f)
                                     else -> brandColors.success.copy(alpha = 0.14f)
                                 },
                                 contentColor = when {
                                     !product.isInStock -> MaterialTheme.colorScheme.error
-                                    product.isLowStock -> brandColors.warning
+                                    state.selectedStock in 1..5 -> brandColors.warning
                                     else -> brandColors.success
                                 },
                                 shape = MaterialTheme.shapes.extraSmall,
                             ) {
                                 Text(
-                                    text = when {
-                                        !product.isInStock -> localized("نفذت الكمية حالياً", "Out of stock")
-                                        product.isLowStock -> localized(
-                                            "متبقي ${product.stock} قطع فقط!",
-                                            "Only ${product.stock} left in stock!",
-                                        )
-                                        else -> localized(
-                                            "متوفر في المخزون (${product.stock} قطعة)",
-                                            "In stock (${product.stock} available)",
-                                        )
-                                    },
+                                    text = com.whitelabel.commerce.core.domain.model.stockLabel(state.selectedStock),
                                     style = MaterialTheme.typography.labelMedium,
                                     fontWeight = FontWeight.SemiBold,
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
@@ -505,7 +510,7 @@ fun ProductDetailScreen(
                             ) {
                                 product.sizes.forEach { size ->
                                     val selected = state.selectedSize == size
-                                    val available = product.isInStock
+                                    val available = inventory.stock(state.selectedColor, size, product.stock) > 0
                                     FilterChip(
                                         selected = selected && available,
                                         enabled = available,
@@ -558,7 +563,7 @@ fun ProductDetailScreen(
                             ) {
                                 product.colors.forEach { colorName ->
                                     val selected = state.selectedColor == colorName
-                                    val available = product.isInStock
+                                    val available = inventory.colorStock(colorName, product.stock) > 0
                                     val swatchColor = ColorSwatchMapper.resolveOrNull(colorName)
                                     FilterChip(
                                         selected = selected && available,
@@ -665,13 +670,7 @@ fun ProductDetailScreen(
                                         },
                                         modifier = Modifier.fillMaxWidth(),
                                     )
-                                    state.restockError?.let { err ->
-                                        Text(
-                                            text = err,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.error,
-                                        )
-                                    }
+                                    state.restockError?.let { BannerFeedback(it) }
                                     Button(
                                         onClick = { viewModel.subscribeBackInStock(restockPhone) },
                                         enabled = !state.isSubscribingRestock,
@@ -736,7 +735,7 @@ fun ProductDetailScreen(
                                     )
                                     Surface(
                                         onClick = viewModel::incrementQuantity,
-                                        enabled = state.quantity < product.stock,
+                                        enabled = state.quantity < state.selectedStock,
                                         shape = MaterialTheme.shapes.small,
                                         color = MaterialTheme.colorScheme.primaryContainer,
                                         contentColor = MaterialTheme.colorScheme.primary,
@@ -875,6 +874,7 @@ fun ProductDetailScreen(
                                                         "تمت إضافة \"${relProduct.displayName}\" إلى السلة",
                                                         "Added \"${relProduct.displayName}\" to cart",
                                                     ),
+                                                    relProduct.imageUrl,
                                                 )
                                             }
                                         },

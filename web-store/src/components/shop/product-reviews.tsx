@@ -1,5 +1,6 @@
 "use client";
 
+import { ToastFeedback } from "@/components/floating-toast";
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import {
@@ -250,17 +251,7 @@ export function ProductReviewsSection({
         </div>
       </div>
 
-      {/* Save Confirmation Banner */}
-      {formSuccess && (
-        <div className="reviews-success-banner" role="status">
-          <CheckCircle2 size={17} />
-          <span>
-            {isEn
-              ? "Thank you! Your verified review has been saved."
-              : "شكراً لك! تم حفظ تقييمك الموثّق بنجاح."}
-          </span>
-        </div>
-      )}
+      {formSuccess && <ToastFeedback kind="success" message={isEn ? "Thank you! Your verified review has been saved." : "شكراً لك! تم حفظ تقييمك الموثّق بنجاح."} />}
 
       {/* Frictionless Write / Edit Review Flow OR Calm Neutral Eligibility Note */}
       {initialEligibility.eligible ? (
@@ -355,9 +346,7 @@ export function ProductReviewsSection({
             </label>
 
             {formError && (
-              <p className="reviews-form-error" role="alert">
-                {formError}
-              </p>
+              <ToastFeedback message={formError} kind="error" />
             )}
 
             <div className="reviews-form-actions">

@@ -288,18 +288,12 @@ export async function saveProduct(f: FormData) {
     }
   }
   const values = image ? { ...row, image_path: image } : row;
-  const products = db.from("products");
-  let update = products.update(values).eq("id", id).eq("store_id", storeId);
-  if (image)
-    update = previous
-      ? update.eq("image_path", previous)
-      : update.is("image_path", null);
-  const result = await (id
-    ? update
-    : products.insert({ ...values, store_id: storeId })
-  )
-    .select("id")
-    .single();
+  const result = await db.rpc("save_catalog_product", {
+    p_store: storeId, p_id: id || null, p_fields: { ...values, color_images: JSON.parse(text(f, "color_images") || "{}") },
+    p_variants: JSON.parse(text(f, "variants") || "[]"),
+    p_original_variants: JSON.parse(text(f, "original_variants") || "[]"),
+    p_original_stock: Number(text(f, "original_stock")), p_previous_image: previous,
+  });
   if (result.error && image) await bucket.remove([image]);
   if (
     !result.error &&

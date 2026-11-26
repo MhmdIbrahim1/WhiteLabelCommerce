@@ -1,5 +1,6 @@
 "use client";
 
+import { ToastFeedback } from "@/components/floating-toast";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -608,19 +609,7 @@ export function CampaignStudio({
               <span>{c.bypassQuiet}</span>
             </label>
 
-            {feedback && (
-              <div
-                className={`notif-feedback ${feedback.kind === "ok" ? "is-ok" : "is-err"}`}
-                role="status"
-              >
-                {feedback.kind === "ok" ? (
-                  <CheckCircle2 size={17} />
-                ) : (
-                  <AlertCircle size={17} />
-                )}
-                <span>{feedback.text}</span>
-              </div>
-            )}
+            {feedback && <ToastFeedback message={feedback.text} kind={feedback.kind === "ok" ? "success" : "error"} />}
 
             <button type="submit" disabled={isPending}>
               <Send size={16} />

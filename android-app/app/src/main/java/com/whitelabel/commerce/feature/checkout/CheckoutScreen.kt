@@ -1,5 +1,6 @@
 package com.whitelabel.commerce.feature.checkout
 
+import com.whitelabel.commerce.core.designsystem.components.BannerFeedback
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -635,13 +636,7 @@ fun CheckoutScreen(
                         }
                     }
 
-                    state.form.couponError?.let { err ->
-                        Text(
-                            text = err,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    }
+                    state.form.couponError?.let { BannerFeedback(it) }
 
                     if (state.appliedDiscount > 0.0) {
                         Surface(
@@ -804,20 +799,7 @@ fun CheckoutScreen(
             }
 
             // 5. Error Banner
-            state.form.submitError?.let { errorText ->
-                Surface(
-                    color = MaterialTheme.colorScheme.errorContainer,
-                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                    shape = MaterialTheme.shapes.small,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(
-                        text = errorText,
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.padding(14.dp),
-                    )
-                }
-            }
+            state.form.submitError?.let { BannerFeedback(it) }
 
             Spacer(modifier = Modifier.height(12.dp))
         }

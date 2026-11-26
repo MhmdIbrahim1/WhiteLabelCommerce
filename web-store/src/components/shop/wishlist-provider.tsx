@@ -4,14 +4,11 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
-import Link from "next/link";
+import { showToast } from "@/components/floating-toast";
 import { usePathname } from "next/navigation";
-import { Heart, LogIn, X } from "lucide-react";
 import { useLanguage } from "@/components/language-provider";
 import { toggleWishlistAction } from "@/app/(shop)/wishlist/actions";
 
@@ -47,9 +44,6 @@ export function WishlistProvider({
   const pathname = usePathname();
   const [ids, setIds] = useState<Set<string>>(() => new Set(initialProductIds));
   const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
-  const [guestPromptOpen, setGuestPromptOpen] = useState(false);
-  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   const syncKey = `${storeId}:${isSignedIn ? "1" : "0"}:${initialProductIds.join(",")}`;
   const [prevSyncKey, setPrevSyncKey] = useState(syncKey);
   if (prevSyncKey !== syncKey) {
@@ -57,19 +51,10 @@ export function WishlistProvider({
     setIds(new Set(initialProductIds));
   }
 
-  useEffect(() => {
-    return () => {
-      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    };
-  }, []);
-
   const showGuestToast = useCallback(() => {
-    setGuestPromptOpen(true);
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = setTimeout(() => {
-      setGuestPromptOpen(false);
-    }, 5200);
-  }, []);
+    showToast({ kind: "info", message: isEn ? "Sign in to save items to your wishlist." : "سجّل الدخول لحفظ المنتجات في المفضلة.",
+      action: { label: isEn ? "Sign In" : "تسجيل الدخول", href: "/login?next=" + encodeURIComponent(pathname || "/") } });
+  }, [isEn, pathname]);
 
   const toggle = useCallback(
     async (productId: string): Promise<boolean> => {
@@ -148,46 +133,7 @@ export function WishlistProvider({
     [ids, isSignedIn, pendingIds, toggle],
   );
 
-  const loginHref = `/login?next=${encodeURIComponent(pathname || "/")}`;
-
-  return (
-    <WishlistContext.Provider value={value}>
-      {children}
-      {guestPromptOpen && (
-        <div
-          className="wishlist-guest-toast"
-          role="status"
-          aria-live="polite"
-          dir={isEn ? "ltr" : "rtl"}
-        >
-          <span className="wishlist-guest-toast-icon" aria-hidden="true">
-            <Heart size={16} />
-          </span>
-          <span className="wishlist-guest-toast-copy">
-            {isEn
-              ? "Sign in to save items to your cloud wishlist across web & app."
-              : "سجّل الدخول لحفظ المنتجات في قائمة مفضلتك السحابية عبر الموقع والتطبيق."}
-          </span>
-          <Link
-            href={loginHref}
-            className="wishlist-guest-toast-cta"
-            onClick={() => setGuestPromptOpen(false)}
-          >
-            <LogIn size={14} />
-            <span>{isEn ? "Sign In" : "تسجيل الدخول"}</span>
-          </Link>
-          <button
-            type="button"
-            className="icon-ghost-btn wishlist-guest-toast-close"
-            aria-label={isEn ? "Dismiss" : "إغلاق"}
-            onClick={() => setGuestPromptOpen(false)}
-          >
-            <X size={15} />
-          </button>
-        </div>
-      )}
-    </WishlistContext.Provider>
-  );
+  return <WishlistContext.Provider value={value}>{children}</WishlistContext.Provider>;
 }
 
 export function useWishlist() {

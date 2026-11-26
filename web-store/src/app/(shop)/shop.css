@@ -3531,66 +3531,6 @@
   color: #e11d48;
 }
 
-/* Guest Wishlist Sign-In Toast */
-.shop .wishlist-guest-toast {
-  position: fixed;
-  bottom: 1.25rem;
-  inset-inline-start: 50%;
-  transform: translateX(-50%);
-  z-index: 95;
-  display: flex;
-  align-items: center;
-  gap: 0.7rem;
-  width: min(92vw, 560px);
-  padding: 0.75rem 0.9rem;
-  border-radius: 16px;
-  background: var(--surface);
-  color: var(--ink);
-  border: 1px solid var(--line);
-  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.2);
-}
-
-[dir="rtl"] .shop .wishlist-guest-toast {
-  transform: translateX(50%);
-}
-
-.shop .wishlist-guest-toast-icon {
-  width: 34px;
-  height: 34px;
-  border-radius: 999px;
-  background: rgba(225, 29, 72, 0.12);
-  color: #e11d48;
-  display: inline-grid;
-  place-items: center;
-  flex-shrink: 0;
-}
-
-.shop .wishlist-guest-toast-copy {
-  font-size: 0.86rem;
-  line-height: 1.45;
-  color: var(--ink);
-  flex: 1;
-}
-
-.shop .wishlist-guest-toast-cta {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.32rem;
-  padding: 0.42rem 0.85rem;
-  border-radius: 999px;
-  background: var(--primary);
-  color: var(--primary-ink, #fff);
-  font-size: 0.8rem;
-  font-weight: 650;
-  white-space: nowrap;
-}
-
-.shop .wishlist-guest-toast-close {
-  width: 30px;
-  height: 30px;
-  flex-shrink: 0;
-}
-
 /* Wishlist Page */
 .shop .wishlist-page-shell {
   margin-top: 0;
@@ -4435,7 +4375,7 @@
   font-size: 0.72rem;
 }
 
-.shop button.cart-upsell-add-btn {
+.shop .cart-upsell-add-btn {
   display: inline-flex;
   align-items: center;
   gap: 0.22rem;
@@ -5414,3 +5354,8 @@
   background: rgba(16, 185, 129, 0.16);
   color: #6ee7b7;
 }
+
+.stock-tier { width: fit-content; display: inline-block; border-radius: 6px; padding: .2em .6em; font-size: .78rem; font-weight: 650; color: #176548; background: #e9f4ed; }
+.stock-tier[data-tier=low] { color: #895019; background: #fbefda; }
+.stock-tier[data-tier=out] { color: #605b60; background: #efedef; }
+.variant-chip:disabled { opacity: .45; text-decoration: line-through; cursor: not-allowed; }

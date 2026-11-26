@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { Check, Package, Plus, Sparkles, Zap } from "lucide-react";
+import { showToast } from "@/components/floating-toast";
+import { Package, Plus, Sparkles, Zap } from "lucide-react";
 import { money } from "@/lib/brand";
 import { localizedText } from "@/lib/i18n";
 import { storeHref } from "@/lib/tenant-shared";
@@ -58,7 +59,6 @@ export function CartUpsellStrip({
 
   const [items, setItems] = useState<UpsellProduct[]>([]);
   const [loading, setLoading] = useState(false);
-  const [justAddedId, setJustAddedId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!shouldShow) {
@@ -124,12 +124,8 @@ export function CartUpsellStrip({
       },
       1,
     );
-    if (ok) {
-      setJustAddedId(item.id);
-      window.setTimeout(() => {
-        setJustAddedId((curr) => (curr === item.id ? null : curr));
-      }, 900);
-    }
+    showToast({ kind: ok ? "cart" : "info", image: item.image_url, message: ok
+      ? (isEn ? "Added to cart" : "تمت الإضافة إلى السلة") : (isEn ? "Stock limit reached" : "بلغت الحد المتاح") });
   }
 
   return (
@@ -159,7 +155,7 @@ export function CartUpsellStrip({
           const detailHref = storeHref(basePath, "/products/" + item.id);
           const flashActive = isFlashSaleActive(item);
           const effective = resolveEffectivePrice(item);
-          const added = justAddedId === item.id;
+          const needsOptions = item.sizes.length > 0 || item.colors.length > 0;
 
           return (
             <article key={item.id} className="cart-upsell-card">
@@ -194,24 +190,12 @@ export function CartUpsellStrip({
                 </div>
               </div>
 
-              <button
-                type="button"
-                className={`cart-upsell-add-btn ${added ? "is-added" : ""}`}
-                onClick={() => handleQuickAdd(item)}
-                disabled={item.stock <= 0}
-              >
-                {added ? (
-                  <>
-                    <Check size={13} aria-hidden="true" />
-                    <span>{isEn ? "Added" : "تمت الإضافة"}</span>
-                  </>
-                ) : (
-                  <>
-                    <Plus size={13} aria-hidden="true" />
-                    <span>{isEn ? "Add" : "أضف"}</span>
-                  </>
-                )}
-              </button>
+              {needsOptions
+                ? <Link className="cart-upsell-add-btn" href={detailHref}>{isEn ? "Choose options" : "اختر الخيارات"}</Link>
+                : <button type="button" className="cart-upsell-add-btn" onClick={() => handleQuickAdd(item)} disabled={item.stock <= 0}>
+                    <Plus size={13} aria-hidden="true" /><span>{isEn ? "Add" : "أضف"}</span>
+                  </button>}
+
             </article>
           );
         })}

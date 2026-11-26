@@ -1,5 +1,6 @@
 package com.whitelabel.commerce.feature.support
 
+import com.whitelabel.commerce.core.designsystem.components.BannerFeedback
 import com.whitelabel.commerce.core.designsystem.localized
 
 import android.content.Intent
@@ -278,13 +279,7 @@ fun SupportScreen(
                             modifier = Modifier.fillMaxWidth(),
                         )
 
-                        state.form.submitError?.let { error ->
-                            Text(
-                                text = error,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error,
-                            )
-                        }
+                        state.form.submitError?.let { BannerFeedback(it) }
 
                         if (state.form.submitSuccess) {
                             Surface(

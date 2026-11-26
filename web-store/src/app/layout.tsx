@@ -5,6 +5,7 @@ import { langDir, langHtmlAttr, type Lang } from "@/lib/i18n";
 import { getServerLang } from "@/lib/i18n-server";
 import { settings } from "@/lib/shop";
 import { LanguageProvider } from "@/components/language-provider";
+import { FloatingToastHost } from "@/components/floating-toast";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -31,6 +32,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
       <body>
         <LanguageProvider initialLang={lang} defaultLang={defaultLang}>
           {children}
+          <FloatingToastHost />
         </LanguageProvider>
       </body>
     </html>

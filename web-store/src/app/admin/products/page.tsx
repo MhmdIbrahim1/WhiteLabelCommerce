@@ -37,10 +37,10 @@ export default async function Products({
   let query = secureDb
     .from("products")
     .select(
-      "id,name,name_en,slug,description,description_en,price,cost_price,old_price,flash_sale_price,flash_sale_starts_at,flash_sale_ends_at,stock,category_id,sizes,colors,image_path,image_paths,specifications,is_active",
+      "id,name,name_en,slug,description,description_en,price,cost_price,old_price,flash_sale_price,flash_sale_starts_at,flash_sale_ends_at,stock,category_id,sizes,colors,color_images,product_variants(color,size,stock),image_path,image_paths,specifications,is_active",
       { count: "exact" },
     )
-    .eq("store_id", storeId);
+    .eq("store_id", storeId).eq("product_variants.listed", true);
   if (q) {
     const pattern = JSON.stringify(searchPattern(q));
     query = query.or(["name", "name_en", "slug"].map((field) => field + ".ilike." + pattern).join(","));

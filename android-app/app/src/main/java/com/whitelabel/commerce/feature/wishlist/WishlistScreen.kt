@@ -42,7 +42,7 @@ fun WishlistScreen(
     onProductClick: (String) -> Unit,
     onBrowseCatalog: () -> Unit,
     onOpenAccount: () -> Unit,
-    onShowMessage: (String) -> Unit,
+    onShowMessage: (String, String?) -> Unit,
     modifier: Modifier = Modifier,
     viewModel: WishlistViewModel = hiltViewModel(),
 ) {
@@ -174,6 +174,7 @@ fun WishlistScreen(
                                             "تمت الإزالة من المفضلة",
                                             "Removed from wishlist",
                                         ),
+                                        null,
                                     )
                                 },
                                 onClick = { onProductClick(product.id) },
@@ -187,6 +188,7 @@ fun WishlistScreen(
                                                 "تمت إضافة \"${product.displayName}\" إلى السلة",
                                                 "Added \"${product.displayName}\" to cart",
                                             ),
+                                            product.imageUrl,
                                         )
                                     }
                                 },

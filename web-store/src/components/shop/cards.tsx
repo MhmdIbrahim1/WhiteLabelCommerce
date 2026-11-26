@@ -1,3 +1,4 @@
+import { stockLabel } from "@/lib/variant-stock";
 import Link from "next/link";
 import Image from "next/image";
 import { Package, Star } from "lucide-react";
@@ -108,6 +109,7 @@ export function Grid({
                   <span>({reviewCount})</span>
                 </span>
               )}
+              <span className="stock-tier" data-tier={p.stock <= 0 ? "out" : p.stock <= 5 ? "low" : "in"}>{stockLabel(p.stock, lang)}</span>
               <Price p={p} currency={currency} lang={lang} />
             </div>
           </article>

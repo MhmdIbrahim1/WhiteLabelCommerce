@@ -1,5 +1,6 @@
 package com.whitelabel.commerce.feature.account
 
+import com.whitelabel.commerce.core.designsystem.components.BannerFeedback
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -203,21 +204,7 @@ fun AuthScreen(
                 }
             }
 
-            form.errorMessage?.let { err ->
-                Surface(
-                    color = MaterialTheme.colorScheme.errorContainer,
-                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                    shape = MaterialTheme.shapes.small,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(
-                        text = err,
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.Medium,
-                        modifier = Modifier.padding(12.dp),
-                    )
-                }
-            }
+            form.errorMessage?.let { BannerFeedback(it) }
 
             // Main Form Card
             Card(

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { ShoppingBag, Check, SlidersHorizontal, Ruler, BellRing } from "lucide-react";
 import type { Product } from "@/lib/shop";
@@ -10,15 +10,20 @@ import { storeHref } from "@/lib/tenant-shared";
 import { useLanguage } from "@/components/language-provider";
 import { trackAddToCart } from "@/lib/analytics";
 import { change, useCartTenant } from "./cart-store";
+import { showToast } from "@/components/floating-toast";
+import { indexVariants, stockLabel, variantKey } from "@/lib/variant-stock";
+import { photo } from "@/lib/product-photo";
 import { SizeGuideModal } from "./size-guide-modal";
 
 export function Buy({
   p,
   detail = false,
+  onColorChange,
   basePath = "",
 }: {
   p: Product;
   detail?: boolean;
+  onColorChange?: (color: string) => void;
   basePath?: string;
 }) {
   const { lang, t } = useLanguage();
@@ -29,18 +34,22 @@ export function Buy({
     [color, setColor] = useState(
       detail && p.colors.length === 1 ? p.colors[0] : "",
     ),
-    [message, setMessage] = useState(""),
-    [error, setError] = useState(""),
     [guideOpen, setGuideOpen] = useState(false),
     [restockOpen, setRestockOpen] = useState(false),
     [restockPhone, setRestockPhone] = useState(""),
     [restockBusy, setRestockBusy] = useState(false),
-    [restockDone, setRestockDone] = useState(false),
-    [restockErr, setRestockErr] = useState("");
+    [restockDone, setRestockDone] = useState(false);
+
+  const inventory = useMemo(() => indexVariants(p.product_variants), [p.product_variants]);
+  const tracked = inventory.pairs.size > 0;
+  const pairStock = (c: string, s: string) => inventory.pairs.get(variantKey(c, s)) ?? 0;
+  const selectedStock = !tracked ? p.stock : color || !p.colors.length
+    ? size || !p.sizes.length ? pairStock(color, size) : inventory.colors.get(color) ?? 0
+    : size ? inventory.sizes.get(size) ?? 0 : p.stock;
+  const thumbnail = p.color_images?.[color] || photo(p.image_path);
 
   async function handleRestockSubscribe() {
     setRestockBusy(true);
-    setRestockErr("");
     try {
       const variantKey = [size, color].filter(Boolean).join(" / ");
       const res = await fetch("/api/notifications/back-in-stock", {
@@ -53,12 +62,13 @@ export function Buy({
         }),
       });
       if (!res.ok) {
-        setRestockErr(t("restockError"));
+        showToast({ message: t("restockError"), kind: "error" });
       } else {
         setRestockDone(true);
+        showToast({ message: t("restockSuccess"), kind: "success" });
       }
     } catch {
-      setRestockErr(t("restockError"));
+      showToast({ message: t("restockError"), kind: "error" });
     } finally {
       setRestockBusy(false);
     }
@@ -82,16 +92,13 @@ export function Buy({
         onSubmit={(e) => {
           e.preventDefault();
           if (detail && p.sizes.length > 0 && !size) {
-            setError(t("selectSizeFirst"));
-            setMessage("");
+            showToast({ message: t("selectSizeFirst"), kind: "error" });
             return;
           }
           if (detail && p.colors.length > 0 && !color) {
-            setError(t("selectColorFirst"));
-            setMessage("");
+            showToast({ message: t("selectColorFirst"), kind: "error" });
             return;
           }
-          setError("");
           const effectiveUnit = resolveEffectivePrice(p);
           const added = change(
             tenantId,
@@ -106,7 +113,8 @@ export function Buy({
               flash_sale_price: p.flash_sale_price ?? null,
               flash_sale_starts_at: p.flash_sale_starts_at ?? null,
               flash_sale_ends_at: p.flash_sale_ends_at ?? null,
-              stock: p.stock,
+              stock: selectedStock,
+              variantStock: tracked,
               quantity: 1,
             },
             1,
@@ -121,9 +129,12 @@ export function Buy({
               color,
             });
           }
-          setMessage(added ? t("addedToCart") : t("stockLimitReached"));
+          showToast(added ? { message: t("addedToCart"), kind: "cart", image: thumbnail,
+            action: { label: lang === "en" ? "View Cart" : "عرض السلة", href: storeHref(basePath, "/cart") } }
+            : { message: t("stockLimitReached"), kind: "info" });
         }}
       >
+        {detail && <span className="stock-tier" data-tier={selectedStock <= 0 ? "out" : selectedStock <= 5 ? "low" : "in"}>{stockLabel(selectedStock, lang)}</span>}
         {detail && p.sizes.length > 0 && (
           <div className="variant-group" role="radiogroup" aria-label={t("sizeLabel")}>
             <div className="variant-label-row">
@@ -148,10 +159,8 @@ export function Buy({
                     aria-checked={active}
                     className="variant-chip"
                     data-selected={active ? "true" : "false"}
-                    onClick={() => {
-                      setSize(s);
-                      setError("");
-                    }}
+                    disabled={tracked && (color || !p.colors.length ? pairStock(color, s) : inventory.sizes.get(s) ?? 0) <= 0}
+                    onClick={() => setSize(s)}
                   >
                     {active && <Check size={14} />}
                     {s}
@@ -175,9 +184,11 @@ export function Buy({
                     aria-checked={active}
                     className="variant-chip"
                     data-selected={active ? "true" : "false"}
+                    disabled={tracked && (inventory.colors.get(c) ?? 0) <= 0}
                     onClick={() => {
                       setColor(c);
-                      setError("");
+                      if (tracked && size && pairStock(c, size) === 0) setSize("");
+                      onColorChange?.(c);
                     }}
                   >
                     {active && <Check size={14} />}
@@ -191,32 +202,11 @@ export function Buy({
         <button
           type="submit"
           className={detail ? "detail-cta" : "atc-btn quick-add-pill"}
-          disabled={p.stock <= 0}
+          disabled={selectedStock <= 0}
         >
-          {message && !detail ? (
-            <>
-              <Check size={15} />
-              <span>{message}</span>
-            </>
-          ) : (
-            <>
-              <ShoppingBag size={detail ? 17 : 15} />
-              <span>
-                {p.stock > 0
-                  ? detail
-                    ? t("addToBag")
-                    : t("quickAdd")
-                  : t("outOfStock")}
-              </span>
-            </>
-          )}
+          <ShoppingBag size={detail ? 17 : 15} />
+          <span>{selectedStock > 0 ? detail ? t("addToBag") : t("quickAdd") : t("outOfStock")}</span>
         </button>
-        {error && (
-          <small role="alert" className="variant-error">
-            {error}
-          </small>
-        )}
-        {detail && message && <small role="status">{message}</small>}
       </form>
       {detail && p.stock <= 0 && (
         <div className="restock-box">
@@ -258,11 +248,6 @@ export function Buy({
                   </span>
                 </button>
               </div>
-              {restockErr && (
-                <small role="alert" className="variant-error">
-                  {restockErr}
-                </small>
-              )}
             </div>
           )}
         </div>

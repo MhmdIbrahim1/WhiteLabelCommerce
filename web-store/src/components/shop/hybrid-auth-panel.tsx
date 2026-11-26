@@ -1,5 +1,6 @@
 "use client";
 
+import { ToastFeedback } from "@/components/floating-toast";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { normalizeDigits } from "@/lib/phone";
 import { useRouter } from "next/navigation";
@@ -283,16 +284,8 @@ export function HybridAuthPanel({
         </button>
       </div>
 
-      {infoMsg && (
-        <p className="auth-alert auth-alert--ok" role="status">
-          {infoMsg}
-        </p>
-      )}
-      {errorCode && (
-        <p className="auth-alert auth-alert--error" role="alert">
-          {localizedAuthError(errorCode, isEn)}
-        </p>
-      )}
+      {infoMsg && <ToastFeedback kind="info" message={infoMsg} />}
+      {errorCode && <ToastFeedback kind="error" message={localizedAuthError(errorCode, isEn)} />}
 
       {mode === "otp" ? (
         !otpSent ? (

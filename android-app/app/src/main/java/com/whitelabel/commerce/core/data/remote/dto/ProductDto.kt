@@ -22,6 +22,9 @@ data class ProductSpecificationDto(
 }
 
 @Serializable
+data class VariantDto(val color: String, val size: String, val stock: Int)
+
+@Serializable
 data class ProductDto(
     @SerialName("id") val id: String,
     @SerialName("category_id") val categoryId: String,
@@ -39,6 +42,9 @@ data class ProductDto(
     @SerialName("is_active") val isActive: Boolean = true,
     @SerialName("sizes") val sizes: List<String> = emptyList(),
     @SerialName("colors") val colors: List<String> = emptyList(),
+    @SerialName("product_variants") val variants: List<VariantDto> = emptyList(),
+    @SerialName("color_images") val colorImages: Map<String, String> = emptyMap(),
+    @SerialName("image_paths") val gallery: List<String>? = null,
     @SerialName("image_path") val imagePath: String? = null,
     @SerialName("specifications") val specifications: List<ProductSpecificationDto> = emptyList(),
     @SerialName("avg_rating") val avgRating: Double = 0.0,
@@ -69,6 +75,9 @@ data class ProductDto(
         sizes = sizes,
         colors = colors,
         imagePath = imagePath,
+        variants = variants.map { com.whitelabel.commerce.core.domain.model.ProductVariant(it.color, it.size, it.stock) },
+        colorImages = colorImages,
+        galleryUrls = gallery.orEmpty().mapNotNull(SupabaseStorageUrls::resolveProductImageUrl),
         imageUrl = SupabaseStorageUrls.resolveProductImageUrl(imagePath),
         specifications = specifications.map { it.toDomain() }.filter { it.isValid },
         avgRating = avgRating,

@@ -1,5 +1,6 @@
 "use client";
 
+import { showToast, ToastFeedback } from "@/components/floating-toast";
 import { useActionState, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -196,6 +197,7 @@ export function Timeline({
   const copyValue = async (val: string, kind: "id" | "awb") => {
     try {
       await navigator.clipboard.writeText(val);
+      showToast({ kind: "success", message: document.documentElement.lang.startsWith("en") ? "Copied to clipboard" : "تم النسخ" });
       if (kind === "id") {
         setCopiedId(true);
         setTimeout(() => setCopiedId(false), 1800);
@@ -582,11 +584,7 @@ export function GuestTracking() {
           {busy ? t("searchingLabel") : t("trackOrderSubmit")}
         </button>
       </form>
-      {state.error && (
-        <p role="status" className="tracking-error">
-          {state.error}
-        </p>
-      )}
+      {state.error && <ToastFeedback message={state.error} kind="error" />}
       {state.row && <Timeline row={state.row} />}
     </section>
   );

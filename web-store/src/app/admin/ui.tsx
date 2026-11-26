@@ -1,3 +1,4 @@
+import { ToastFeedback } from "@/components/floating-toast";
 import Link from "next/link";
 import { Inbox } from "lucide-react";
 import { date, money } from "@/lib/brand";
@@ -40,9 +41,7 @@ export async function Notice({ result }: { result?: string | string[] }) {
           ? "Could not save changes. Please verify values and try again."
           : "تعذر حفظ التغييرات. تحقق من القيم والارتباطات ثم أعد المحاولة.";
   return (
-    <p role="status" className="notice">
-      {text}
-    </p>
+    <ToastFeedback message={text} kind={result === "ok" ? "success" : "error"} />
   );
 }
 

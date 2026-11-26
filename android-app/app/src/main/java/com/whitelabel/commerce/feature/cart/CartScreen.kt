@@ -137,7 +137,10 @@ fun CartScreen(
                         currency = state.currency,
                         locale = state.locale,
                         onProductClick = onProductClick,
-                        onAddClick = viewModel::addUpsellProduct,
+                        onAddClick = { product ->
+                            if (product.sizes.isNotEmpty() || product.colors.isNotEmpty()) onProductClick(product.id)
+                            else viewModel.addUpsellProduct(product)
+                        },
                     )
                 }
             }

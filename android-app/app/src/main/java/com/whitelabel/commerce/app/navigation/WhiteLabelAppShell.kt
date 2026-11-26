@@ -27,20 +27,20 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import com.whitelabel.commerce.core.designsystem.components.LocalBanner
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import com.whitelabel.commerce.core.designsystem.components.FloatingBanner
+import com.whitelabel.commerce.core.designsystem.components.BannerKind
+import com.whitelabel.commerce.core.designsystem.components.BannerMessage
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -100,8 +100,7 @@ fun WhiteLabelAppShell(
         currentDestination == null
 
     val brandColors = LocalBrandColors.current
-    val snackbarHostState = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
+    var banner by remember { mutableStateOf<BannerMessage?>(null) }
 
     // Cross-tab handoff states
     var pendingCategoryId by remember { mutableStateOf<String?>(null) }
@@ -160,36 +159,17 @@ fun WhiteLabelAppShell(
         onConsumeDeepLink()
     }
 
-    fun showSnackbar(message: String, showCartAction: Boolean = false) {
-        scope.launch {
-            snackbarHostState.currentSnackbarData?.dismiss()
-            val result = snackbarHostState.showSnackbar(
-                message = message,
-                actionLabel = if (showCartAction) localized("عرض السلة", "View cart") else null,
-                duration = SnackbarDuration.Short,
-            )
-            if (result == SnackbarResult.ActionPerformed && showCartAction) {
-                navigateToTab(AppRoutes.CART)
-            }
-        }
+    fun showBanner(message: String, showCartAction: Boolean = false, image: String? = null) {
+        banner = if (showCartAction) BannerMessage(message, BannerKind.Cart, image,
+            localized("عرض السلة", "View Cart")) { navigateToTab(AppRoutes.CART) }
+        else BannerMessage(message)
     }
-
-    fun showActionSnackbar(message: String, actionLabel: String, onAction: () -> Unit) {
-        scope.launch {
-            snackbarHostState.currentSnackbarData?.dismiss()
-            val result = snackbarHostState.showSnackbar(
-                message = message,
-                actionLabel = actionLabel,
-                duration = SnackbarDuration.Long,
-            )
-            if (result == SnackbarResult.ActionPerformed) {
-                onAction()
-            }
-        }
+    fun showActionBanner(message: String, actionLabel: String, onAction: () -> Unit) {
+        banner = BannerMessage(message, actionLabel = actionLabel, action = onAction)
     }
 
     fun promptSignInForWishlist() {
-        showActionSnackbar(
+        showActionBanner(
             message = localized(
                 "سجّل الدخول لحفظ المنتجات في المفضلة",
                 "Sign in to save items to your wishlist",
@@ -202,7 +182,6 @@ fun WhiteLabelAppShell(
     Scaffold(
         modifier = modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
-        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         topBar = {
             if (isTopLevelRoute) {
                 TopAppBar(
@@ -375,6 +354,7 @@ fun WhiteLabelAppShell(
             }
         },
     ) { innerPadding ->
+        CompositionLocalProvider(LocalBanner provides { banner = it }) {
         NavHost(
             navController = navController,
             startDestination = AppRoutes.HOME,
@@ -398,7 +378,7 @@ fun WhiteLabelAppShell(
                         navigateToTab(AppRoutes.CATEGORIES)
                     },
                     onHeroRoute = ::handleHeroRoute,
-                    onShowMessage = { msg -> showSnackbar(msg, showCartAction = true) },
+                    onShowMessage = { msg, photo -> showBanner(msg, showCartAction = true, image = photo) },
                     onWishlistSignInPrompt = ::promptSignInForWishlist,
                 )
             }
@@ -412,7 +392,7 @@ fun WhiteLabelAppShell(
                     onProductClick = { productId ->
                         navController.navigate(AppRoutes.productDetail(productId))
                     },
-                    onShowMessage = { msg -> showSnackbar(msg, showCartAction = true) },
+                    onShowMessage = { msg, photo -> showBanner(msg, showCartAction = true, image = photo) },
                     onWishlistSignInPrompt = ::promptSignInForWishlist,
                 )
             }
@@ -421,7 +401,7 @@ fun WhiteLabelAppShell(
                 CatalogScreen(
                     autofocusSearch = true,
                     onProductClick = { navController.navigate(AppRoutes.productDetail(it)) },
-                    onShowMessage = { showSnackbar(it, showCartAction = true) },
+                    onShowMessage = { msg, photo -> showBanner(msg, showCartAction = true, image = photo) },
                     onWishlistSignInPrompt = ::promptSignInForWishlist,
                 )
             }
@@ -455,9 +435,9 @@ fun WhiteLabelAppShell(
                     onOpenAccount = {
                         navigateToTab(AppRoutes.ACCOUNT)
                     },
-                    onShowMessage = { msg -> showSnackbar(msg) },
+                    onShowMessage = { msg -> showBanner(msg) },
                     onShowActionMessage = { msg, actionLabel, onAction ->
-                        showActionSnackbar(msg, actionLabel, onAction)
+                        showActionBanner(msg, actionLabel, onAction)
                     },
                 )
             }
@@ -476,7 +456,7 @@ fun WhiteLabelAppShell(
                         navController.popBackStack()
                         navigateToTab(AppRoutes.ACCOUNT)
                     },
-                    onShowMessage = { msg -> showSnackbar(msg) },
+                    onShowMessage = { msg -> showBanner(msg) },
                 )
             }
 
@@ -487,12 +467,12 @@ fun WhiteLabelAppShell(
                 ProductDetailScreen(
                     onBack = { navController.popBackStack() },
                     onSearch = ::openSearch,
-                    onAddedToCart = { msg -> showSnackbar(msg, showCartAction = true) },
+                    onAddedToCart = { msg, photo -> showBanner(msg, showCartAction = true, image = photo) },
                     onProductClick = { nextId ->
                         navController.navigate(AppRoutes.productDetail(nextId))
                     },
                     onOpenAccount = { navigateToTab(AppRoutes.ACCOUNT) },
-                    onShowMessage = { msg -> showSnackbar(msg) },
+                    onShowMessage = { msg -> showBanner(msg) },
                     onWishlistSignInPrompt = ::promptSignInForWishlist,
                 )
             }
@@ -510,7 +490,7 @@ fun WhiteLabelAppShell(
                     onContinueShopping = {
                         navController.popBackStack(AppRoutes.HOME, inclusive = false)
                     },
-                    onShowMessage = { msg -> showSnackbar(msg) },
+                    onShowMessage = { msg -> showBanner(msg) },
                 )
             }
 
@@ -531,7 +511,7 @@ fun WhiteLabelAppShell(
                     onSetDarkThemePreference = onSetDarkThemePreference,
                     isRtl = storeSettings.isRtl,
                     onSelectLanguage = onSelectLanguage,
-                    onShowMessage = { msg -> showSnackbar(msg) },
+                    onShowMessage = { msg -> showBanner(msg) },
                 )
             }
 
@@ -550,7 +530,7 @@ fun WhiteLabelAppShell(
                         navController.popBackStack()
                         navigateToTab(AppRoutes.ACCOUNT)
                     },
-                    onShowMessage = { msg -> showSnackbar(msg, showCartAction = true) },
+                    onShowMessage = { msg, photo -> showBanner(msg, showCartAction = photo != null, image = photo) },
                 )
             }
 
@@ -579,7 +559,7 @@ fun WhiteLabelAppShell(
                     onOpenTicket = { navController.navigate(AppRoutes.supportTicket(it)) { launchSingleTop = true } },
                     onBack = { navController.popBackStack() },
                     onSearch = ::openSearch,
-                    onShowMessage = { msg -> showSnackbar(msg) },
+                    onShowMessage = { msg -> showBanner(msg) },
                 )
             }
             composable(
@@ -595,5 +575,7 @@ fun WhiteLabelAppShell(
                 )
             }
         }
+        }
     }
+    FloatingBanner(banner) { if (banner === it) banner = null }
 }

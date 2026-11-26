@@ -296,11 +296,7 @@ fun ProductCard(
                 }
 
                 Text(
-                    text = if (product.isInStock) {
-                        localized("متوفر (${product.stock})", "In stock (${product.stock})")
-                    } else {
-                        localized("غير متوفر حالياً", "Currently unavailable")
-                    },
+                    text = com.whitelabel.commerce.core.domain.model.stockLabel(product.stock),
                     style = MaterialTheme.typography.labelSmall,
                     color = if (product.isInStock) brandColors.success else MaterialTheme.colorScheme.error,
                 )

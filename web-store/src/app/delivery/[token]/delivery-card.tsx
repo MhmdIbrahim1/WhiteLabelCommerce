@@ -1,5 +1,6 @@
 "use client";
 
+import { ToastFeedback } from "@/components/floating-toast";
 import { useState, useTransition } from "react";
 import {
   CheckCircle2,
@@ -225,11 +226,7 @@ export function DeliveryCard({
           </div>
         )}
 
-        {feedback && !isDelivered && (
-          <p className="delivery-feedback" role="status">
-            {feedback}
-          </p>
-        )}
+        {feedback && !isDelivered && <ToastFeedback message={feedback} kind="info" />}
       </article>
     </main>
   );

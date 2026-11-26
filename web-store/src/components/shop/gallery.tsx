@@ -1,15 +1,32 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { Package, X, ZoomIn } from "lucide-react";
 import { useLanguage } from "@/components/language-provider";
 
-export function ProductGallery({ sources, alt }: { sources: string[]; alt: string }) {
+import type { Product } from "@/lib/shop";
+import { photo } from "@/lib/product-photo";
+import { Buy } from "./buy";
+
+export function ProductPurchase({ product, title, basePath, children }: {
+  product: Product; title: string; basePath: string; children: React.ReactNode;
+}) {
+  const [color, setColor] = useState(product.colors.length === 1 ? product.colors[0] : "");
+  const images = useMemo(() => [...new Set([photo(product.image_path), ...(product.image_paths ?? []).map(photo),
+    ...Object.values(product.color_images ?? {})].filter((src): src is string => Boolean(src)))], [product]);
+  const positions = useMemo(() => new Map(images.map((src, i) => [src, i])), [images]);
+  return <section className="details-grid">
+    <ProductGallery key={color} sources={images} alt={title} initial={positions.get(product.color_images?.[color] ?? "") ?? 0} />
+    <div>{children}<Buy p={product} detail basePath={basePath} onColorChange={setColor} /></div>
+  </section>;
+}
+
+export function ProductGallery({ sources, alt, initial = 0 }: { sources: string[]; alt: string; initial?: number }) {
   const { lang } = useLanguage();
   const en = lang === "en";
   const dialog = useRef<HTMLDialogElement>(null);
-  const [active, setActive] = useState(0);
+  const [active, setActive] = useState(initial);
   const [enlarged, setEnlarged] = useState(false);
   const src = sources[active] ?? sources[0];
 

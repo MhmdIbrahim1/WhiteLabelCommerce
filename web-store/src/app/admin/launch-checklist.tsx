@@ -1,5 +1,6 @@
 "use client";
 
+import { showToast } from "@/components/floating-toast";
 import Link from "next/link";
 import { useState } from "react";
 import {
@@ -145,6 +146,7 @@ export function StoreLaunchChecklist({
         : storefrontPath;
     try {
       await navigator.clipboard.writeText(fullUrl);
+      showToast({ kind: "success", message: document.documentElement.lang.startsWith("en") ? "Copied to clipboard" : "تم النسخ" });
     } catch {
       /* fallback below */
       try {

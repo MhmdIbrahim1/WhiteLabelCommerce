@@ -12,6 +12,7 @@ import {
 import { toDateTimeLocalValue } from "@/lib/flash-sale";
 import { localizedText } from "@/lib/i18n";
 import { useLanguage } from "@/components/language-provider";
+import { variantKey, type Variant } from "@/lib/variant-stock";
 import { saveProduct } from "../mutations";
 
 export type AdminCategoryItem = {
@@ -36,6 +37,8 @@ export type AdminProductItem = {
   flash_sale_starts_at?: string | null;
   flash_sale_ends_at?: string | null;
   stock: number;
+  product_variants?: Variant[];
+  color_images?: Record<string, string>;
   sizes: string[];
   colors: string[];
   image_path: string | null;
@@ -155,6 +158,15 @@ export function AdminProductForm({
   };
 
   const selectedColors = parseList(colorsValue);
+  const selectedSizes = parseList(sizesValue);
+  const [trackVariants, setTrackVariants] = useState(Boolean(p?.product_variants?.length));
+  const [stockByKey, setStockByKey] = useState<Record<string, number>>(() =>
+    Object.fromEntries((p?.product_variants ?? []).map(v => [variantKey(v.color, v.size), v.stock])));
+  const [photos, setPhotos] = useState<Record<string, string>>(p?.color_images ?? {});
+  const hasOptions = selectedSizes.length > 0 || selectedColors.length > 0;
+  const variants = trackVariants && hasOptions ? (selectedColors.length ? selectedColors : [""]).flatMap(color =>
+    (selectedSizes.length ? selectedSizes : [""]).map(size => ({ color, size, stock: stockByKey[variantKey(color, size)] ?? 0 }))) : [];
+  const colorPhotos = Object.fromEntries(selectedColors.filter(color => photos[color]?.trim()).map(color => [color, photos[color].trim()]));
 
   const applyPreset = (preset: AdminCategoryPreset) => {
     const sep = isEn ? ", " : "، ";
@@ -279,7 +291,8 @@ export function AdminProductForm({
           type="number"
           name="stock"
           min="0"
-          defaultValue={p?.stock ?? 0}
+          key={variants.length ? "matrix" : "simple"}
+          {...(variants.length ? { value: variants.reduce((sum, v) => sum + v.stock, 0), readOnly: true } : { defaultValue: p?.stock ?? 0 })}
           required
         />
       </label>
@@ -467,6 +480,22 @@ export function AdminProductForm({
         />
       </label>
 
+      <input type="hidden" name="original_stock" value={p?.stock ?? 0} />
+      <input type="hidden" name="original_variants" value={JSON.stringify(p?.product_variants ?? [])} />
+      <input type="hidden" name="variants" value={JSON.stringify(variants)} />
+      <input type="hidden" name="color_images" value={JSON.stringify(colorPhotos)} />
+      {hasOptions && <fieldset className="wide variant-editor">
+        <legend>{isEn ? "Variant inventory" : "مخزون الخيارات"}</legend>
+        <label><input type="checkbox" checked={trackVariants} onChange={e => setTrackVariants(e.target.checked)} />
+          {isEn ? "Assign stock by color and size" : "تحديد المخزون حسب اللون والمقاس"}</label>
+        {selectedColors.map(color => <label key={color}>{isEn ? "Image for " : "صورة اللون "}{color}
+          <input type="url" dir="ltr" placeholder="https://" value={photos[color] ?? ""}
+            onChange={e => setPhotos({ ...photos, [color]: e.target.value })} /></label>)}
+        {variants.map(({ color, size, stock }) => <label key={variantKey(color, size)}>
+          {[color, size].filter(Boolean).join(" / ")}
+          <input type="number" min={0} step={1} required value={stock}
+            onChange={e => setStockByKey({ ...stockByKey, [variantKey(color, size)]: Number(e.target.value) })} /></label>)}
+      </fieldset>}
       <div className="wide admin-swatches-row">
         <small>
           {isEn ? "Quick Color Swatches:" : "اختيار سريع للألوان:"}

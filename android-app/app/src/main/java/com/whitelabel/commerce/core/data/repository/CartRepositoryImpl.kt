@@ -64,7 +64,8 @@ class CartRepositoryImpl @Inject constructor(
         selectedSize: String?,
         selectedColor: String?,
     ) {
-        if (quantity <= 0 || product.stock <= 0) return
+        val available = product.inventory.stock(selectedColor, selectedSize, product.stock)
+        if (quantity <= 0 || available <= 0) return
 
         val normalizedSize = selectedSize?.trim()?.takeIf { it.isNotEmpty() }
         val normalizedColor = selectedColor?.trim()?.takeIf { it.isNotEmpty() }
@@ -76,7 +77,7 @@ class CartRepositoryImpl @Inject constructor(
             val effectiveUnit = product.effectivePrice()
             if (existingIndex >= 0) {
                 val existing = current[existingIndex]
-                val clampedQty = (existing.quantity + quantity).coerceIn(1, product.stock)
+                val clampedQty = (existing.quantity + quantity).coerceIn(1, available)
                 current[existingIndex] = existing.copy(
                     productName = product.name,
                     productNameEn = product.nameEn,
@@ -86,9 +87,9 @@ class CartRepositoryImpl @Inject constructor(
                     flashSaleStartsAt = product.flashSaleStartsAt,
                     flashSaleEndsAt = product.flashSaleEndsAt,
                     oldPrice = product.oldPrice,
-                    imageUrl = product.imageUrl,
+                    imageUrl = product.imageFor(normalizedColor),
                     quantity = clampedQty,
-                    maxStock = product.stock,
+                    maxStock = available,
                 )
             } else {
                 current += CartItemEntity(
@@ -101,9 +102,9 @@ class CartRepositoryImpl @Inject constructor(
                     flashSaleStartsAt = product.flashSaleStartsAt,
                     flashSaleEndsAt = product.flashSaleEndsAt,
                     oldPrice = product.oldPrice,
-                    imageUrl = product.imageUrl,
-                    quantity = quantity.coerceIn(1, product.stock),
-                    maxStock = product.stock,
+                    imageUrl = product.imageFor(normalizedColor),
+                    quantity = quantity.coerceIn(1, available),
+                    maxStock = available,
                     selectedSize = normalizedSize,
                     selectedColor = normalizedColor,
                 )

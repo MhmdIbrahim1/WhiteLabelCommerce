@@ -1,4 +1,5 @@
 "use client";
+import { ToastFeedback } from "@/components/floating-toast";
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import {
@@ -540,24 +541,7 @@ export function CustomizerStudio({
         </div>
       </header>
 
-      {feedback && (
-        <div
-          role="status"
-          className={
-            "customizer-banner " +
-            (feedback.type === "ok"
-              ? "customizer-banner--ok"
-              : "customizer-banner--error")
-          }
-        >
-          <span>{feedback.text}</span>
-          {feedback.type === "ok" && (
-            <Link href="/" target="_blank" rel="noreferrer">
-              {isEn ? "Open Live Store ↗" : "افتح المتجر للمعاينة ↗"}
-            </Link>
-          )}
-        </div>
-      )}
+      {feedback && <ToastFeedback message={feedback.text} kind={feedback.type === "ok" ? "success" : "error"} />}
 
       {/* Streamlined Split-Screen Workspace */}
       <div

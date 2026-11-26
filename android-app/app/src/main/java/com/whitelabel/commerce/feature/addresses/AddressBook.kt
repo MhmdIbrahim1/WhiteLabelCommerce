@@ -1,5 +1,7 @@
 package com.whitelabel.commerce.feature.addresses
 
+import com.whitelabel.commerce.core.designsystem.components.BannerKind
+import com.whitelabel.commerce.core.designsystem.components.BannerFeedback
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -118,7 +120,7 @@ fun AddressBook(
     }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
         if (!checkout) Text(localized("عناويني","My Addresses"), style = MaterialTheme.typography.titleLarge)
-        if (busy && editor && notice.isNotBlank()) Text(notice)
+        if (notice.isNotBlank()) BannerFeedback(notice, BannerKind.Info)
         if (failedLoad) TextButton({ reload++ }) { Text(localized("تعذر تحميل العناوين. إعادة المحاولة", "Could not load addresses. Retry")) }
         rows.forEach { row ->
             val title = label(row.label) + if (row.isDefault) localized(" · افتراضي", " · Default") else ""
@@ -184,7 +186,6 @@ fun AddressBook(
             }
             if (!checkout) TextButton({ editor = false }, enabled = !busy) { Text(localized("إلغاء","Cancel")) }
         }
-        if (!busy && notice.isNotBlank()) Text(notice, style = MaterialTheme.typography.bodyMedium)
     }
     confirm?.let { row ->
         AlertDialog(onDismissRequest = { confirm = null }, title = { Text(localized("حذف العنوان؟","Delete this address?")) },

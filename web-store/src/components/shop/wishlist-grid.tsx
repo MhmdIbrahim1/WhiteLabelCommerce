@@ -1,5 +1,6 @@
 "use client";
 
+import { stockLabel } from "@/lib/variant-stock";
 import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
@@ -13,7 +14,7 @@ import {
   Package,
 } from "lucide-react";
 import type { Product } from "@/lib/shop";
-import { localizedText, t } from "@/lib/i18n";
+import { localizedText } from "@/lib/i18n";
 import { storeHref } from "@/lib/tenant-shared";
 import { formatRatingScore } from "@/lib/reviews-wishlist";
 import { useLanguage } from "@/components/language-provider";
@@ -120,11 +121,7 @@ export function WishlistGrid({
               <span
                 className={`wishlist-stock-pill ${p.stock > 0 ? "is-in" : "is-out"}`}
               >
-                {p.stock > 0
-                  ? isEn
-                    ? "In Stock"
-                    : "متوفر"
-                  : t(lang, "outOfStock")}
+                {stockLabel(p.stock, lang)}
               </span>
             </div>
 

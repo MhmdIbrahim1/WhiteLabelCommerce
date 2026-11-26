@@ -1,5 +1,6 @@
 "use client";
 
+import { showToast } from "@/components/floating-toast";
 import { useRef, useState } from "react";
 import { LocateFixed, MapPin } from "lucide-react";
 import { useLanguage } from "@/components/language-provider";
@@ -30,7 +31,9 @@ export function AddressBook({ storeId, initial, profile, checkout = false, signe
   const [editor, setEditor] = useState(checkout && !first);
   const [editing, setEditing] = useState<string>();
   const [working, setWorking] = useState(false);
-  const [notice, setNotice] = useState("");
+  function setNotice(message: string, kind: "error" | "info" | "success" = "info") {
+    if (message) showToast({ message, kind });
+  }
   const [confirmDelete, setConfirmDelete] = useState<string>();
   const fields = useRef<HTMLFieldSetElement>(null);
   const pending = useRef(false);
@@ -90,9 +93,9 @@ export function AddressBook({ storeId, initial, profile, checkout = false, signe
         if (selection) selectAddress(selection, selection.id);
         else startEdit();
       }
-      setNotice(en ? "Address book updated." : "تم تحديث العناوين.");
+      setNotice(en ? "Address book updated." : "تم تحديث العناوين.", "success");
     } catch {
-      setNotice(en ? "Could not save this change. Check your connection and try again." : "تعذر حفظ التغيير. تحقق من الاتصال وأعد المحاولة.");
+      setNotice(en ? "Could not save this change. Check your connection and try again." : "تعذر حفظ التغيير. تحقق من الاتصال وأعد المحاولة.", "error");
     } finally { pending.current = false; setWorking(false); }
   }
 
@@ -165,6 +168,5 @@ export function AddressBook({ storeId, initial, profile, checkout = false, signe
       <input type="hidden" name="delivery" value={JSON.stringify({governorate:draft.governorate,lat:draft.lat,lng:draft.lng})}/>
       {!editor && <><input type="hidden" name="phone" value={draft.phone}/><input type="hidden" name="recipient_name" value={draft.recipient_name}/></>}
     </>}
-    {notice && <p role="status">{notice}</p>}
   </section>;
 }

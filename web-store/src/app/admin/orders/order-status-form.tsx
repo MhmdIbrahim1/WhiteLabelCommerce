@@ -1,4 +1,5 @@
 "use client";
+import { showToast } from "@/components/floating-toast";
 import { SubmitButton } from "@/components/submit-button";
 import { useState } from "react";
 import {
@@ -81,6 +82,7 @@ export function OrderStatusForm({
     if (!link) return;
     try {
       await navigator.clipboard.writeText(link);
+      showToast({ kind: "success", message: document.documentElement.lang.startsWith("en") ? "Copied to clipboard" : "تم النسخ" });
       setCopied(true);
       setTimeout(() => setCopied(false), 2200);
     } catch {}

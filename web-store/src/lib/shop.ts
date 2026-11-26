@@ -28,6 +28,8 @@ export type Product = {
   flash_sale_starts_at?: string | null;
   flash_sale_ends_at?: string | null;
   stock: number;
+  product_variants?: import("./variant-stock").Variant[];
+  color_images?: Record<string, string>;
   sizes: string[];
   colors: string[];
   image_path: string | null;
@@ -170,14 +172,7 @@ export const categories = cache(async () => {
   }
 });
 
-export const photo = (path: string | null) =>
-  path
-    ? /^https?:\/\//i.test(path) || path.startsWith("/")
-      ? path
-      : process.env.NEXT_PUBLIC_SUPABASE_URL +
-        "/storage/v1/object/public/product-images/" +
-        path.split("/").map(encodeURIComponent).join("/")
-    : null;
+export { photo } from "./product-photo";
 
 export const searchPattern = (value: string) =>
   "%" + value.slice(0, 100).replace(/[\\%_]/g, "\\$&") + "%";

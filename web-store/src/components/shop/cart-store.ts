@@ -23,6 +23,7 @@ export type Line = {
   flash_sale_ends_at?: string | null;
   quantity: number;
   stock: number;
+  variantStock?: boolean;
 };
 
 type CartContact = {
@@ -353,7 +354,7 @@ export function change(tenantId: string, line: Line, delta: number) {
   const rows = decode(snapshot(tenantId));
   const i = rows.findIndex((l) => same(l, line));
   const total = rows
-    .filter((l) => l.id === line.id)
+    .filter((l) => line.variantStock ? same(l, line) : l.id === line.id)
     .reduce((sum, l) => sum + l.quantity, 0);
   if (delta > 0 && total + delta > line.stock) return false;
   const quantity = (rows[i]?.quantity ?? 0) + delta;
