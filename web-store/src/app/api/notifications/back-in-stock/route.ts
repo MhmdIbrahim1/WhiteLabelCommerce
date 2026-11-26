@@ -1,3 +1,4 @@
+import { actionError } from "@/lib/action-error";
 import { serverDb } from "@/lib/db";
 import { settings } from "@/lib/shop";
 import { UUID_RE } from "@/lib/paymob";
@@ -56,7 +57,7 @@ export async function POST(req: Request) {
 
   if (error) {
     return Response.json(
-      { error: error.message || "restock_subscribe_failed" },
+      { error: actionError(error, "restock_subscribe_failed") },
       { status: 400 },
     );
   }

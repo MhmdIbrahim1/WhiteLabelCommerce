@@ -58,12 +58,15 @@ export default async function Layout({
 }: {
   children: React.ReactNode;
 }) {
-  const db = await serverDb();
-  const s = await settings();
-  const [admin, superAdmin, authRes, lang] = await Promise.all([
-    adminUser(db, s.storeId),
-    superAdminUser(db),
-    db.auth.getUser(),
+  const [db, s, authRes] = await Promise.all([
+    serverDb(), settings(), serverDb().then((client) => client.auth.getUser()),
+  ]);
+  const authUser = authRes.data.user;
+  const [admin, superAdmin, wishRows, lang] = await Promise.all([
+    adminUser(db, s.storeId, authUser),
+    superAdminUser(db, authUser),
+    authUser ? db.from("wishlists").select("product_id")
+      .eq("store_id", s.storeId).eq("user_id", authUser.id) : null,
     getServerLang(s.uiConfig.defaultLanguage),
   ]);
   const displayName = localizedText(lang, s.nameAr, s.nameEn) || s.name;
@@ -80,18 +83,7 @@ export default async function Layout({
     );
   }
 
-  const authUser = authRes.data.user;
-  let initialWishlistIds: string[] = [];
-  if (authUser) {
-    const { data: wishRows } = await db
-      .from("wishlists")
-      .select("product_id")
-      .eq("store_id", s.storeId)
-      .eq("user_id", authUser.id);
-    initialWishlistIds = ((wishRows ?? []) as { product_id: string }[])
-      .map((w) => w.product_id)
-      .filter(Boolean);
-  }
+  const initialWishlistIds = (wishRows?.data ?? []).map((row) => String(row.product_id));
   const userSummary = authUser
     ? {
         id: authUser.id,

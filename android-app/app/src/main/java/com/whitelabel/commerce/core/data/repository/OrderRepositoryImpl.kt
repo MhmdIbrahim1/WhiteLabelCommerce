@@ -341,12 +341,12 @@ class OrderRepositoryImpl @Inject constructor(
             .toDomain()
     }
 
-    private fun encodeSavedOrders(rows: List<SavedOrderReceiptEntity>): String =
+    private suspend fun encodeSavedOrders(rows: List<SavedOrderReceiptEntity>): String =
         PrivatePreferences.encrypt(KEY_SAVED_ORDERS.name, json.encodeToString(rows))
 
-    private fun decodeSavedOrders(raw: String?): List<SavedOrderReceiptEntity> {
+    private suspend fun decodeSavedOrders(raw: String?): List<SavedOrderReceiptEntity> {
         if (raw.isNullOrBlank()) return emptyList()
-        return runCatching {
+        return runSuspendCatching {
             json.decodeFromString<List<SavedOrderReceiptEntity>>(PrivatePreferences.decrypt(KEY_SAVED_ORDERS.name, raw))
         }.getOrDefault(emptyList())
     }

@@ -172,7 +172,7 @@ class OrdersViewModel @Inject constructor(
                     trackingState.update {
                         it.copy(
                             isTracking = false,
-                            trackingError = error.localizedMessage ?: localized("تعذر تتبع الطلب حالياً.", "Tracking is temporarily unavailable."),
+                            trackingError = localized("تعذر تتبع الطلب حالياً.", "Tracking is temporarily unavailable."),
                         )
                     }
                 }
@@ -304,8 +304,8 @@ class OrdersViewModel @Inject constructor(
         onSuccess: (ReturnRequest) -> Unit,
     ) {
         if (trackingState.value.isSubmittingReturn) return
+        trackingState.update { it.copy(isSubmittingReturn = true, returnSubmitError = null) }
         viewModelScope.launch {
-            trackingState.update { it.copy(isSubmittingReturn = true, returnSubmitError = null) }
             orderRepository.submitReturnRequest(
                 orderId = orderId,
                 requestType = requestType,

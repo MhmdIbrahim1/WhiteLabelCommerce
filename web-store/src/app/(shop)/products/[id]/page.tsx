@@ -1,3 +1,4 @@
+import { cache } from "react";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Star } from "lucide-react";
@@ -23,24 +24,24 @@ import { resolveEffectivePrice } from "@/lib/flash-sale";
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+const loadProduct = cache(async (storeId: string, id: string) => {
+  const db = await serverDb();
+  const isUuid = UUID_RE.test(id);
+  const query = db
+    .from("products")
+    .select(productFields + ",image_paths")
+    .eq("store_id", storeId)
+    .eq("is_active", true);
+  return (isUuid ? query.eq("id", id) : query.eq("slug", id))
+    .maybeSingle<Product>();
+});
+
 export async function generateMetadata({
   params,
 }: PageProps<"/products/[id]">): Promise<Metadata> {
   try {
-    const [{ id }, db, s] = await Promise.all([params, serverDb(), settings()]);
-    const isUuid = UUID_RE.test(id);
-    const query = db
-      .from("products")
-      .select("name,name_en,description,description_en")
-      .eq("store_id", s.storeId)
-      .eq("is_active", true);
-    const { data } = await (isUuid ? query.eq("id", id) : query.eq("slug", id))
-      .maybeSingle<{
-        name: string;
-        name_en: string | null;
-        description: string | null;
-        description_en: string | null;
-      }>();
+    const [{ id }, s] = await Promise.all([params, settings()]);
+    const { data } = await loadProduct(s.storeId, id);
     if (!data) return {};
     const lang = await getServerLang(s.uiConfig.defaultLanguage);
     const title = localizedText(lang, data.name, data.name_en);
@@ -56,15 +57,7 @@ export async function generateMetadata({
 
 export default async function Details({ params }: PageProps<"/products/[id]">) {
   const [{ id }, db, s] = await Promise.all([params, serverDb(), settings()]);
-  const isUuid = UUID_RE.test(id);
-  const query = db
-    .from("products")
-    .select(productFields)
-    .eq("store_id", s.storeId)
-    .eq("is_active", true);
-  const result = await (isUuid ? query.eq("id", id) : query.eq("slug", id))
-    .maybeSingle<Product>();
-
+  const result = await loadProduct(s.storeId, id);
   if (result.error?.code === "22P02" || (!result.error && !result.data))
     notFound();
   const p = checked(result);
@@ -149,7 +142,12 @@ export default async function Details({ params }: PageProps<"/products/[id]">) {
         currency={s.currency}
       />
       <section className="details-grid">
-        <ProductGallery src={photo(p.image_path)} alt={title} />
+        <ProductGallery
+          key={p.id}
+          sources={[...new Set([p.image_path, ...(p.image_paths ?? [])]
+            .map((path) => photo(path?.trim() || null)).filter((src): src is string => Boolean(src)))]}
+          alt={title}
+        />
         <div>
           <h1>{title}</h1>
 

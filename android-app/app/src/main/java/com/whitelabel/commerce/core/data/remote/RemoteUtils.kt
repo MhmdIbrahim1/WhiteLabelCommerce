@@ -10,6 +10,9 @@ internal inline fun <T> runSuspendCatching(block: () -> T): Result<T> = try {
 } catch (cancellation: CancellationException) {
     throw cancellation
 } catch (throwable: Throwable) {
+    if (com.whitelabel.commerce.BuildConfig.DEBUG) {
+        android.util.Log.w("CommerceData", "Request failed (${throwable.javaClass.simpleName})")
+    }
     Result.failure(throwable)
 }
 

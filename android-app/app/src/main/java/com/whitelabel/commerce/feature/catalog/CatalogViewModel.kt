@@ -206,7 +206,7 @@ class CatalogViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
             val categories = catalogRepository.getCategories()
-            _uiState.update { it.copy(categories = categories.getOrElse { _ -> it.categories }, errorMessage = categories.exceptionOrNull()?.localizedMessage) }
+            _uiState.update { it.copy(categories = categories.getOrElse { _ -> it.categories }, errorMessage = if (categories.isFailure) localized("تعذر تحميل الفئات.", "Could not load categories.") else null) }
             val requested = pendingCategory
             if (requested != null && categories.isSuccess && _uiState.value.categories.isNotEmpty()) {
                 applyExternalCategory(requested)
@@ -356,7 +356,7 @@ class CatalogViewModel @Inject constructor(
                     it.copy(
                         isLoading = false,
                         isRefreshing = false,
-                        errorMessage = error.localizedMessage,
+                        errorMessage = localized("تعذر تحميل المنتجات. حاول مرة أخرى.", "Could not load products. Please try again."),
                     )
                 }
             }

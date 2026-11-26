@@ -6,7 +6,8 @@ import {
   settings,
   type Product,
 } from "@/lib/shop";
-import { storeHref } from "@/lib/tenant";
+import { notFound } from "next/navigation";
+import { resolveActiveStore, storeHref } from "@/lib/tenant";
 import { localizedText, t } from "@/lib/i18n";
 import { getServerLang } from "@/lib/i18n-server";
 import { pagination } from "@/lib/workflow";
@@ -54,21 +55,17 @@ export default async function Catalog({
   const minNum = min && Number.isFinite(+min) ? +min : null;
   const maxNum = max && Number.isFinite(+max) ? +max : null;
   const { from, to, page } = pagination(params.page);
-  const db = await serverDb();
-  const [cats, s] = await Promise.all([categories(), settings()]);
-  const lang = await getServerLang(s.uiConfig.defaultLanguage);
-  const isEn = lang === "en";
-  const validCategory =
-    category && cats.some((c) => c.id === category) ? category : null;
+  const [db, store] = await Promise.all([serverDb(), resolveActiveStore()]);
+  if (!store) notFound();
 
-  let rows: SearchProductRow[] = [];
-  let totalCount = 0;
-  let searchBannerKind: "closest" | "spec" | null = null;
-
-  const result = await db.rpc("catalog_products_page", {
-    p_store_id: s.storeId,
+  const categoryRows = categories();
+  const selectedCategory = category
+    ? categoryRows.then((rows) => rows.some((c) => c.id === category) ? category : null)
+    : Promise.resolve(null);
+  const fetchPage = (categoryId: string | null) => db.rpc("catalog_products_page", {
+    p_store_id: store.id,
     p_query: q.slice(0, 100),
-    p_category_id: validCategory,
+    p_category_id: categoryId,
     p_min_price: minNum,
     p_max_price: maxNum,
     p_in_stock: inStockOnly,
@@ -77,9 +74,14 @@ export default async function Catalog({
     p_limit: to - from + 1,
     p_offset: from,
   });
-  const pageRows = checked(result) as CatalogProductPageRow[];
-  totalCount = pageRows.length > 0 ? Number(pageRows[0].total_count) : 0;
-  rows = pageRows;
+  const [cats, s, validCategory, result] = await Promise.all([
+    categoryRows, settings(), selectedCategory, selectedCategory.then(fetchPage),
+  ]);
+  const lang = await getServerLang(s.uiConfig.defaultLanguage);
+  const isEn = lang === "en";
+  const rows = checked(result) as CatalogProductPageRow[];
+  const totalCount = Number(rows[0]?.total_count ?? 0);
+  let searchBannerKind: "closest" | "spec" | null = null;
 
   if (q && rows.length > 0) {
     const hasDirect = rows.some(
@@ -158,7 +160,6 @@ export default async function Catalog({
         )}
       </div>
 
-      {/* Interactive Quick Filter Pills */}
       <div
         className="catalog-quick-pills"
         role="region"
@@ -290,7 +291,7 @@ export default async function Catalog({
       )}
 
       {rows.length === 0 ? (
-        <div className="panel search-empty-card">
+        <div className="panel shop-empty-state">
           <p>
             <strong>
               {q

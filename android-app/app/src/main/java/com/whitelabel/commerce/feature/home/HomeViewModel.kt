@@ -1,5 +1,6 @@
 package com.whitelabel.commerce.feature.home
 
+import com.whitelabel.commerce.core.designsystem.localized
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.whitelabel.commerce.core.domain.model.Category
@@ -82,11 +83,10 @@ class HomeViewModel @Inject constructor(
                 )
             }
 
-            val settingsDeferred = async { storeRepository.refreshStoreSettings() }
-            val categoriesDeferred = async { catalogRepository.getCategories() }
-            val productsDeferred = async { catalogRepository.getActiveProducts(limit = 20) }
+            if (isPullRefresh) launch(kotlinx.coroutines.Dispatchers.IO) { storeRepository.refreshStoreSettings() }
+            val categoriesDeferred = async(kotlinx.coroutines.Dispatchers.IO) { catalogRepository.getCategories() }
+            val productsDeferred = async(kotlinx.coroutines.Dispatchers.IO) { catalogRepository.getActiveProducts(limit = 20) }
 
-            settingsDeferred.await()
             val categoriesResult = categoriesDeferred.await()
             val productsResult = productsDeferred.await()
             val firstError = categoriesResult.exceptionOrNull() ?: productsResult.exceptionOrNull()
@@ -98,7 +98,7 @@ class HomeViewModel @Inject constructor(
                     featuredProducts = nextFeatured,
                     isLoading = false,
                     isRefreshing = false,
-                    errorMessage = firstError?.localizedMessage,
+                    errorMessage = if (firstError == null) null else localized("تعذر تحميل المتجر. حاول مرة أخرى.", "Could not load the store. Please try again."),
                 )
             }
         }

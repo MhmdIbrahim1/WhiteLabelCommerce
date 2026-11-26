@@ -31,6 +31,7 @@ export type Product = {
   sizes: string[];
   colors: string[];
   image_path: string | null;
+  image_paths?: string[] | null;
   specifications?: ProductSpec[] | null;
   avg_rating?: number | null;
   review_count?: number | null;
@@ -151,14 +152,15 @@ export const settings = cache(async () => {
 });
 
 export const categories = cache(async () => {
-  const [s, db] = await Promise.all([settings(), serverDb()]);
+  const [store, db] = await Promise.all([resolveActiveStore(), serverDb()]);
+  if (!store) notFound();
   const all: { id: string; name: string; name_en?: string | null }[] = [];
   for (let start = 0; ; start += 200) {
     const batch = checked(
       await db
         .from("categories")
         .select("id,name,name_en")
-        .eq("store_id", s.storeId)
+        .eq("store_id", store.id)
         .order("name")
         .order("id")
         .range(start, start + 199),

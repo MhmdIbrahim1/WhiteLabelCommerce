@@ -1,4 +1,5 @@
 "use client";
+import { SubmitButton } from "@/components/submit-button";
 import { useState } from "react";
 import {
   Truck,
@@ -129,7 +130,7 @@ export function OrderStatusForm({
                 ))}
               </select>
             </label>
-            <button type="submit">
+            <SubmitButton type="submit">
               {selectedStatus === "shipped" ? (
                 <>
                   <Truck size={16} />{" "}
@@ -142,7 +143,7 @@ export function OrderStatusForm({
               ) : (
                 "تحديث الحالة"
               )}
-            </button>
+            </SubmitButton>
           </div>
 
           {showShippingFields && (
@@ -308,12 +309,12 @@ export function OrderStatusForm({
           ) : (
             <form action={ensureDeliveryToken} style={{ marginTop: "0.5rem" }}>
               <input type="hidden" name="id" value={orderId} />
-              <button type="submit" className="btn-outline-admin">
+              <SubmitButton type="submit" className="btn-outline-admin">
                 <Link2 size={15} />{" "}
                 {isEn
                   ? "Generate Courier Link"
                   : "إنشاء رابط تأكيد للمندوب"}
-              </button>
+              </SubmitButton>
             </form>
           )}
         </div>

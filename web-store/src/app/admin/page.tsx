@@ -1,3 +1,5 @@
+import { Suspense } from "react";
+import { RouteSkeleton } from "@/components/route-skeleton";
 import Link from "next/link";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { checked, requireAdmin } from "@/lib/db";
@@ -136,7 +138,7 @@ function normalizeMetrics(raw: DashboardRpcResult): AnalyticsDashboardMetrics {
   };
 }
 
-export default async function Overview({
+async function Overview({
   searchParams,
 }: PageProps<"/admin">) {
   const params = await searchParams;
@@ -228,5 +230,13 @@ export default async function Overview({
         <OrderTable rows={recentOrders} />
       </section>
     </>
+  );
+}
+
+export default function Page(props: PageProps<"/admin">) {
+  return (
+    <Suspense fallback={<RouteSkeleton layout="dashboard" />}>
+      <Overview {...props} />
+    </Suspense>
   );
 }

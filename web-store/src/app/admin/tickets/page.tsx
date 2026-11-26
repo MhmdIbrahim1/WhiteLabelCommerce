@@ -1,3 +1,4 @@
+import { SubmitButton } from "@/components/submit-button";
 import Link from "next/link";
 import { checked, requireAdmin } from "@/lib/db";
 import { date } from "@/lib/brand";
@@ -72,9 +73,9 @@ export default async function TicketsPage({
                   ))}
                 </select>
               </label>
-              <button>
+              <SubmitButton>
                 {isEn ? "Save Reply & Status" : "حفظ الرد والحالة"}
-              </button>
+              </SubmitButton>
             </form>
           </details>
         ))}

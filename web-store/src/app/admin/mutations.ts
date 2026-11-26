@@ -1,4 +1,5 @@
 "use server";
+import { actionError } from "@/lib/action-error";
 import { randomBytes } from "node:crypto";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
@@ -35,7 +36,7 @@ import {
 import type { ProductReview } from "@/lib/reviews-wishlist";
 import { resolveEffectivePrice } from "@/lib/flash-sale";
 import { normalizeSpecs } from "@/lib/specs";
-import { nextOrder, nextTicket } from "@/lib/workflow";
+import { nextOrder, nextTicket, pagination } from "@/lib/workflow";
 import { safeRelativePath, validateImageMagicBytes } from "@/lib/security";
 
 const catalog = "/admin/products";
@@ -54,7 +55,7 @@ function finish(path: string, success: boolean, code?: string): never {
     revalidatePath("/admin", "layout");
     revalidatePath("/", "layout");
   }
-  redirect(path + "?result=" + (code ?? (success ? "ok" : "error")));
+  redirect(path + (path.includes("?") ? "&result=" : "?result=") + (code ?? (success ? "ok" : "error")));
 }
 
 export async function switchAdminStore(nextStoreId: string): Promise<{ ok: boolean }> {
@@ -111,7 +112,17 @@ export async function deleteCategory(f: FormData) {
     .single();
   finish(catalog, !result.error);
 }
+function productListDestination(form: FormData) {
+  const params = new URLSearchParams();
+  const q = text(form, "q").slice(0, 100);
+  const { page } = pagination(text(form, "page"));
+  if (q) params.set("q", q);
+  if (page > 1) params.set("page", String(page));
+  return params.size ? catalog + "?" + params : catalog;
+}
+
 export async function saveProduct(f: FormData) {
+  const destination = productListDestination(f);
   const { db, storeId, activeStore } = await requireAdmin(),
     id = text(f, "id"),
     oldPrice = text(f, "old_price"),
@@ -134,32 +145,32 @@ export async function saveProduct(f: FormData) {
       parsedFlash <= 0 ||
       (price !== null && parsedFlash >= price)
     ) {
-      finish(catalog, false);
+      finish(destination, false);
     }
     flashSalePrice = parsedFlash;
   }
 
   if (flashStartsRaw) {
     const ms = Date.parse(flashStartsRaw);
-    if (!Number.isFinite(ms)) finish(catalog, false);
+    if (!Number.isFinite(ms)) finish(destination, false);
     flashSaleStartsAt = new Date(ms).toISOString();
   }
 
   if (flashEndsRaw) {
     const ms = Date.parse(flashEndsRaw);
-    if (!Number.isFinite(ms)) finish(catalog, false);
+    if (!Number.isFinite(ms)) finish(destination, false);
     flashSaleEndsAt = new Date(ms).toISOString();
   }
 
   if (flashSalePrice !== null && !flashSaleEndsAt) {
-    finish(catalog, false);
+    finish(destination, false);
   }
   if (
     flashSaleStartsAt &&
     flashSaleEndsAt &&
     Date.parse(flashSaleEndsAt) <= Date.parse(flashSaleStartsAt)
   ) {
-    finish(catalog, false);
+    finish(destination, false);
   }
   if (flashSalePrice === null) {
     flashSaleStartsAt = null;
@@ -175,7 +186,12 @@ export async function saveProduct(f: FormData) {
       parsedSpecs = [];
     }
   }
+  const imagePaths = [...new Set(text(f, "image_paths").split(/\r?\n/).map((v) => v.trim()).filter(Boolean))];
+  if (imagePaths.some((url) => !URL.canParse(url) || new URL(url).protocol !== "https:")) {
+    finish(destination, false);
+  }
   const row = {
+    ...(f.has("image_paths") && { image_paths: imagePaths.length ? imagePaths : null }),
     name: text(f, "name"),
     name_en: text(f, "name_en"),
     slug: text(f, "slug"),
@@ -204,7 +220,7 @@ export async function saveProduct(f: FormData) {
     costPrice === null ||
     (oldPrice && row.old_price === null)
   )
-    finish(catalog, false);
+    finish(destination, false);
 
   // Verify category_id strictly belongs to the active store
   const { data: ownedCategory } = await db
@@ -214,7 +230,7 @@ export async function saveProduct(f: FormData) {
     .eq("store_id", storeId)
     .maybeSingle<{ id: string }>();
   if (!ownedCategory) {
-    finish(catalog, false);
+    finish(destination, false);
   }
 
   // Enforce plan max_products cap before uploading/inserting a new product
@@ -224,7 +240,7 @@ export async function saveProduct(f: FormData) {
       .select("id", { count: "exact", head: true })
       .eq("store_id", storeId);
     if ((count ?? 0) >= activeStore.max_products) {
-      finish(catalog, false, "limit_reached");
+      finish(destination, false, "limit_reached");
     }
   }
 
@@ -232,16 +248,16 @@ export async function saveProduct(f: FormData) {
   const file = f.get("image");
   let image: string | undefined;
   if (file instanceof File && file.size) {
-    if (file.size > 5 * 1024 * 1024) finish(catalog, false);
+    if (file.size > 5 * 1024 * 1024) finish(destination, false);
     const bytes = new Uint8Array(await file.arrayBuffer());
     const verified = validateImageMagicBytes(bytes);
-    if (!verified) finish(catalog, false);
+    if (!verified) finish(destination, false);
     image = `${storeId}/products/${crypto.randomUUID()}.${verified.ext}`;
     const uploaded = await bucket.upload(image, bytes, {
       contentType: verified.mime,
       upsert: false,
     });
-    if (uploaded.error) finish(catalog, false);
+    if (uploaded.error) finish(destination, false);
   }
   const previous = text(f, "previous_image");
   let previousStock: number | null = null;
@@ -295,7 +311,7 @@ export async function saveProduct(f: FormData) {
   )
     await bucket.remove([previous]).catch(() => undefined);
   if (result.error?.message?.includes("store_product_limit_reached")) {
-    finish(catalog, false, "limit_reached");
+    finish(destination, false, "limit_reached");
   }
   if (!result.error && id) {
     if (previousStock !== null && previousStock <= 0 && stock > 0) {
@@ -325,9 +341,10 @@ export async function saveProduct(f: FormData) {
       });
     }
   }
-  finish(catalog, !result.error);
+  finish(destination, !result.error);
 }
 export async function deleteProduct(f: FormData) {
+  const destination = productListDestination(f);
   const { db, storeId } = await requireAdmin();
   const result = await db
     .from("products")
@@ -346,7 +363,7 @@ export async function deleteProduct(f: FormData) {
       .from("product-images")
       .remove([result.data.image_path])
       .catch(() => undefined);
-  finish(catalog, !result.error);
+  finish(destination, !result.error);
 }
 export async function updateOrder(f: FormData) {
   const { db, storeId } = await requireAdmin(),
@@ -702,7 +719,7 @@ export async function adjustCustomerWallet(input: {
   if (error) {
     return {
       ok: false,
-      error: error.message || "wallet_adjustment_failed",
+      error: actionError(error, "wallet_adjustment_failed", ["insufficient_wallet_balance"]),
     };
   }
 
@@ -816,10 +833,7 @@ export async function saveUiConfig(
   if (error) {
     return {
       ok: false,
-      error:
-        error.code === "42703" || error.code === "PGRST204"
-          ? "لم يتم تطبيق ترحيل قاعدة البيانات (ui_config) بعد."
-          : "تعذر حفظ ونشر تعديلات التصميم. حاول مرة أخرى.",
+      error: actionError(error, "publish_failed"),
     };
   }
   revalidatePath("/", "layout");
@@ -1171,7 +1185,7 @@ export async function moderateReviewAction(input: {
 
   const { data, error } = await db.rpc("admin_moderate_review", rpcParams);
   if (error || !data) {
-    return { ok: false, error: error?.message || "moderate_review_failed" };
+    return { ok: false, error: actionError(error, "moderate_review_failed") };
   }
 
   const updated = data as ProductReview;
@@ -1270,7 +1284,7 @@ export async function processReturnRequestAction(input: {
   if (error || !data) {
     return {
       ok: false,
-      error: error?.message || "process_return_failed",
+      error: actionError(error, "process_return_failed"),
     };
   }
 
@@ -1360,7 +1374,7 @@ export async function saveMarketingPixelsAction(input: {
     .single();
 
   if (error) {
-    return { ok: false, error: error.message || "save_pixels_failed" };
+    return { ok: false, error: actionError(error, "save_pixels_failed") };
   }
 
   revalidatePath("/admin/marketing");
@@ -1428,7 +1442,7 @@ export async function updateAbandonedCartAction(input: {
   if (error || !data) {
     return {
       ok: false,
-      error: error?.message || "update_abandoned_cart_failed",
+      error: actionError(error, "update_abandoned_cart_failed"),
     };
   }
 

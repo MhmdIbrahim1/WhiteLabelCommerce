@@ -1,5 +1,6 @@
 "use server";
 
+import { actionError } from "@/lib/action-error";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -107,7 +108,7 @@ export async function updateStorePlanAndStatusAction(input: {
     }>();
 
   if (error || !data) {
-    return { ok: false, error: error?.message || "update_failed" };
+    return { ok: false, error: actionError(error, "update_failed") };
   }
 
   const access: MobileAppAccess =
@@ -176,7 +177,7 @@ export async function assignStoreOwnerAction(input: {
     }>();
 
   if (error || !data) {
-    return { ok: false, error: error?.message || "assign_failed" };
+    return { ok: false, error: actionError(error, "assign_failed") };
   }
 
   const isAssigned = data.status === "assigned";

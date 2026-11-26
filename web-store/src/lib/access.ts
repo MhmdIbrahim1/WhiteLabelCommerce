@@ -3,12 +3,12 @@ import type { SupabaseClient, User } from "@supabase/supabase-js";
 export async function adminUser(
   db: SupabaseClient,
   targetStoreId?: string,
+  authenticatedUser?: User | null,
 ): Promise<User | null> {
-  const {
-    data: { user },
-    error,
-  } = await db.auth.getUser();
-  if (error || !user) return null;
+  const user = authenticatedUser === undefined
+    ? (await db.auth.getUser()).data.user
+    : authenticatedUser;
+  if (!user) return null;
 
   if (targetStoreId) {
     const { data, error: rpcErr } = await db.rpc("is_store_admin", {
@@ -44,12 +44,12 @@ export async function adminUser(
 
 export async function superAdminUser(
   db: SupabaseClient,
+  authenticatedUser?: User | null,
 ): Promise<User | null> {
-  const {
-    data: { user },
-    error,
-  } = await db.auth.getUser();
-  if (error || !user) return null;
+  const user = authenticatedUser === undefined
+    ? (await db.auth.getUser()).data.user
+    : authenticatedUser;
+  if (!user) return null;
 
   const { data, error: rpcErr } = await db.rpc("is_platform_super_admin");
   if (!rpcErr) {

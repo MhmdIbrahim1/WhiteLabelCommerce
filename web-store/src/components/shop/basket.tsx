@@ -132,6 +132,7 @@ export function Basket({
   } | null>(null);
   const [checkingCoupon, setCheckingCoupon] = useState(false);
   const [useWallet, setUseWallet] = useState(false);
+  const couponLock = useRef(false);
   const lock = useRef(false);
   const checkoutTrackedRef = useRef(false);
 
@@ -197,7 +198,8 @@ export function Basket({
   ]);
 
   const handleApplyCoupon = async () => {
-    if (!couponInput.trim()) return;
+    if (!couponInput.trim() || couponLock.current) return;
+    couponLock.current = true;
     setCheckingCoupon(true);
     setCouponMsg(null);
     try {
@@ -223,6 +225,7 @@ export function Basket({
         text: isEn ? "Could not verify promo code." : "تعذر التحقق من الكوبون.",
       });
     } finally {
+      couponLock.current = false;
       setCheckingCoupon(false);
     }
   };

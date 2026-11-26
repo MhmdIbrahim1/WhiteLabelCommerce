@@ -38,7 +38,6 @@ import androidx.compose.material.icons.rounded.Straighten
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -229,13 +228,15 @@ fun ProductDetailScreen(
     ) { innerPadding ->
         when {
             state.isLoading -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding),
-                    contentAlignment = Alignment.Center,
+                val brush = rememberShimmerBrush()
+                Column(
+                    modifier = Modifier.fillMaxSize().padding(innerPadding).padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.fillMaxWidth().aspectRatio(0.9f).background(brush))
+                    Spacer(Modifier.fillMaxWidth(0.7f).height(28.dp).background(brush))
+                    Spacer(Modifier.fillMaxWidth(0.35f).height(20.dp).background(brush))
+                    Spacer(Modifier.fillMaxWidth().height(48.dp).background(brush))
                 }
             }
 

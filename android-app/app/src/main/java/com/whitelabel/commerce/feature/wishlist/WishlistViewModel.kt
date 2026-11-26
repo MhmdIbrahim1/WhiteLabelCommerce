@@ -1,5 +1,6 @@
 package com.whitelabel.commerce.feature.wishlist
 
+import com.whitelabel.commerce.core.designsystem.localized
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.whitelabel.commerce.core.domain.model.AuthSessionState
@@ -75,7 +76,7 @@ class WishlistViewModel @Inject constructor(
                         it.copy(
                             isLoading = false,
                             isRefreshing = false,
-                            errorMessage = err.localizedMessage,
+                            errorMessage = localized("تعذر تحميل المفضلة. حاول مرة أخرى.", "Could not load your wishlist. Please try again."),
                         )
                     }
                 }

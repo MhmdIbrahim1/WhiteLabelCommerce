@@ -12,6 +12,8 @@ import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import com.whitelabel.commerce.MainActivity
 import com.whitelabel.commerce.R
+import dagger.Lazy
+import com.whitelabel.commerce.core.domain.repository.StoreRepository
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -23,17 +25,17 @@ import javax.inject.Inject
 class CommerceFirebaseMessagingService : FirebaseMessagingService() {
 
     @Inject
-    lateinit var tokenManager: FcmTokenManager
+    lateinit var tokenManager: Lazy<FcmTokenManager>
 
     @Inject
-    lateinit var stores: com.whitelabel.commerce.core.domain.repository.StoreRepository
+    lateinit var stores: Lazy<StoreRepository>
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onRegistered(token: String) {
         super.onRegistered(token)
         serviceScope.launch {
-            tokenManager.syncExplicitToken(token = token, locale = stores.storeSettings.value.locale)
+            tokenManager.get().syncExplicitToken(token = token, locale = stores.get().storeSettings.value.locale)
         }
     }
 

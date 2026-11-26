@@ -10,7 +10,7 @@ import {
   type ManagedStoreSummary,
 } from "./tenant";
 
-export async function serverDb() {
+export const serverDb = cache(async () => {
   const jar = await cookies();
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -29,7 +29,7 @@ export async function serverDb() {
       },
     },
   );
-}
+});
 
 export const requireAdmin = cache(async () => {
   const [db, jar] = await Promise.all([serverDb(), cookies()]);
@@ -82,7 +82,9 @@ export function checked<T>(result: {
   data: T | null;
   error: { message: string } | null;
 }): NonNullable<T> {
-  if (result.error || result.data == null)
+  if (result.error || result.data == null) {
+    console.error("Store data could not be loaded", result.error?.message);
     throw new Error("تعذر تحميل بيانات المتجر.");
+  }
   return result.data;
 }

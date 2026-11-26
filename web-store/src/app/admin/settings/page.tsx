@@ -1,3 +1,4 @@
+import { SubmitButton } from "@/components/submit-button";
 import { ShieldCheck, Wallet } from "lucide-react";
 import { checked, requireAdmin } from "@/lib/db";
 import {
@@ -284,9 +285,9 @@ export default async function Settings({
           </label>
 
           <div className="wide">
-            <button>
+            <SubmitButton>
               {isEn ? "Save Payment Gateways" : "حفظ إعدادات بوابات الدفع"}
-            </button>
+            </SubmitButton>
           </div>
         </form>
       </section>
@@ -376,11 +377,11 @@ export default async function Settings({
           </label>
 
           <div className="wide">
-            <button>
+            <SubmitButton>
               {isEn
                 ? "Save Free Shipping & Wallet Settings"
                 : "حفظ إعدادات الشحن المجاني والمحفظة"}
-            </button>
+            </SubmitButton>
           </div>
         </form>
       </section>
@@ -439,7 +440,7 @@ export default async function Settings({
               defaultValue={s.banners.join("\n")}
             />
           </label>
-          <button>{isEn ? "Save Settings" : "حفظ الإعدادات"}</button>
+          <SubmitButton>{isEn ? "Save Settings" : "حفظ الإعدادات"}</SubmitButton>
         </form>
       </section>
     </>

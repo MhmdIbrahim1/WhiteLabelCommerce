@@ -7,6 +7,8 @@ import androidx.datastore.core.DataMigration
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.whitelabel.commerce.BuildConfig
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -29,20 +31,20 @@ internal object PrivatePreferences : DataMigration<Preferences> {
         }
     }
 
-    fun encrypt(name: String, value: String): String {
+    suspend fun encrypt(name: String, value: String): String = withContext(Dispatchers.IO) {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, key)
         cipher.updateAAD(name.toByteArray())
-        return prefix + Base64.encodeToString(cipher.iv + cipher.doFinal(value.toByteArray()), Base64.NO_WRAP)
+        prefix + Base64.encodeToString(cipher.iv + cipher.doFinal(value.toByteArray()), Base64.NO_WRAP)
     }
 
-    fun decrypt(name: String, value: String): String {
+    suspend fun decrypt(name: String, value: String): String = withContext(Dispatchers.IO) {
         require(value.startsWith(prefix))
         val bytes = Base64.decode(value.removePrefix(prefix), Base64.NO_WRAP)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, bytes, 0, 12))
         cipher.updateAAD(name.toByteArray())
-        return cipher.doFinal(bytes, 12, bytes.size - 12).decodeToString()
+        cipher.doFinal(bytes, 12, bytes.size - 12).decodeToString()
     }
 
     override suspend fun shouldMigrate(currentData: Preferences): Boolean =

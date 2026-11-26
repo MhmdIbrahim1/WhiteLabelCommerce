@@ -34,21 +34,23 @@ class GitHubReleaseUpdater @Inject constructor(
         isLenient = true
     }
 
-    private val client: OkHttpClient = OkHttpClient.Builder()
-        .cache(null)
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
-        .followRedirects(true)
-        .followSslRedirects(false)
-        .addNetworkInterceptor { chain ->
-            val url = chain.request().url
-            val allowed = setOf("github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com")
-            if (!url.isHttps || (url.host !in allowed && !(url.host == "api.github.com" && url.encodedPath.startsWith("/repos/")))) {
-                throw java.io.IOException("Unexpected GitHub update host")
+    private val client by lazy {
+        OkHttpClient.Builder()
+            .cache(null)
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
+            .followRedirects(true)
+            .followSslRedirects(false)
+            .addNetworkInterceptor { chain ->
+                val url = chain.request().url
+                val allowed = setOf("github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com")
+                if (!url.isHttps || (url.host !in allowed && !(url.host == "api.github.com" && url.encodedPath.startsWith("/repos/")))) {
+                    throw java.io.IOException("Unexpected GitHub update host")
+                }
+                chain.proceed(chain.request())
             }
-            chain.proceed(chain.request())
-        }
-        .build()
+            .build()
+    }
 
     suspend fun checkTenantVersion(): String? = withContext(Dispatchers.IO) {
         runCatching {

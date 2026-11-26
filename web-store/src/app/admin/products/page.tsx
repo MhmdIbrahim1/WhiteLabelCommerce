@@ -1,9 +1,11 @@
+import { SubmitButton } from "@/components/submit-button";
+import Link from "next/link";
 import Image from "next/image";
 import { Package, Plus, Zap } from "lucide-react";
 import { checked, requireAdmin } from "@/lib/db";
 import { adminDb } from "@/lib/supabase/admin";
 import { money } from "@/lib/brand";
-import { photo } from "@/lib/shop";
+import { photo, searchPattern } from "@/lib/shop";
 import {
   getFlashSavingsPercent,
   isFlashSaleActive,
@@ -30,18 +32,26 @@ export default async function Products({
   ]);
   const secureDb = adminDb();
   const { from, to, page } = pagination(params.page);
-  const productResult = await secureDb
+  const q = typeof params.q === "string" ? params.q.trim().slice(0, 100) : "";
+  const base = q ? "/admin/products?" + new URLSearchParams({ q }) : "/admin/products";
+  let query = secureDb
     .from("products")
     .select(
-      "id,name,name_en,slug,description,description_en,price,cost_price,old_price,flash_sale_price,flash_sale_starts_at,flash_sale_ends_at,stock,category_id,sizes,colors,image_path,specifications,is_active",
+      "id,name,name_en,slug,description,description_en,price,cost_price,old_price,flash_sale_price,flash_sale_starts_at,flash_sale_ends_at,stock,category_id,sizes,colors,image_path,image_paths,specifications,is_active",
       { count: "exact" },
     )
-    .eq("store_id", storeId)
-    .order("name")
-    .order("id")
-    .range(from, to);
+    .eq("store_id", storeId);
+  if (q) {
+    const pattern = JSON.stringify(searchPattern(q));
+    query = query.or(["name", "name_en", "slug"].map((field) => field + ".ilike." + pattern).join(","));
+  }
+  const [productResult, tenantCount] = await Promise.all([
+    query.order("name").order("id").range(from, to),
+    q ? secureDb.from("products").select("id", { count: "exact", head: true }).eq("store_id", storeId) : null,
+  ]);
+  if (tenantCount?.error) throw new Error("Could not load catalog count");
   const products: AdminProductItem[] = checked(productResult);
-  const totalProductsCount = productResult.count ?? products.length;
+  const totalProductsCount = tenantCount?.count ?? productResult.count ?? products.length;
   const atLimit = totalProductsCount >= activeStore.max_products;
   const categories: AdminCategoryItem[] = [];
   for (let offset = 0; ; offset += 200) {
@@ -103,7 +113,7 @@ export default async function Products({
             {t(lang, "adminSlug")}
             <input name="slug" dir="ltr" required />
           </label>
-          <button>{t(lang, "adminAddBtn")}</button>
+          <SubmitButton>{t(lang, "adminAddBtn")}</SubmitButton>
         </form>
         {categories.map((c) => (
           <details key={c.id}>
@@ -126,10 +136,10 @@ export default async function Products({
                 {t(lang, "adminSlug")}
                 <input name="slug" dir="ltr" defaultValue={c.slug} required />
               </label>
-              <button>{t(lang, "adminSaveBtn")}</button>
-              <button className="danger" formAction={deleteCategory}>
+              <SubmitButton>{t(lang, "adminSaveBtn")}</SubmitButton>
+              <SubmitButton className="danger" formAction={deleteCategory}>
                 {t(lang, "adminDeleteCategory")}
-              </button>
+              </SubmitButton>
             </form>
           </details>
         ))}
@@ -141,16 +151,23 @@ export default async function Products({
           </span>
         </summary>
         {categories.length ? (
-          <AdminProductForm categories={categories} />
+          <AdminProductForm categories={categories} query={q} page={page} />
         ) : (
           <p>{lang === "en" ? "Add a category first." : "أضف فئة أولاً."}</p>
         )}
       </details>
       <section className="card">
         <h2>{t(lang, "adminProductsDirectory")}</h2>
+        <form action="/admin/products" className="inline">
+          <label>{lang === "en" ? "Product name or slug" : "اسم المنتج أو الرابط المختصر"}
+            <input type="search" name="q" maxLength={100} defaultValue={q} dir="auto" />
+          </label>
+          <SubmitButton>{lang === "en" ? "Search" : "بحث"}</SubmitButton>
+          {q && <Link href="/admin/products">{lang === "en" ? "Clear search" : "مسح البحث"}</Link>}
+        </form>
         {!products.length && (
           <Empty>
-            {lang === "en" ? "No products yet." : "لا توجد منتجات."}
+            {q ? t(lang, "noMatchingProducts") : lang === "en" ? "No products yet." : "لا توجد منتجات."}
           </Empty>
         )}
         {products.map((p) => {
@@ -205,14 +222,16 @@ export default async function Products({
                     : t(lang, "adminDraft")}
                 </small>
               </summary>
-              <AdminProductForm p={p} categories={categories} />
+              <AdminProductForm p={p} categories={categories} query={q} page={page} />
               <details>
                 <summary>{t(lang, "adminDeleteProduct")}</summary>
                 <form action={deleteProduct}>
+                  <input type="hidden" name="q" value={q} />
+                  <input type="hidden" name="page" value={page} />
                   <input type="hidden" name="id" value={p.id} />
-                  <button className="danger">
+                  <SubmitButton className="danger">
                     {t(lang, "adminConfirmDelete")}
-                  </button>
+                  </SubmitButton>
                 </form>
               </details>
             </details>
@@ -220,7 +239,7 @@ export default async function Products({
         })}
         <Pager
           page={page}
-          base="/admin/products"
+          base={base}
           count={productResult.count ?? 0}
         />
       </section>

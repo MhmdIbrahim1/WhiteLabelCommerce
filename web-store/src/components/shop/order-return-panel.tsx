@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import {
@@ -78,6 +78,7 @@ export function OrderReturnPanel({
     return map;
   });
   const [submitting, setSubmitting] = useState(false);
+  const submitLock = useRef(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -145,6 +146,7 @@ export function OrderReturnPanel({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitLock.current) return;
     setError(null);
 
     const payloadItems = orderItems
@@ -167,6 +169,7 @@ export function OrderReturnPanel({
       RETURN_REASON_OPTIONS.find((r) => r.code === reasonCode)?.code ??
       reasonCode;
 
+    submitLock.current = true;
     setSubmitting(true);
     try {
       const res = await submitReturnRequestAction({
@@ -193,6 +196,7 @@ export function OrderReturnPanel({
           : "حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى.",
       );
     } finally {
+      submitLock.current = false;
       setSubmitting(false);
     }
   };

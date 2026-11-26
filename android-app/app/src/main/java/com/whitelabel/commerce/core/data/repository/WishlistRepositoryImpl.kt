@@ -1,5 +1,6 @@
 package com.whitelabel.commerce.core.data.repository
 
+import com.whitelabel.commerce.core.designsystem.localized
 import com.whitelabel.commerce.BuildConfig
 import com.whitelabel.commerce.core.data.remote.dto.ToggleWishlistResultDto
 import com.whitelabel.commerce.core.data.remote.dto.WishlistIdRowDto
@@ -123,7 +124,7 @@ class WishlistRepositoryImpl @Inject constructor(
             // Revert optimistic state
             _wishlistedProductIds.value = previous
             _wishlistCount.value = previous.size
-            WishlistToggleOutcome.Failure(err.localizedMessage ?: "Wishlist update failed")
+            WishlistToggleOutcome.Failure(localized("تعذر تحديث المفضلة. حاول مرة أخرى.", "Could not update your wishlist. Please try again."))
         }
     }
 }

@@ -3032,3 +3032,42 @@ aside.notif-drawer,
   display: grid;
   gap: 0.2rem;
 }
+
+.document-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 1.25rem; margin-block: 1rem; }
+.order-document { margin-inline: auto; max-width: 48rem; background: white; color: #142029; padding: clamp(1rem,4vw,3rem); overflow-wrap: anywhere; }
+.order-document header { display: flex; align-items: center; gap: 1rem; border-bottom: 2px solid; padding-block: 1rem; flex-wrap: wrap; }
+.order-document header img { object-fit: contain; }
+.order-document h1 { margin: 0; margin-inline-start: auto; }
+.order-document section { margin-block: 2rem; }
+.order-document table { width: 100%; min-width: 0; border-collapse: collapse; }
+.order-document th, .order-document td { text-align: start; white-space: normal; padding: .5rem; border-bottom: 1px solid #ccd0d4; }
+.order-document dl { display: grid; grid-template-columns: 1fr auto; gap: .4rem; }
+.order-document dd { margin: 0; }
+.document-cod { border-block-start: 2px solid; padding-block: .75rem; font-size: 1.2rem; font-weight: bold; }
+@media print {
+  body:has(.order-document) { background: white; }
+  .shell:has(.order-document), .workspace:has(.order-document), .content:has(.order-document) {
+    display: block; margin: 0; padding: 0; width: auto; min-height: 0;
+  }
+  .shell:has(.order-document) > aside, .workspace:has(.order-document) > :not(main),
+  .content:has(.order-document) > :not(.order-document), .order-document .document-actions { display: none !important; }
+  .order-document { padding: 0; max-width: none; }
+  .order-document tr, .document-cod { break-inside: avoid; }
+}
+
+.route-skeleton { --placeholder: color-mix(in srgb, currentColor 11%, transparent); }
+.route-skeleton :is(.skeleton-title,.skeleton-photo,.skeleton-filters,i) {
+  display: block; border-radius: .5rem; background: var(--placeholder);
+}
+.skeleton-title { width: min(16rem,65%); height: 2.2rem; margin-block: 1rem 2rem; }
+.skeleton-filters { height: 4rem; margin-block-end: 1.5rem; }
+.skeleton-photo { aspect-ratio: 4/5; }
+.skeleton-copy { padding: 1rem; display: grid; gap: .8rem; align-content: start; }
+.skeleton-copy i { height: 1rem; width: 80%; }
+.skeleton-copy i:nth-child(2) { width: 40%; }
+.skeleton-rows { display: grid; gap: .8rem; }
+.skeleton-card { border: 1px solid var(--placeholder); border-radius: .75rem; overflow: hidden; }
+@media (prefers-reduced-motion: no-preference) {
+  .route-skeleton { animation: skeleton-pulse 1.6s ease-in-out infinite alternate; }
+  @keyframes skeleton-pulse { to { opacity: .55; } }
+}

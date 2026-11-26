@@ -1,3 +1,6 @@
+import { Suspense } from "react";
+import { RouteSkeleton } from "@/components/route-skeleton";
+import { SubmitButton } from "@/components/submit-button";
 import Link from "next/link";
 import { Truck, ArrowLeft, ArrowRight, Phone, MapPin, Package } from "lucide-react";
 import { checked, requireAdmin } from "@/lib/db";
@@ -46,7 +49,7 @@ function itemsSummary(items: AdminOrderRow["order_items"], lang: Lang): string {
     : `${firstLabel} + ${items.length - 1} أخرى (${totalQty} قطعة)`;
 }
 
-export default async function OrdersPage({
+async function OrdersPage({
   searchParams,
 }: PageProps<"/admin/orders">) {
   const [params, lang, { db, storeId }] = await Promise.all([
@@ -202,12 +205,12 @@ export default async function OrdersPage({
                                     </option>
                                   ))}
                                 </select>
-                                <button
+                                <SubmitButton
                                   type="submit"
                                   className="btn-compact-admin"
                                 >
                                   {isEn ? "Update" : "تغيير الحالة"}
-                                </button>
+                                </SubmitButton>
                               </form>
                             )}
                             {options.includes("shipped") && (
@@ -292,5 +295,13 @@ export default async function OrdersPage({
         />
       </section>
     </>
+  );
+}
+
+export default function Page(props: PageProps<"/admin/orders">) {
+  return (
+    <Suspense fallback={<RouteSkeleton layout="list" />}>
+      <OrdersPage {...props} />
+    </Suspense>
   );
 }

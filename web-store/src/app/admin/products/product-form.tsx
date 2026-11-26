@@ -1,5 +1,6 @@
 "use client";
 
+import { SubmitButton } from "@/components/submit-button";
 import { useState } from "react";
 import { Sparkles, Plus, Trash2, Check, Zap, X } from "lucide-react";
 import {
@@ -38,6 +39,7 @@ export type AdminProductItem = {
   sizes: string[];
   colors: string[];
   image_path: string | null;
+  image_paths?: string[] | null;
   specifications?: ProductSpec[] | null;
   is_active: boolean;
 };
@@ -69,9 +71,13 @@ function parseList(raw: string): string[] {
 export function AdminProductForm({
   p,
   categories,
+  query,
+  page,
 }: {
   p?: AdminProductItem;
   categories: AdminCategoryItem[];
+  query: string;
+  page: number;
 }) {
   const { lang } = useLanguage();
   const isEn = lang === "en";
@@ -201,10 +207,11 @@ export function AdminProductForm({
   return (
     <form action={saveProduct} className="fields">
       <input type="hidden" name="id" value={p?.id ?? ""} />
+      <input type="hidden" name="q" value={query} />
+      <input type="hidden" name="page" value={page} />
       <input type="hidden" name="previous_image" value={p?.image_path ?? ""} />
       <input type="hidden" name="specifications" value={serializedSpecs} />
 
-      {/* 1-Click Category Variant & Spec Presets */}
       <div className="wide admin-presets-bar">
         <div className="admin-presets-head">
           <span className="with-icon">
@@ -311,7 +318,6 @@ export function AdminProductForm({
         />
       </label>
 
-      {/* Collapsible Flash Sale Card */}
       <details
         className="wide admin-flash-card"
         open={Boolean(p?.flash_sale_price || p?.flash_sale_ends_at)}
@@ -461,7 +467,6 @@ export function AdminProductForm({
         />
       </label>
 
-      {/* Interactive Color Swatches */}
       <div className="wide admin-swatches-row">
         <small>
           {isEn ? "Quick Color Swatches:" : "اختيار سريع للألوان:"}
@@ -505,7 +510,6 @@ export function AdminProductForm({
         />
       </label>
 
-      {/* Structured Technical Specifications Editor */}
       <div className="wide admin-specs-editor">
         <div className="admin-specs-head">
           <strong>
@@ -584,13 +588,17 @@ export function AdminProductForm({
           accept="image/png,image/jpeg,image/webp"
         />
       </label>
+      <label className="wide">
+        {isEn ? "Additional image URLs (one per line, in display order)" : "روابط الصور الإضافية (رابط في كل سطر حسب ترتيب العرض)"}
+        <textarea name="image_paths" dir="ltr" defaultValue={(p?.image_paths ?? []).join("\n")} />
+      </label>
       <label className="check">
         <input type="checkbox" name="is_active" defaultChecked={p?.is_active} />{" "}
         {isEn ? "Publish product" : "نشر المنتج"}
       </label>
-      <button disabled={flashPriceInvalid || flashWindowInvalid || flashMissingEnd}>
+      <SubmitButton disabled={flashPriceInvalid || flashWindowInvalid || flashMissingEnd}>
         {isEn ? "Save Product" : "حفظ المنتج"}
-      </button>
+      </SubmitButton>
     </form>
   );
 }

@@ -155,7 +155,7 @@ class SupportViewModel @Inject constructor(
                 formState.update {
                     it.copy(
                         isSubmitting = false,
-                        submitError = error.localizedMessage ?: localized("تعذر إرسال التذكرة حالياً.", "Unable to send the ticket."),
+                        submitError = localized("تعذر إرسال التذكرة حالياً.", "Unable to send the ticket."),
                     )
                 }
             }

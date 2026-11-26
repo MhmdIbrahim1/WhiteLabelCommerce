@@ -60,7 +60,7 @@ export function Grid({
   basePath?: string;
   layout?: "grid" | "carousel";
 }) {
-  if (!rows.length) return <p className="panel">{t(lang, "noMatchingProducts")}</p>;
+  if (!rows.length) return <p className="panel shop-empty-state">{t(lang, "noMatchingProducts")}</p>;
   return (
     <div
       className={

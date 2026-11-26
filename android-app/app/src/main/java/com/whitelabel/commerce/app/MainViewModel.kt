@@ -16,6 +16,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -74,10 +76,12 @@ class MainViewModel @Inject constructor(
         ),
     )
 
+    private var brandRefresh: Job? = null
+
     init {
-        refreshStoreSettings()
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             authRepository.sessionState.collect { session ->
+                if (session is AuthSessionState.Loading) return@collect
                 val locale = storeRepository.storeSettings.value.locale
                 val phone = (session as? AuthSessionState.SignedIn)?.profile?.phone
                 fcmTokenManager.syncCurrentToken(locale = locale, phone = phone)
@@ -88,12 +92,19 @@ class MainViewModel @Inject constructor(
     }
 
     fun refreshStoreSettings() {
-        viewModelScope.launch {
+        if (brandRefresh?.isActive == true) return
+        val refreshAccount = brandRefresh != null
+        brandRefresh = viewModelScope.launch(Dispatchers.IO) {
             isSyncingBrand.value = true
-            storeRepository.refreshStoreSettings()
-            notificationRepository.refresh()
-            wishlistRepository.refreshWishlistIds()
-            isSyncingBrand.value = false
+            try {
+                storeRepository.refreshStoreSettings()
+                if (refreshAccount) {
+                    notificationRepository.refresh()
+                    wishlistRepository.refreshWishlistIds()
+                }
+            } finally {
+                isSyncingBrand.value = false
+            }
         }
     }
 

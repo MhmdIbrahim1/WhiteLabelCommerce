@@ -61,6 +61,16 @@ class MainActivity : ComponentActivity() {
         extractNotificationId(intent)?.let { pendingNotificationIdState.value = it }
 
         setContent {
+            val ready by androidx.compose.runtime.produceState(false) {
+                (application as WhiteLabelCommerceApp).localStartup.await()
+                value = true
+            }
+            if (!ready) {
+                androidx.compose.material3.Surface {
+                    com.whitelabel.commerce.core.designsystem.components.BannerSkeleton()
+                }
+                return@setContent
+            }
             val mainViewModel: MainViewModel = hiltViewModel()
             val updateViewModel: AppUpdateViewModel = hiltViewModel()
             val uiState by mainViewModel.uiState.collectAsStateWithLifecycle()

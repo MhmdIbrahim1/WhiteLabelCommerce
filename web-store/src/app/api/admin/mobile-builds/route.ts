@@ -21,14 +21,13 @@ export type StoreAppBuildRow = {
   status: "queued" | "building" | "succeeded" | "failed";
   apk_download_url: string | null;
   github_run_url: string | null;
-  error_message: string | null;
   created_at: string;
   updated_at: string;
   completed_at: string | null;
 };
 
 const BUILD_SELECT =
-  "id,store_id,app_name,app_id_suffix,package_id,icon_url,version_code,version_name,status,apk_download_url,github_run_url,error_message,created_at,updated_at,completed_at";
+  "id,store_id,app_name,app_id_suffix,package_id,icon_url,version_code,version_name,status,apk_download_url,github_run_url,created_at,updated_at,completed_at";
 
 function slugToAppIdSuffix(slug: string): string {
   const cleaned = slug
@@ -198,9 +197,9 @@ export async function POST(req: Request) {
       {
         error: "github_actions_not_configured",
         message_ar:
-          "خدمة البناء السحابي غير مهيأة بعد على الخادم. تحقق من إعدادات GITHUB_ACTIONS_TOKEN و GITHUB_REPO_OWNER و GITHUB_REPO_NAME.",
+          "خدمة بناء التطبيقات غير متاحة حالياً. تواصل مع الدعم.",
         message_en:
-          "Cloud APK Builder is not configured on this server. Set GITHUB_ACTIONS_TOKEN, GITHUB_REPO_OWNER, and GITHUB_REPO_NAME in .env.local.",
+          "App builds are currently unavailable. Please contact support.",
       },
       { status: 503 },
     );
@@ -217,9 +216,9 @@ export async function POST(req: Request) {
       {
         error: "service_role_missing",
         message_ar:
-          "مفتاح الخدمة (SUPABASE_SERVICE_ROLE_KEY) غير مضبوط على الخادم.",
+          "خدمة بناء التطبيقات غير متاحة حالياً.",
         message_en:
-          "Server database service role key (SUPABASE_SERVICE_ROLE_KEY) is not configured.",
+          "App builds are currently unavailable.",
       },
       { status: 500 },
     );
@@ -341,7 +340,7 @@ export async function POST(req: Request) {
       .from("store_app_builds")
       .update({
         status: "failed",
-        error_message: msg,
+        error_message: "build_failed",
         updated_at: nowIso,
         completed_at: nowIso,
       })
@@ -349,8 +348,8 @@ export async function POST(req: Request) {
     return NextResponse.json(
       {
         error: "github_network_error",
-        message_ar: `تعذر الاتصال بـ GitHub Actions: ${msg}`,
-        message_en: `Failed to reach GitHub Actions: ${msg}`,
+        message_ar: "تعذر بدء البناء. حاول مرة أخرى.",
+        message_en: "Could not start the build. Please try again.",
       },
       { status: 502 },
     );
@@ -373,24 +372,17 @@ export async function POST(req: Request) {
       .from("store_app_builds")
       .update({
         status: "failed",
-        error_message: message,
+        error_message: "build_failed",
         updated_at: nowIso,
         completed_at: nowIso,
       })
       .eq("id", created.id);
 
-    const hintAr =
-      ghResp.status === 403 || ghResp.status === 401
-        ? "تحقق من أن توكن GitHub يملك صلاحية Actions: Read and write."
-        : ghResp.status === 404
-          ? "ملف workflow غير موجود على فرع main."
-          : parsedMsg;
-
     return NextResponse.json(
       {
         error: "github_dispatch_failed",
-        message_ar: `فشل تشغيل البناء في GitHub Actions (HTTP ${ghResp.status}): ${hintAr}`,
-        message_en: message,
+        message_ar: "تعذر بدء البناء. حاول مرة أخرى.",
+        message_en: "Could not start the build. Please try again.",
       },
       { status: 502 },
     );

@@ -1,3 +1,4 @@
+import { SubmitButton } from "@/components/submit-button";
 import { TicketPercent, Plus, Trash2, Power } from "lucide-react";
 import { checked, requireAdmin } from "@/lib/db";
 import brand, { date, money } from "@/lib/brand";
@@ -115,9 +116,9 @@ export default async function AdminCouponsPage({
             <input type="checkbox" name="is_active" defaultChecked />{" "}
             {isEn ? "Activate coupon immediately" : "تفعيل الكوبون فوراً"}
           </label>
-          <button>
+          <SubmitButton>
             <TicketPercent size={16} /> {isEn ? "Save Coupon" : "حفظ الكوبون"}
-          </button>
+          </SubmitButton>
         </form>
       </details>
 
@@ -207,7 +208,7 @@ export default async function AdminCouponsPage({
                               name="next_active"
                               value={c.is_active ? "false" : "true"}
                             />
-                            <button
+                            <SubmitButton
                               type="submit"
                               className="btn-outline-admin"
                             >
@@ -219,16 +220,16 @@ export default async function AdminCouponsPage({
                                 : isEn
                                   ? "Enable"
                                   : "تفعيل"}
-                            </button>
+                            </SubmitButton>
                           </form>
                           <form action={deleteCoupon} style={{ margin: 0 }}>
                             <input type="hidden" name="id" value={c.id} />
-                            <button
+                            <SubmitButton
                               type="submit"
                               className="btn-outline-admin danger"
                             >
                               <Trash2 size={14} /> {isEn ? "Delete" : "حذف"}
-                            </button>
+                            </SubmitButton>
                           </form>
                         </div>
                       </td>

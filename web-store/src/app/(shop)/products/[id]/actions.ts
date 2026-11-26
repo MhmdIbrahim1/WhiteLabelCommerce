@@ -1,5 +1,6 @@
 "use server";
 
+import { actionError } from "@/lib/action-error";
 import { revalidatePath } from "next/cache";
 import { serverDb } from "@/lib/db";
 import { resolveActiveStoreOrDefault } from "@/lib/tenant";
@@ -50,7 +51,7 @@ export async function submitReviewAction(input: {
   if (error || !data) {
     return {
       ok: false,
-      error: error?.message || "review_submit_failed",
+      error: actionError(error, "review_submit_failed", ["auth_required", "verified_purchase_required"]),
     };
   }
 

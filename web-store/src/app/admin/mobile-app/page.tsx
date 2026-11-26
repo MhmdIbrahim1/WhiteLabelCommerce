@@ -55,7 +55,7 @@ export default async function AdminMobileAppPage() {
     secureDb
       .from("store_app_builds")
       .select(
-        "id,store_id,app_name,app_id_suffix,package_id,icon_url,version_code,version_name,status,apk_download_url,github_run_url,error_message,created_at,updated_at,completed_at",
+        "id,store_id,app_name,app_id_suffix,package_id,icon_url,version_code,version_name,status,apk_download_url,github_run_url,created_at,updated_at,completed_at",
       )
       .eq("store_id", storeId)
       .order("created_at", { ascending: false })

@@ -194,9 +194,9 @@ class CheckoutViewModel @Inject constructor(
     fun applyCoupon() {
         val current = uiState.value
         val code = current.form.coupon.trim()
-        if (code.isEmpty()) return
+        if (code.isEmpty() || formState.value.isApplyingCoupon) return
+        formState.update { it.copy(isApplyingCoupon = true, couponError = null, submitError = null) }
         viewModelScope.launch {
-            formState.update { it.copy(isApplyingCoupon = true, couponError = null, submitError = null) }
             val result = orderRepository.couponDiscount(code, current.subtotal)
             formState.update {
                 if (it.coupon.trim() != code) {
@@ -239,7 +239,7 @@ class CheckoutViewModel @Inject constructor(
 
     fun submitOrder() {
         val current = uiState.value
-        val form = current.form
+        val form = formState.value
         if (form.isSubmitting || form.confirmedReceipt != null) return
 
         val effectiveMethod = if (current.fullyPaidByWallet) {
@@ -341,8 +341,8 @@ class CheckoutViewModel @Inject constructor(
         val couponToSend = form.coupon.trim().takeIf { it.isNotEmpty() && form.couponSubtotal == current.subtotal }
         val useWalletFlag = current.canUseStoreWallet && form.useStoreWallet
 
+        formState.update { it.copy(isSubmitting = true, submitError = null) }
         viewModelScope.launch {
-            formState.update { it.copy(isSubmitting = true, submitError = null) }
 
             orderRepository.placeOrder(
                 method = effectiveMethod,

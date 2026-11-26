@@ -1,5 +1,6 @@
 "use server";
 
+import { actionError } from "@/lib/action-error";
 import { revalidatePath } from "next/cache";
 import { serverDb } from "@/lib/db";
 import { resolveActiveStoreOrDefault } from "@/lib/tenant";
@@ -34,7 +35,7 @@ export async function toggleWishlistAction(
   });
 
   if (error) {
-    return { ok: false, error: error.message || "wishlist_toggle_failed" };
+    return { ok: false, error: actionError(error, "wishlist_toggle_failed") };
   }
 
   const payload = (data ?? {}) as {

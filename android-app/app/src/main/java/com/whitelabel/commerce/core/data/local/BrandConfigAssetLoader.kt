@@ -8,7 +8,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Loads the bundled `assets/brand-config.json` synchronously at startup so the app
+ * Loads the bundled `assets/brand-config.json` during background startup so the app
  * renders the merchant's brand palette, radius, and currency immediately while offline.
  */
 @Singleton

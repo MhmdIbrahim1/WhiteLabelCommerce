@@ -1,3 +1,5 @@
+import Image from "next/image";
+import { PrintButton } from "../print-button";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import {
@@ -11,7 +13,7 @@ import {
 } from "lucide-react";
 import { checked, requireAdmin } from "@/lib/db";
 import { money, date } from "@/lib/brand";
-import { t, translateColor } from "@/lib/i18n";
+import { t, translateColor, localizedText } from "@/lib/i18n";
 import { getServerLang } from "@/lib/i18n-server";
 import { nextOrder } from "@/lib/workflow";
 import { isSafeHttpUrl, localizeCarrierLabel } from "@/lib/shipping";
@@ -23,12 +25,15 @@ export default async function OrderDetails({
   params,
   searchParams,
 }: PageProps<"/admin/orders/[id]">) {
-  const [{ id }, { db, storeId }, lang] = await Promise.all([
+  const [{ id }, { db, storeId, activeStore }, lang, query] = await Promise.all([
     params,
     requireAdmin(),
     getServerLang(),
+    searchParams,
   ]);
   const isEn = lang === "en";
+  const invoice = query.print === "invoice";
+  const printDocument = invoice || query.print === "label";
   const [result, returnRes] = await Promise.all([
     db
       .from("orders")
@@ -36,7 +41,7 @@ export default async function OrderDetails({
       .eq("id", id)
       .eq("store_id", storeId)
       .maybeSingle(),
-    db
+    printDocument ? null : db
       .from("return_requests")
       .select("*")
       .eq("order_id", id)
@@ -46,8 +51,68 @@ export default async function OrderDetails({
   ]);
   if (!result.data && !result.error) notFound();
   const o = checked(result);
+  const codDue = o.payment_method === "cod" && !["paid", "refunded"].includes(o.payment_status)
+    && !["delivered", "cancelled"].includes(o.status) ? o.total : 0;
+  const orderHref = "/admin/orders/" + id;
+  if (printDocument) {
+    const [brand, logo, customer] = await Promise.all([
+      db.from("store_settings").select("store_name").eq("store_id", storeId).maybeSingle(),
+      db.from("store_app_builds").select("icon_url").eq("store_id", storeId)
+        .not("icon_url", "is", null).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+      o.customer_id ? db.from("store_customers").select("full_name").eq("store_id", storeId)
+        .eq("id", o.customer_id).maybeSingle() : null,
+    ]);
+    const name = localizedText(lang, brand.data?.store_name || activeStore.name_ar, activeStore.name_en);
+    const title = invoice ? (isEn ? "Invoice" : "فاتورة") : (isEn ? "Shipping label" : "بوليصة الشحن");
+    const amount = (value: number | null) => money(value, o.currency, lang);
+    return (
+      <article className="order-document" dir={isEn ? "ltr" : "rtl"}>
+        <nav className="document-actions">
+          <Link href={orderHref}>{isEn ? "Back to order" : "العودة إلى الطلب"}</Link>
+          <PrintButton />
+        </nav>
+        <header>
+          {logo.data?.icon_url && isSafeHttpUrl(logo.data.icon_url) &&
+            <Image unoptimized src={logo.data.icon_url} width={56} height={56} alt="" />}
+          <strong>{name}</strong>
+          <h1>{title}</h1>
+        </header>
+        <p>{t(lang, "orderNumberLabel")} <bdi>{id}</bdi> · {date(o.created_at, lang)}</p>
+        <section>
+          <h2>{t(lang, "shippingAddressLabel")}</h2>
+          {customer?.data?.full_name && <strong>{customer.data.full_name}</strong>}
+          <p>{o.shipping_address}</p>
+          {o.phone && <p>{t(lang, "deliveryPhone")} · <bdi>{o.phone}</bdi></p>}
+          {o.shipping_carrier && <p>{localizeCarrierLabel(o.shipping_carrier, lang)}</p>}
+          {o.tracking_number && <p>{t(lang, "trackingNumber")} · <bdi>{o.tracking_number}</bdi></p>}
+          {o.tracking_url && isSafeHttpUrl(o.tracking_url) &&
+            <p>{t(lang, "trackShipment")} · <a href={o.tracking_url} dir="ltr">{o.tracking_url}</a></p>}
+        </section>
+        <table>
+          <thead><tr><th>{t(lang, "adminProductCol")}</th><th>{t(lang, "adminQtyCol")}</th>
+            {invoice && <><th>{t(lang, "adminUnitPriceCol")}</th><th>{isEn ? "Amount" : "المبلغ"}</th></>}
+          </tr></thead>
+          <tbody>{o.order_items.map((item: { id: string; product_name: string; quantity: number;
+            unit_price: number; size: string | null; color: string | null }) => (
+            <tr key={item.id}>
+              <td>{item.product_name} <small>{[item.size, item.color && translateColor(item.color, lang)].filter(Boolean).join(" / ")}</small></td>
+              <td>{item.quantity}</td>
+              {invoice && <><td>{amount(item.unit_price)}</td><td>{amount(item.quantity * item.unit_price)}</td></>}
+            </tr>
+          ))}</tbody>
+        </table>
+        {invoice && <dl>
+          {o.discount_amount > 0 && <><dt>{isEn ? "Coupon discount" : "خصم الكوبون"}</dt><dd>−{amount(o.discount_amount)}</dd></>}
+          <dt>{isEn ? "Shipping" : "الشحن"}</dt><dd>{amount(o.shipping_fee)}</dd>
+          {o.wallet_discount > 0 && <><dt>{isEn ? "Wallet credit" : "رصيد المحفظة"}</dt><dd>−{amount(o.wallet_discount)}</dd></>}
+          <dt>{isEn ? "Total" : "الإجمالي"}</dt><dd>{amount(o.total)}</dd>
+        </dl>}
+        <p className="document-cod">{isEn ? "COD amount due" : "المبلغ المطلوب تحصيله"} · {amount(codDue)}</p>
+      </article>
+    );
+  }
   const linkedReturn =
-    !returnRes.error && Array.isArray(returnRes.data) && returnRes.data[0]
+    returnRes && !returnRes.error && Array.isArray(returnRes.data) && returnRes.data[0]
       ? normalizeReturnRecord(returnRes.data[0] as Record<string, unknown>)
       : null;
   const linkedReturnMeta = linkedReturn
@@ -65,7 +130,11 @@ export default async function OrderDetails({
       <h1>
         {isEn ? "Order" : "طلب"} <bdi>#{id.slice(0, 8)}</bdi>
       </h1>
-      <Notice result={(await searchParams).result} />
+      <nav className="document-actions">
+        <Link href={orderHref + "?print=invoice"} prefetch={false}>{isEn ? "Invoice" : "فاتورة"}</Link>
+        <Link href={orderHref + "?print=label"} prefetch={false}>{isEn ? "Shipping label" : "بوليصة الشحن"}</Link>
+      </nav>
+      <Notice result={query.result} />
 
       {linkedReturn && linkedReturnMeta && (
         <section
@@ -221,7 +290,7 @@ export default async function OrderDetails({
           deliveryToken={o.delivery_token ?? null}
           shippingAddress={o.shipping_address}
           phone={o.phone ?? null}
-          totalLabel={money(o.total, o.currency, lang)}
+          totalLabel={money(codDue, o.currency, lang)}
         />
       </section>
 

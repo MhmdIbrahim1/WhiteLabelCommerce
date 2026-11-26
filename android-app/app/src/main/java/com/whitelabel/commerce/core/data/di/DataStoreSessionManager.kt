@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import com.whitelabel.commerce.BuildConfig
 import io.github.jan.supabase.auth.SessionManager
 import io.github.jan.supabase.auth.user.UserSession
+import com.whitelabel.commerce.core.data.remote.runSuspendCatching
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.Json
 
@@ -30,7 +31,7 @@ class DataStoreSessionManager(
 
     override suspend fun loadSession(): UserSession? {
         val raw = dataStore.data.first()[sessionKey] ?: return null
-        return runCatching {
+        return runSuspendCatching {
             json.decodeFromString(UserSession.serializer(), PrivatePreferences.decrypt(sessionKey.name, raw))
         }.getOrNull()
     }

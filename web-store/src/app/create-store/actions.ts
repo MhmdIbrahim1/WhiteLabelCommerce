@@ -1,5 +1,6 @@
 "use server";
 
+import { actionError } from "@/lib/action-error";
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { serverDb } from "@/lib/db";
@@ -89,17 +90,9 @@ export async function createStoreAction(input: {
     .single<{ store_id: string; slug: string }>();
 
   if (error || !data?.store_id) {
-    const msg = error?.message ?? "provision_failed";
-    if (
-      msg.includes("slug_taken") ||
-      msg.includes("reserved_slug") ||
-      msg.includes("invalid_slug") ||
-      msg.includes("invalid_store_name") ||
-      msg.includes("auth_required")
-    ) {
-      return { ok: false, errorCode: msg };
-    }
-    return { ok: false, errorCode: "provision_failed" };
+    return { ok: false, errorCode: actionError(error, "provision_failed", [
+      "slug_taken", "reserved_slug", "invalid_slug", "invalid_store_name", "auth_required",
+    ]) };
   }
 
   // Switch active merchant admin context immediately to the newly created store

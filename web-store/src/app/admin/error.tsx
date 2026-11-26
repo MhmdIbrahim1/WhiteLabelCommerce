@@ -9,8 +9,8 @@ export default function ErrorPanel({ reset }: { reset: () => void }) {
       <h2>{isEn ? "Failed to Load Data" : "تعذر تحميل البيانات"}</h2>
       <p>
         {isEn
-          ? "Please check your connection and database migrations."
-          : "تحقق من الاتصال وتطبيق تحديث قاعدة البيانات."}
+          ? "Check your connection and try again."
+          : "تحقق من اتصالك وحاول مرة أخرى."}
       </p>
       <button onClick={reset}>{isEn ? "Try Again" : "إعادة المحاولة"}</button>
     </section>

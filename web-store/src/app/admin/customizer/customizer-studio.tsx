@@ -446,7 +446,7 @@ export function CustomizerStudio({
             : "تم حفظ ونشر التعديلات بنجاح وتحديث المتجر وتطبيق الأندرويد.",
         });
       } else {
-        setFeedback({ type: "error", text: res.error });
+        setFeedback({ type: "error", text: isEn ? "Could not publish your changes. Please try again." : "تعذر نشر التغييرات. حاول مرة أخرى." });
       }
     });
   };

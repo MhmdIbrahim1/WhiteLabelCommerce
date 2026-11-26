@@ -137,7 +137,7 @@ class ProductDetailViewModel @Inject constructor(
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            errorMessage = error.localizedMessage ?: localized("تعذر تحميل بيانات المنتج.", "Unable to load product."),
+                            errorMessage = localized("تعذر تحميل بيانات المنتج.", "Unable to load product."),
                         )
                     }
                 }
@@ -277,7 +277,7 @@ class ProductDetailViewModel @Inject constructor(
             val variantKey = listOfNotNull(state.selectedSize, state.selectedColor)
                 .filter { it.isNotBlank() }
                 .joinToString(" / ")
-            val token = fcmTokenManager.fetchTokenOrNull() ?: fcmTokenManager.lastKnownToken
+            val token = fcmTokenManager.fetchTokenOrNull()
             notificationRepository.subscribeBackInStock(
                 productId = product.id,
                 variantKey = variantKey,

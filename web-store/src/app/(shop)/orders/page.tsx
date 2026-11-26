@@ -110,7 +110,7 @@ export default async function Orders({ searchParams }: PageProps<"/orders">) {
                 ))}
               </div>
               {!result.data?.length && (
-                <p className="orders-empty-note">{t(lang, "noOrdersYet")}</p>
+                <p className="panel shop-empty-state">{t(lang, "noOrdersYet")}</p>
               )}
               {(page > 1 || to + 1 < (result.count ?? 0)) && (
                 <div className="actions orders-pager">

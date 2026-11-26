@@ -1,4 +1,5 @@
 "use client";
+import { SubmitButton } from "@/components/submit-button";
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -540,9 +541,9 @@ export function CustomersClient({
                   }
                 />
               </label>
-              <button type="submit">
+              <SubmitButton type="submit">
                 <Save size={15} /> {isEn ? "Save Note" : "حفظ الملاحظة"}
-              </button>
+              </SubmitButton>
             </form>
 
             <div className="crm-drawer-orders">
@@ -691,7 +692,7 @@ export function CustomersClient({
                 </p>
               )}
 
-              <button type="submit" disabled={adjustBusy} style={{ width: "100%" }}>
+              <SubmitButton type="submit" disabled={adjustBusy} style={{ width: "100%" }}>
                 {adjustBusy
                   ? isEn
                     ? "Saving…"
@@ -703,7 +704,7 @@ export function CustomersClient({
                     : isEn
                       ? "Deduct from Customer Wallet"
                       : "خصم الرصيد من المحفظة"}
-              </button>
+              </SubmitButton>
             </form>
 
             <div className="wallet-modal-history">

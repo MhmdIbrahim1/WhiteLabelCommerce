@@ -937,7 +937,6 @@ export function MobileAppStudio({
           kind: resp.status === 503 ? "warn" : "err",
           text:
             (isEn ? json.message_en : json.message_ar) ||
-            json.error ||
             (isEn
               ? `Could not start the APK build (HTTP ${resp.status}).`
               : `تعذر بدء بناء ملف APK (HTTP ${resp.status}).`),
@@ -2194,7 +2193,7 @@ export function MobileAppStudio({
                       <span dir="ltr">{b.package_id}</span>
                       <span>{date(b.created_at, lang)}</span>
                     </div>
-                    {b.error_message && (
+                    {b.status === "failed" && (
                       <div
                         style={{
                           fontSize: "0.78rem",
@@ -2202,7 +2201,7 @@ export function MobileAppStudio({
                           marginTop: "0.2rem",
                         }}
                       >
-                        {b.error_message}
+                        {isEn ? "The build failed. Please try again or contact support." : "تعذر إكمال البناء. حاول مرة أخرى أو تواصل مع الدعم."}
                       </div>
                     )}
                   </div>
