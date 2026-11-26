@@ -11,18 +11,17 @@ import {
 } from "lucide-react";
 import { useLanguage } from "@/components/language-provider";
 import { localizedText } from "@/lib/i18n";
-import {
-  DEFAULT_STORE_ID,
-  type ManagedStoreSummary,
-} from "@/lib/tenant-shared";
+import type { ManagedStoreSummary } from "@/lib/tenant-shared";
 import { switchAdminStore } from "./mutations";
 
 export function AdminStoreSwitcher({
   activeStore,
+  liveHref,
   managedStores,
   isSuperAdmin,
 }: {
   activeStore: ManagedStoreSummary;
+  liveHref: string;
   managedStores: ManagedStoreSummary[];
   isSuperAdmin: boolean;
 }) {
@@ -33,8 +32,6 @@ export function AdminStoreSwitcher({
 
   const canSwitch = managedStores.length > 1 || isSuperAdmin;
   const activeName = localizedText(lang, activeStore.name_ar, activeStore.name_en);
-  const liveHref =
-    activeStore.store_id === DEFAULT_STORE_ID ? "/" : `/s/${activeStore.slug}`;
 
   const planLabel = (plan: string) => {
     if (plan === "enterprise") return isEn ? "Enterprise" : "مؤسسي";

@@ -200,6 +200,7 @@ function ColorControl({
 
 export function CustomizerStudio({
   storeId,
+  storefrontPath,
   initialConfig,
   storeName,
   currency,
@@ -209,6 +210,7 @@ export function CustomizerStudio({
   categories,
 }: {
   storeId: string;
+  storefrontPath: string;
   initialConfig: StoreUiConfig;
   storeName: string;
   currency: string;
@@ -515,7 +517,7 @@ export function CustomizerStudio({
           </button>
 
           <Link
-            href="/"
+            href={storefrontPath}
             target="_blank"
             rel="noreferrer"
             className="customizer-btn-secondary"

@@ -6,6 +6,7 @@ import { checked, requireAdmin } from "@/lib/db";
 import brand from "@/lib/brand";
 import { photo } from "@/lib/shop";
 import { getServerLang } from "@/lib/i18n-server";
+import { merchantStorefrontUrl } from "@/lib/tenant";
 import { OrderTable } from "./ui";
 import { StoreLaunchChecklist } from "./launch-checklist";
 import {
@@ -157,6 +158,7 @@ async function Overview({
     ticketsRes,
     couponsRes,
     lang,
+    liveUrl,
   ] = await Promise.all([
     db
       .from("store_settings")
@@ -186,6 +188,7 @@ async function Overview({
       .select("id", { count: "exact", head: true })
       .eq("store_id", storeId),
     getServerLang(),
+    merchantStorefrontUrl(activeStore.slug),
   ]);
 
   if (
@@ -208,6 +211,7 @@ async function Overview({
     <>
       <StoreLaunchChecklist
         storeId={storeId}
+        storefrontUrl={liveUrl}
         storeSlug={activeStore.slug}
         storeNameAr={settingsRes.data?.store_name || activeStore.name_ar}
         storeNameEn={activeStore.name_en || activeStore.name_ar}

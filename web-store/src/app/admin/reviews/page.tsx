@@ -1,5 +1,5 @@
 import { requireAdmin, checked } from "@/lib/db";
-import { DEFAULT_STORE_ID } from "@/lib/tenant-shared";
+import { storefrontPath } from "@/lib/tenant-shared";
 import { adminDb } from "@/lib/supabase/admin";
 import { getServerLang } from "@/lib/i18n-server";
 import type { ReviewReply } from "@/lib/reviews-wishlist";
@@ -69,6 +69,6 @@ export default async function AdminReviewsPage() {
     };
   });
 
-  const basePath = storeId === DEFAULT_STORE_ID ? "" : `/s/${activeStore.slug}`;
+  const basePath = storefrontPath(activeStore.slug);
   return <AdminReviewsClient key={storeId} initialReviews={reviews} initialLang={lang} basePath={basePath} />;
 }

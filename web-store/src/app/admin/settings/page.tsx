@@ -7,6 +7,7 @@ import {
   saveWalletIncentiveSettings,
 } from "../mutations";
 import { TemplateGallery } from "./template-gallery";
+import { DomainSettings } from "./domain-settings";
 import { isTemplate } from "@/lib/theme-templates";
 import { getServerLang } from "@/lib/i18n-server";
 import { Notice } from "../ui";
@@ -43,7 +44,7 @@ type PaymentSecretRow = {
 export default async function Settings({
   searchParams,
 }: PageProps<"/admin/settings">) {
-  const [{ db, storeId }, lang, params] = await Promise.all([
+  const [{ db, storeId, activeStore }, lang, params] = await Promise.all([
     requireAdmin(),
     getServerLang(),
     searchParams,
@@ -80,6 +81,7 @@ export default async function Settings({
       />
       <h1>{isEn ? "Store Settings" : "إعدادات المتجر"}</h1>
       <Notice result={params.result} />
+      <DomainSettings storeId={storeId} slug={activeStore.slug} en={isEn} />
       <TemplateGallery
         active={
           isTemplate(s.theme_template) ? s.theme_template : "modern-minimal"

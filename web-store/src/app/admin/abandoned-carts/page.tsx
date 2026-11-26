@@ -1,7 +1,7 @@
 import { requireAdmin, checked } from "@/lib/db";
 import { getServerLang } from "@/lib/i18n-server";
 import { normalizeAbandonedCartRecord } from "@/lib/marketing";
-import { DEFAULT_STORE_ID } from "@/lib/tenant-shared";
+import { storefrontPath } from "@/lib/tenant-shared";
 import {
   AdminAbandonedCartsClient,
   type ActiveCouponOption,
@@ -85,8 +85,7 @@ export default async function AdminAbandonedCartsPage({
   const storeName =
     settingsRes.data?.store_name || activeStore.name_ar || "Nova Store";
   const currency = settingsRes.data?.currency || "EGP";
-  const cartBasePath =
-    storeId === DEFAULT_STORE_ID ? "/cart" : `/s/${activeStore.slug}/cart`;
+  const cartBasePath = storefrontPath(activeStore.slug) + "/cart";
 
   return (
     <AdminAbandonedCartsClient

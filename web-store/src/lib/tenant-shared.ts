@@ -3,8 +3,10 @@ export const DEFAULT_STORE_SLUG = "nova-store";
 export const STORE_SLUG_COOKIE = "nova_store_slug";
 export const ADMIN_STORE_COOKIE = "nova_admin_store_id";
 export const STORE_SLUG_HEADER = "x-store-slug";
-export const STORE_HOST_HEADER = "x-store-host";
-export const STORE_SUBDOMAIN_HEADER = "x-store-subdomain";
+export const STORE_ID_HEADER = "x-store-id";
+export const STORE_CANONICAL_HEADER = "x-store-canonical";
+export const PLATFORM_ORIGIN_HEADER = "x-platform-origin";
+export const REQUEST_ORIGIN_HEADER = "x-wlc-request-origin";
 export const STORE_BASE_PATH_HEADER = "x-store-base-path";
 
 export type StorePlan = "starter" | "growth" | "enterprise";
@@ -53,9 +55,13 @@ export type ManagedStoreSummary = {
   mobile_app_unlocked?: boolean;
 };
 
+export function storefrontPath(slug: string) {
+  return "/store/" + slug;
+}
+
 // Older storefront links carry their tenant in the relative return path.
 export function tenantAuthEntry(basePath: string, route: "/login" | "/register", next: string) {
-  const prefix = /^\/s\/[a-z0-9-]+(?=\/|$)/i.exec(next)?.[0];
+  const prefix = /^\/(?:s|store)\/[a-z0-9-]+(?=[/?#]|$)/i.exec(next)?.[0];
   return prefix && !basePath ? prefix + route + "?next=" + encodeURIComponent(next) : null;
 }
 

@@ -3,6 +3,7 @@ import brand from "@/lib/brand";
 import { requireAdmin, checked } from "@/lib/db";
 import { localizedText, t } from "@/lib/i18n";
 import { getServerLang } from "@/lib/i18n-server";
+import { merchantStorefrontUrl } from "@/lib/tenant";
 import { LanguageToggle } from "@/components/language-provider";
 import { NotificationBell } from "@/components/notifications/notification-bell";
 import { logout } from "../login/actions";
@@ -14,7 +15,7 @@ export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
   const [{ db, user, storeId, activeStore, managedStores, isSuperAdmin }, lang] =
     await Promise.all([requireAdmin(), getServerLang()]);
   const isEn = lang === "en";
-  const [settingsRes, pendingReturnsRes, openAbandonedRes] = await Promise.all([
+  const [settingsRes, pendingReturnsRes, openAbandonedRes, liveUrl] = await Promise.all([
     db
       .from("store_settings")
       .select("store_id,store_name")
@@ -30,6 +31,7 @@ export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
       .select("id", { count: "exact", head: true })
       .eq("store_id", storeId)
       .eq("status", "open"),
+    merchantStorefrontUrl(activeStore.slug),
   ]);
   const settings = checked(settingsRes);
   const pendingReturnsCount = pendingReturnsRes.error
@@ -46,6 +48,7 @@ export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
     <div className="shell">
       <aside>
         <AdminStoreSwitcher
+          liveHref={liveUrl}
           activeStore={activeStore}
           managedStores={managedStores}
           isSuperAdmin={isSuperAdmin}

@@ -1,6 +1,6 @@
 import { requireAdmin, checked } from "@/lib/db";
 import { getServerLang } from "@/lib/i18n-server";
-import { DEFAULT_STORE_ID } from "@/lib/tenant-shared";
+import { storefrontPath } from "@/lib/tenant-shared";
 import { AdminMarketingClient } from "./marketing-client";
 
 export default async function AdminMarketingPage() {
@@ -20,15 +20,13 @@ export default async function AdminMarketingPage() {
     }>();
 
   const data = checked(settingsRes);
-  const storefrontPath =
-    storeId === DEFAULT_STORE_ID ? "/" : `/s/${activeStore.slug}`;
 
   return (
     <AdminMarketingClient
       initialMetaPixelId={data.meta_pixel_id ?? ""}
       initialTiktokPixelId={data.tiktok_pixel_id ?? ""}
       initialGa4Id={data.ga4_measurement_id ?? ""}
-      storefrontPath={storefrontPath}
+      storefrontPath={storefrontPath(activeStore.slug)}
       initialLang={lang}
     />
   );

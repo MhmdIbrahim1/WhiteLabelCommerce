@@ -43,6 +43,7 @@ export default async function AccountPage({ searchParams }: Pick<PageProps<"/acc
 
           <HybridAuthPanel
             nextPath={storeHref(store.basePath, "/account")}
+            basePath={store.basePath}
             storeName={store.name}
             initialError={error}
             initialRegistered={registered}

@@ -1,4 +1,3 @@
-import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Store, UserPlus, PhoneCall } from "lucide-react";
 import { settings } from "@/lib/shop";
@@ -6,7 +5,7 @@ import { t } from "@/lib/i18n";
 import { getServerLang } from "@/lib/i18n-server";
 import { LanguageToggle } from "@/components/language-provider";
 import { HybridAuthPanel } from "@/components/shop/hybrid-auth-panel";
-import { storeHref, tenantAuthEntry } from "@/lib/tenant-shared";
+import { storeHref } from "@/lib/tenant-shared";
 
 export default async function Register({
   searchParams,
@@ -20,8 +19,6 @@ export default async function Register({
   ]);
   const errorKey = typeof params.error === "string" ? params.error : "";
   const next = typeof params.next === "string" ? params.next : "";
-  const entry = tenantAuthEntry(store.basePath, "/register", next);
-  if (entry) redirect(entry);
 
   return (
     <main className="auth-shell">
@@ -49,7 +46,7 @@ export default async function Register({
           <p>{t(lang, "registerSubtitle")}</p>
         </div>
 
-        <HybridAuthPanel initialSignup nextPath={next} storeName={store.name} initialError={errorKey} />
+        <HybridAuthPanel initialSignup nextPath={next} basePath={store.basePath} storeName={store.name} initialError={errorKey} />
 
         <footer className="auth-footer">
           <PhoneCall size={14} /> {t(lang, "registerFooterNote")}

@@ -1,5 +1,4 @@
-import { redirect } from "next/navigation";
-import { storeHref, tenantAuthEntry } from "@/lib/tenant-shared";
+import { storeHref } from "@/lib/tenant-shared";
 import Link from "next/link";
 import { Store, LockKeyhole, Sparkles } from "lucide-react";
 import { settings } from "@/lib/shop";
@@ -18,8 +17,6 @@ export default async function Login({ searchParams }: PageProps<"/login">) {
   const registered =
     typeof params.registered === "string" ? params.registered : "";
   const next = typeof params.next === "string" ? params.next : "";
-  const entry = tenantAuthEntry(store.basePath, "/login", next);
-  if (entry) redirect(entry);
 
   return (
     <main className="auth-shell">
@@ -48,6 +45,7 @@ export default async function Login({ searchParams }: PageProps<"/login">) {
         </div>
 
         <HybridAuthPanel
+          basePath={store.basePath}
           nextPath={next}
           storeName={store.name}
           initialError={error}

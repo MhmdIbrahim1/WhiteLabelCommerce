@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { serverDb } from "@/lib/db";
 import { isTemplate } from "@/lib/theme-templates";
 import { ADMIN_STORE_COOKIE } from "@/lib/tenant-shared";
+import { isStoreSlug } from "@/lib/host-routing";
 
 export type SlugCheckResult = {
   available: boolean;
@@ -20,6 +21,7 @@ export async function checkSlugAvailability(
     return { available: false, reason: "invalid" };
   }
 
+  if (!isStoreSlug(slug)) return { available: false, reason: "reserved" };
   const db = await serverDb();
   const { data, error } = await db
     .rpc("check_store_slug_available", { p_slug: slug })
@@ -78,6 +80,7 @@ export async function createStoreAction(input: {
     return { ok: false, errorCode: "invalid_slug" };
   }
 
+  if (!isStoreSlug(slug)) return { ok: false, errorCode: "reserved_slug" };
   const { data, error } = await db
     .rpc("provision_new_store", {
       p_name_ar: nameAr,

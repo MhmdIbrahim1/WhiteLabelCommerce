@@ -228,11 +228,11 @@ export async function login(form: FormData) {
 }
 
 export async function logout() {
-  const db = await serverDb();
+  const [db, store] = await Promise.all([serverDb(), resolveActiveStore()]);
   const { error } = await db.auth.signOut({ scope: "local" });
   if (error) throw new Error("تعذر تسجيل الخروج.");
   revalidatePath("/", "layout");
-  redirect("/");
+  redirect(storeHref(store?.basePath ?? "", "/"));
 }
 
 export async function saveCustomerAccount(form: FormData) {

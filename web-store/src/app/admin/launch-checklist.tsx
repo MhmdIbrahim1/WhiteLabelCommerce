@@ -34,6 +34,7 @@ import {
 export function StoreLaunchChecklist({
   storeId,
   storeSlug,
+  storefrontUrl,
   storeNameAr,
   storeNameEn,
   productsCount,
@@ -41,6 +42,7 @@ export function StoreLaunchChecklist({
 }: {
   storeId: string;
   storeSlug: string;
+  storefrontUrl: string;
   storeNameAr: string;
   storeNameEn: string;
   productsCount: number;
@@ -54,7 +56,6 @@ export function StoreLaunchChecklist({
   if (state.checklistDismissed) return null;
 
   const storeTitle = localizedText(lang, storeNameAr, storeNameEn) || storeSlug;
-  const storefrontPath = `/s/${storeSlug}`;
 
   const steps = [
     {
@@ -127,9 +128,9 @@ export function StoreLaunchChecklist({
       icon: Share2,
       title: isEn ? "Share your live storefront" : "انسخ وشارك رابط متجرك الحي",
       desc: isEn
-        ? `Copy your storefront link (${storefrontPath}) and share it with customers.`
-        : `انسخ رابط متجرك المباشر (${storefrontPath}) وشاركه مع عملائك الآن.`,
-      href: storefrontPath,
+        ? `Copy your storefront link (${storefrontUrl}) and share it with customers.`
+        : `انسخ رابط متجرك المباشر (${storefrontUrl}) وشاركه مع عملائك الآن.`,
+      href: storefrontUrl,
       cta: isEn ? "Open Storefront" : "معاينة المتجر",
     },
   ];
@@ -140,18 +141,14 @@ export function StoreLaunchChecklist({
   const allDone = completedCount === totalSteps;
 
   const handleCopyLink = async () => {
-    const fullUrl =
-      typeof window !== "undefined"
-        ? `${window.location.origin}${storefrontPath}`
-        : storefrontPath;
     try {
-      await navigator.clipboard.writeText(fullUrl);
+      await navigator.clipboard.writeText(storefrontUrl);
       showToast({ kind: "success", message: document.documentElement.lang.startsWith("en") ? "Copied to clipboard" : "تم النسخ" });
     } catch {
       /* fallback below */
       try {
         const ta = document.createElement("textarea");
-        ta.value = fullUrl;
+        ta.value = storefrontUrl;
         ta.style.position = "fixed";
         ta.style.opacity = "0";
         document.body.appendChild(ta);
@@ -549,7 +546,7 @@ export function StoreLaunchChecklist({
                         </span>
                       </button>
                       <Link
-                        href={storefrontPath}
+                        href={storefrontUrl}
                         target="_blank"
                         rel="noreferrer"
                         onClick={() =>

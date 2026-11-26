@@ -91,12 +91,14 @@ function localizedAuthError(
 
 export function HybridAuthPanel({
   nextPath = "",
+  basePath,
   initialSignup = false,
   storeName,
   initialError = "",
   initialRegistered = "",
 }: {
   nextPath?: string;
+  basePath: string;
   initialSignup?: boolean;
   storeName: string;
   initialError?: string;
@@ -500,7 +502,7 @@ export function HybridAuthPanel({
             </button>
           </form>
           {emailPasswordResetEnabled && pwMode === "signin" && <a className="section-more-link"
-            href={(nextPath.match(/^\/s\/[a-z0-9-]+/)?.[0] ?? "") + "/auth/reset-password"}>{isEn ? "Forgot password?" : "نسيت كلمة المرور؟"}</a>}
+            href={basePath + "/auth/reset-password"}>{isEn ? "Forgot password?" : "نسيت كلمة المرور؟"}</a>}
         </div>
       )}
     </div>

@@ -28,7 +28,7 @@ import {
 import { date, money } from "@/lib/brand";
 import { localizedText } from "@/lib/i18n";
 import {
-  DEFAULT_STORE_ID,
+  storefrontPath,
   type MobileAppAccess,
   type StorePlan,
   type StoreStatus,
@@ -535,8 +535,7 @@ export function SuperAdminPortal({
               <tbody>
                 {filtered.map((st) => {
                   const title = localizedText(lang, st.name_ar, st.name_en);
-                  const liveHref =
-                    st.store_id === DEFAULT_STORE_ID ? "/" : `/s/${st.slug}`;
+                  const liveHref = storefrontPath(st.slug);
                   const pct =
                     st.max_products > 0
                       ? Math.min(
@@ -555,7 +554,7 @@ export function SuperAdminPortal({
                           dir="ltr"
                           className="text-xs font-mono text-slate-500 mt-0.5"
                         >
-                          /s/{st.slug}
+                          {liveHref}
                         </div>
                         {st.custom_domain && (
                           <div dir="ltr" className="text-xs text-cyan-700 mt-0.5">
@@ -770,7 +769,7 @@ export function SuperAdminPortal({
                 </h2>
                 <p className="text-xs text-slate-500 m-0">
                   {localizedText(lang, editingStore.name_ar, editingStore.name_en)}{" "}
-                  (<span dir="ltr">/s/{editingStore.slug}</span>)
+                  (<span dir="ltr">{storefrontPath(editingStore.slug)}</span>)
                 </p>
               </div>
               <button

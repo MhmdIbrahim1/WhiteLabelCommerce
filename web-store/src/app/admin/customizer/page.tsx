@@ -3,6 +3,7 @@ import brand from "@/lib/brand";
 import { photo } from "@/lib/shop";
 import { resolveUiConfig } from "@/lib/ui-config";
 import { CustomizerStudio } from "./customizer-studio";
+import { merchantStorefrontUrl } from "@/lib/tenant";
 
 type CustomizerSettingsRow = {
   store_name: string;
@@ -33,7 +34,7 @@ type RawProductRow = {
 };
 
 export default async function CustomizerPage() {
-  const { db, storeId } = await requireAdmin();
+  const { db, storeId, activeStore } = await requireAdmin();
 
   const settingsQuery = await db
     .from("store_settings")
@@ -60,7 +61,7 @@ export default async function CustomizerPage() {
     settingsRow = checked(settingsQuery);
   }
 
-  const [productsRes, categoriesRes] = await Promise.all([
+  const [productsRes, categoriesRes, liveUrl] = await Promise.all([
     db
       .from("products")
       .select("id,category_id,name,name_en,description,description_en,price,old_price,stock,sizes,colors,image_path")
@@ -74,6 +75,7 @@ export default async function CustomizerPage() {
       .eq("store_id", storeId)
       .order("name")
       .limit(12),
+    merchantStorefrontUrl(activeStore.slug),
   ]);
 
   const products = ((productsRes.data ?? []) as RawProductRow[]).map((p) => ({
@@ -107,6 +109,7 @@ export default async function CustomizerPage() {
 
   return (
     <CustomizerStudio
+      storefrontPath={liveUrl}
       storeId={storeId}
       initialConfig={initialConfig}
       storeName={settingsRow.store_name || brand.storeName}

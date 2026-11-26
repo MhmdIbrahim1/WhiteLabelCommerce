@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import type { CSSProperties } from "react";
 import brand from "@/lib/brand";
 import { langDir, langHtmlAttr, type Lang } from "@/lib/i18n";
 import { getServerLang } from "@/lib/i18n-server";
+import { STORE_ID_HEADER } from "@/lib/tenant-shared";
 import { settings } from "@/lib/shop";
 import { LanguageProvider } from "@/components/language-provider";
 import { FloatingToastHost } from "@/components/floating-toast";
@@ -14,10 +16,9 @@ export const metadata: Metadata = {
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
   let defaultLang: Lang = "ar";
-  try {
-    const s = await settings();
-    defaultLang = s.uiConfig.defaultLanguage;
-  } catch {}
+  if ((await headers()).has(STORE_ID_HEADER)) {
+    try { defaultLang = (await settings()).uiConfig.defaultLanguage; } catch {}
+  }
   const lang = await getServerLang(defaultLang);
 
   const tokens = {

@@ -71,9 +71,9 @@ export function Navigation({
   const href = (path: string) => storeHref(basePath, path);
   const tenantReturnPath =
     pathname.startsWith("/") && !pathname.startsWith("//")
-      ? pathname
+      ? href(pathname)
       : href("/");
-  const loginHref = `/login?next=${encodeURIComponent(tenantReturnPath)}`;
+  const loginHref = `${basePath}/login?next=${encodeURIComponent(tenantReturnPath)}`;
   const ArrowIcon = lang === "en" ? ArrowRight : ArrowLeft;
   const count = useCart().reduce((a, l) => a + l.quantity, 0);
   const { count: wishlistCount, isSignedIn: wishlistSignedIn } = useWishlist();

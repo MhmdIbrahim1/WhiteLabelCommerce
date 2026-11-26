@@ -1,5 +1,7 @@
 import { cache } from "react";
 import type { Metadata } from "next";
+import { headers } from "next/headers";
+import { STORE_CANONICAL_HEADER } from "@/lib/tenant-shared";
 import { notFound } from "next/navigation";
 import { Star } from "lucide-react";
 import { serverDb, checked } from "@/lib/db";
@@ -45,9 +47,11 @@ export async function generateMetadata({
     const lang = await getServerLang(s.uiConfig.defaultLanguage);
     const title = localizedText(lang, data.name, data.name_en);
     const desc = localizedText(lang, data.description ?? "", data.description_en);
+    const canonical = (await headers()).get(STORE_CANONICAL_HEADER);
     return {
       title,
       description: desc ? desc.slice(0, 160) : undefined,
+      ...(canonical && { openGraph: { url: canonical, title, description: desc?.slice(0, 160), siteName: s.name } }),
     };
   } catch {
     return {};

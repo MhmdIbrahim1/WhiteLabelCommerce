@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import type { CSSProperties } from "react";
 import { IBM_Plex_Sans_Arabic } from "next/font/google";
 import Link from "next/link";
@@ -8,6 +9,7 @@ import { settings } from "@/lib/shop";
 import { serverDb } from "@/lib/db";
 import { adminUser, superAdminUser } from "@/lib/access";
 import { storeHref } from "@/lib/tenant";
+import { STORE_CANONICAL_HEADER } from "@/lib/tenant-shared";
 import { localizedText, t } from "@/lib/i18n";
 import { getServerLang } from "@/lib/i18n-server";
 import brand from "@/lib/brand";
@@ -30,12 +32,17 @@ export async function generateMetadata(): Promise<Metadata> {
         ? s.uiConfig.pages.home.hero_subtitle_en
         : s.uiConfig.pages.home.hero_subtitle_ar
       )?.trim() || t(lang, "footerTagline");
+    const canonical = (await headers()).get(STORE_CANONICAL_HEADER);
     return {
       title: {
         absolute: displayName,
         template: `%s · ${displayName}`,
       },
       description: tagline,
+      ...(canonical ? {
+        alternates: { canonical },
+        openGraph: { url: canonical, siteName: displayName, title: displayName, description: tagline, locale: lang === "en" ? "en_US" : "ar_EG" },
+      } : { robots: { index: false, follow: false } }),
     };
   } catch {
     return {

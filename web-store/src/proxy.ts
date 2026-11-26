@@ -2,229 +2,163 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { adminUser, superAdminUser } from "@/lib/access";
 import {
-  DEFAULT_STORE_SLUG,
-  STORE_BASE_PATH_HEADER,
-  STORE_HOST_HEADER,
-  STORE_SLUG_COOKIE,
-  STORE_SLUG_HEADER,
-  STORE_SUBDOMAIN_HEADER,
-} from "@/lib/tenant";
+  classifyHost, isLocalHost, isStoreSlug, platformOrigin, platformRootDomain, publicStoreOrigin,
+  requestAuthority, resolveStoreBinding, storePath,
+} from "@/lib/host-routing";
+import { resolveHostRoute } from "@/lib/host-resolver";
+import {
+  DEFAULT_STORE_SLUG, PLATFORM_ORIGIN_HEADER, STORE_BASE_PATH_HEADER, STORE_CANONICAL_HEADER,
+  REQUEST_ORIGIN_HEADER, STORE_ID_HEADER, STORE_SLUG_COOKIE, STORE_SLUG_HEADER, storefrontPath, tenantAuthEntry,
+} from "@/lib/tenant-shared";
 
-const SLUG_PATH_RE = /^\/s\/([a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?)(\/.*)?$/i;
-const IPV4_RE = /^\d{1,3}(\.\d{1,3}){3}$/;
+const privateHeaders = { "Cache-Control": "private, no-store" };
+const landingPath = "/platform-landing";
+const redirectPath = "/platform-redirect";
+const PLATFORM_REDIRECT_HEADER = "x-wlc-platform-redirect";
+const controlPlane = /^\/(?:admin|super-admin|create-store|api\/admin)(?:\/|$)/;
+const tenantApi = /^\/api\/(?:abandoned-cart|catalog-search|cart-upsells|payments\/paymob\/initiate|notifications\/(?:back-in-stock|cart-heartbeat|inbox|register))$/;
+const assetPath = /^(?:\/_next\/static\/|\/_next\/(?:image|webpack-hmr)(?:\/|$)|\/(?:favicon\.ico|store-collection\.jpg|firebase-messaging-sw\.js)$)/;
 
-function extractHostTenant(rawHost: string | null): {
-  customHost: string;
-  subdomain: string;
-} {
-  if (!rawHost) return { customHost: "", subdomain: "" };
-  const host = rawHost.split(":")[0].trim().toLowerCase();
-  if (!host || host === "localhost" || host === "127.0.0.1" || host === "::1" || IPV4_RE.test(host)) {
-    return { customHost: "", subdomain: "" };
-  }
+function routingError(status: 404 | 503 = 404) {
+  const en = status === 404 ? "Store not found" : "Store temporarily unavailable";
+  const ar = status === 404 ? "المتجر غير موجود" : "المتجر غير متاح مؤقتاً";
+  return new NextResponse(`<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>${ar} · ${en}</title><main style="max-width:32rem;margin:18vh auto;padding:1.5rem;text-align:center;color:#233e38;font:1.15rem system-ui"><small>${status}</small><h1>${ar}</h1><p lang="en" dir="ltr">${en}</p></main></html>`, {
+    status, headers: { ...privateHeaders, "Content-Type": "text/html; charset=utf-8", "X-Robots-Tag": "noindex" },
+  });
+}
 
-  // Local subdomain testing: e.g. myshop.localhost:3000
-  if (host.endsWith(".localhost")) {
-    const sub = host.slice(0, -".localhost".length);
-    if (sub && !sub.includes(".") && sub !== "www") {
-      return { customHost: "", subdomain: sub };
-    }
-    return { customHost: "", subdomain: "" };
-  }
-
-  // Deployed preview/root domains: check optional env NEXT_PUBLIC_ROOT_DOMAIN
-  const rootDomain = (process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/^https?:\/\//, "")
-    .split("/")[0]
-    .split(":")[0];
-
-  if (rootDomain) {
-    if (host === rootDomain || host === `www.${rootDomain}`) {
-      return { customHost: "", subdomain: "" };
-    }
-    if (host.endsWith(`.${rootDomain}`)) {
-      const sub = host.slice(0, -(rootDomain.length + 1));
-      if (sub && !sub.includes(".") && sub !== "www") {
-        return { customHost: "", subdomain: sub };
+// Path-based tabs share a cookie jar. Prefer the same-origin page making the legacy bare API call.
+function apiStoreSlug(request: NextRequest, origin: string) {
+  const referrer = request.headers.get("referer");
+  if (referrer) {
+    try {
+      const url = new URL(referrer);
+      if (url.origin === new URL(origin).origin) {
+        const alias = storePath(url.pathname);
+        if (alias === "invalid") return null;
+        return alias?.slug ?? DEFAULT_STORE_SLUG;
       }
-    }
+    } catch { /* Older clients may omit a usable referrer. */ }
   }
-
-  // Ignore default platform hosting subdomains unless configured as custom domain
-  if (host.endsWith(".vercel.app") || host.endsWith(".netlify.app")) {
-    return { customHost: "", subdomain: "" };
-  }
-
-  // Treat other hosts as custom domain candidates (also pass leftmost label as subdomain candidate if 3+ parts)
-  const parts = host.split(".");
-  const subdomain = parts.length >= 3 && parts[0] !== "www" ? parts[0] : "";
-  return { customHost: host, subdomain };
+  const slug = request.cookies.get(STORE_SLUG_COOKIE)?.value || DEFAULT_STORE_SLUG;
+  return isStoreSlug(slug) ? slug : null;
 }
 
 export async function proxy(request: NextRequest) {
-  const pathname = request.nextUrl.pathname;
-  const requestHeaders = new Headers(request.headers);
+  // Next's /_next/image optimizer fetches public files internally via a headerless MockedRequest
+  // (base-server fills x-forwarded-host while leaving host unset).
+  if (request.method === "GET" && !request.headers.get("host") &&
+      /^\/(?:favicon\.ico|store-collection\.jpg)$/.test(request.nextUrl.pathname)) {
+    return NextResponse.next();
+  }
+  const host = requestAuthority(request.headers.get("host"), request.headers.get("x-forwarded-host"));
+  if (!host) return routingError();
+  let root: string;
+  try { root = platformRootDomain(); } catch { return routingError(503); }
+  const classification = classifyHost(host.hostname, root, root === "localhost" || process.env.NODE_ENV !== "production");
+  if (!classification) return routingError();
 
-  // Unconditionally strip spoofable internal tenant routing headers before computing trusted values
-  requestHeaders.delete(STORE_HOST_HEADER);
-  requestHeaders.delete(STORE_SUBDOMAIN_HEADER);
-  requestHeaders.delete(STORE_SLUG_HEADER);
-  requestHeaders.delete(STORE_BASE_PATH_HEADER);
+  const externalPath = request.nextUrl.pathname;
+  const alias = storePath(externalPath);
+  if (alias === "invalid") return routingError();
+  const path = alias?.pathname ?? externalPath;
+  if (path === landingPath || path.startsWith(landingPath + "/") ||
+      path === redirectPath || path.startsWith(redirectPath + "/")) return routingError();
+  const platform = classification === "platform";
+  const landing = platform && !alias && path === "/";
+  const asset = assetPath.test(path);
+  const admin = controlPlane.test(path);
+  const api = path.startsWith("/api/");
+  const platformUrl = platformOrigin(host, root);
+  const scheme = isLocalHost(host.hostname) ? "http" : "https";
+  const publicAuthority = scheme === "http" ? host.authority : host.hostname;
+  const origin = scheme + "://" + publicAuthority;
+  const outgoing = new Headers(request.headers);
+  for (const header of [PLATFORM_ORIGIN_HEADER, PLATFORM_REDIRECT_HEADER, STORE_ID_HEADER, STORE_BASE_PATH_HEADER, STORE_CANONICAL_HEADER,
+    STORE_SLUG_HEADER, "x-store-host", "x-store-subdomain", "forwarded"]) outgoing.delete(header);
+  outgoing.set(PLATFORM_ORIGIN_HEADER, platformUrl);
+  outgoing.set(REQUEST_ORIGIN_HEADER, new URL(origin).origin);
+  outgoing.set("host", publicAuthority);
+  outgoing.set("x-forwarded-host", publicAuthority);
+  outgoing.set("x-forwarded-proto", scheme);
 
-  let rewriteUrl: URL | null = null;
-  let cookieToSet: { name: string; value: string } | null = null;
-  let clearSlugCookie = false;
-
-  const slugMatch = SLUG_PATH_RE.exec(pathname);
-  if (slugMatch) {
-    const slug = slugMatch[1].toLowerCase();
-    const restPath = slugMatch[2] || "/";
-    requestHeaders.set(STORE_SLUG_HEADER, slug);
-    requestHeaders.set(STORE_BASE_PATH_HEADER, `/s/${slug}`);
-    if (restPath !== "/api/catalog-search") cookieToSet = { name: STORE_SLUG_COOKIE, value: slug };
-
-    rewriteUrl = request.nextUrl.clone();
-    rewriteUrl.pathname = restPath;
-  } else {
-    const { customHost, subdomain } = extractHostTenant(
-      request.headers.get("x-forwarded-host") || request.headers.get("host"),
-    );
-
-    if (customHost) {
-      requestHeaders.set(STORE_HOST_HEADER, customHost);
+  const storefront = !landing && !asset && !admin && !path.startsWith("/delivery/") && (!api || tenantApi.test(path));
+  let cookieSlug: string | undefined;
+  if (!platform || alias || storefront) {
+    const fallback = api && platform && !alias ? apiStoreSlug(request, origin) : DEFAULT_STORE_SLUG;
+    let route;
+    try { route = await resolveStoreBinding(classification, alias?.slug, fallback, resolveHostRoute); }
+    catch { return routingError(503); }
+    if (!route) return routingError();
+    const authPage = path === "/login" || path === "/register";
+    const basePath = platform ? alias?.basePath ?? (authPage || api ? "" : storefrontPath(route.slug)) : "";
+    outgoing.set(STORE_ID_HEADER, route.id);
+    outgoing.set(STORE_SLUG_HEADER, route.slug);
+    outgoing.set(STORE_BASE_PATH_HEADER, basePath);
+    if (path === "/" || /^\/(?:products|contact)(?:\/|$)/.test(path)) {
+      outgoing.set(STORE_CANONICAL_HEADER, publicStoreOrigin(route, platformUrl, root) + path);
     }
-    if (subdomain) {
-      requestHeaders.set(STORE_SUBDOMAIN_HEADER, subdomain);
-    }
-
-    // Bare root storefront route (not /s/*, not /api/*, not /admin/*, not /super-admin/*, not /create-store, not /delivery/*)
-    // resets active store back to default Nova Store so localhost:3000/ always loads Nova Store cleanly.
-    const isStorefrontRootRoute =
-      !pathname.startsWith("/api/") &&
-      !pathname.startsWith("/admin") &&
-      !pathname.startsWith("/super-admin") &&
-      !pathname.startsWith("/create-store") &&
-      !pathname.startsWith("/delivery");
-
-    if (!customHost && !subdomain && isStorefrontRootRoute) {
-      requestHeaders.set(STORE_SLUG_HEADER, DEFAULT_STORE_SLUG);
-      requestHeaders.set(STORE_BASE_PATH_HEADER, "");
-      if (
-        request.cookies.get(STORE_SLUG_COOKIE)?.value &&
-        request.cookies.get(STORE_SLUG_COOKIE)?.value !== DEFAULT_STORE_SLUG
-      ) {
-        clearSlugCookie = true;
-      }
+    if (platform && storefront && !api && !authPage && !request.headers.has("next-router-prefetch") &&
+        request.headers.get("purpose") !== "prefetch") cookieSlug = route.slug;
+    if (platform && !alias && authPage && request.method === "GET") {
+      const entry = tenantAuthEntry("", path, request.nextUrl.searchParams.get("next") || "");
+      if (entry) return NextResponse.redirect(new URL(entry, origin), { status: 303, headers: privateHeaders });
     }
   }
+  if (!platform && admin) {
+    if ((request.method !== "GET" && request.method !== "HEAD") || api) return routingError();
+    outgoing.set(PLATFORM_REDIRECT_HEADER, new URL(path + request.nextUrl.search, platformUrl).toString());
+    const target = request.nextUrl.clone();
+    target.pathname = redirectPath;
+    target.search = "";
+    return NextResponse.rewrite(target, { request: { headers: outgoing } });
+  }
+  if (asset) return NextResponse.next({ request: { headers: outgoing } });
 
-  const makeResponse = () =>
-    rewriteUrl
-      ? NextResponse.rewrite(rewriteUrl, { request: { headers: requestHeaders } })
-      : NextResponse.next({ request: { headers: requestHeaders } });
+  // Keep rewrites internal to the Next server, even when a trusted ingress terminates TLS.
+  const destination = request.nextUrl.clone();
+  destination.pathname = landing ? landingPath : path;
+  const forward = () => destination.pathname !== externalPath
+    ? NextResponse.rewrite(destination, { request: { headers: outgoing } })
+    : NextResponse.next({ request: { headers: outgoing } });
+  let response = forward();
+  if (landing) {
+    response.headers.set("Cache-Control", "private, no-store");
+    return response;
+  }
 
-  let response = makeResponse();
-
-  const applyTenantCookies = (res: NextResponse) => {
-    if (cookieToSet) {
-      res.cookies.set(cookieToSet.name, cookieToSet.value, {
-        path: "/",
-        sameSite: "lax",
-        httpOnly: false,
-      });
-    } else if (clearSlugCookie) {
-      res.cookies.delete(STORE_SLUG_COOKIE);
-    }
-  };
-
-  const db = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll: () => request.cookies.getAll(),
-        setAll(values, headers) {
-          for (const cookie of values)
-            request.cookies.set(cookie.name, cookie.value);
-          response = makeResponse();
-          for (const { name, value, options } of values)
-            response.cookies.set(name, value, options);
-          for (const [name, value] of Object.entries(headers ?? {}))
-            response.headers.set(name, value);
-        },
+  const db = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
+    cookies: {
+      getAll: () => request.cookies.getAll(),
+      setAll(values, headers) {
+        for (const { name, value } of values) request.cookies.set(name, value);
+        outgoing.set("cookie", request.cookies.toString());
+        response = forward();
+        for (const { name, value, options } of values) response.cookies.set(name, value, options);
+        for (const [name, value] of Object.entries(headers ?? {})) response.headers.set(name, value);
       },
     },
-  );
+  });
 
-  // Guard /super-admin
-  if (pathname === "/super-admin" || pathname.startsWith("/super-admin/")) {
-    const {
-      data: { user },
-    } = await db.auth.getUser();
-    if (!user) {
-      const login = NextResponse.redirect(
-        new URL("/login?next=/super-admin", request.url),
-        303,
-      );
-      for (const cookie of response.cookies.getAll()) login.cookies.set(cookie);
-      login.headers.set("Cache-Control", "private, no-store");
-      return login;
+  if (admin && !api) {
+    const { data: { user } } = await db.auth.getUser();
+    const login = "/login?next=" + encodeURIComponent(path + request.nextUrl.search);
+    let redirectTo = !user ? login : "";
+    if (user && /^\/super-admin(?:\/|$)/.test(path) && !(await superAdminUser(db, user))) redirectTo = "/";
+    if (user && /^\/admin(?:\/|$)/.test(path) && !(await adminUser(db, undefined, user))) redirectTo = login;
+    if (redirectTo) {
+      const redirect = NextResponse.redirect(new URL(redirectTo, origin), { status: 303, headers: privateHeaders });
+      for (const cookie of response.cookies.getAll()) redirect.cookies.set(cookie);
+      return redirect;
     }
-    if (!(await superAdminUser(db))) {
-      const home = NextResponse.redirect(new URL("/", request.url), 303);
-      for (const cookie of response.cookies.getAll()) home.cookies.set(cookie);
-      home.headers.set("Cache-Control", "private, no-store");
-      return home;
-    }
-    response.headers.set("Cache-Control", "private, no-store");
-    return response;
-  }
-
-  // Guard /create-store (signed-in users only; redirect guests through /login with return URL)
-  if (pathname === "/create-store" || pathname.startsWith("/create-store/")) {
-    const {
-      data: { user },
-    } = await db.auth.getUser();
-    if (!user) {
-      const login = NextResponse.redirect(
-        new URL("/login?next=/create-store", request.url),
-        303,
-      );
-      for (const cookie of response.cookies.getAll()) login.cookies.set(cookie);
-      login.headers.set("Cache-Control", "private, no-store");
-      return login;
-    }
-    response.headers.set("Cache-Control", "private, no-store");
-    return response;
-  }
-
-  // Guard /admin
-  if (pathname === "/admin" || pathname.startsWith("/admin/")) {
-    if (!(await adminUser(db))) {
-      const login = NextResponse.redirect(
-        new URL("/login?next=/admin", request.url),
-        303,
-      );
-      for (const cookie of response.cookies.getAll()) login.cookies.set(cookie);
-      login.headers.set("Cache-Control", "private, no-store");
-      return login;
-    }
-    response.headers.set("Cache-Control", "private, no-store");
-    return response;
-  }
-
-  if (request.cookies.getAll().some((c) => c.name.startsWith("sb-"))) {
+  } else if (request.cookies.getAll().some(c => c.name.startsWith("sb-"))) {
     await db.auth.getUser();
   }
-  applyTenantCookies(response);
+  if (cookieSlug && request.cookies.get(STORE_SLUG_COOKIE)?.value !== cookieSlug) {
+    response.cookies.set(STORE_SLUG_COOKIE, cookieSlug, { path: "/", sameSite: "lax", httpOnly: true, secure: scheme === "https" });
+  }
   response.headers.set("Cache-Control", "private, no-store");
   return response;
 }
 
-export const config = {
-  matcher: [
-    "/((?!_next/static|_next/image|favicon\\.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|map|woff2?|ttf|eot)$).*)",
-  ],
-};
+export const config = { matcher: "/:path*" };
