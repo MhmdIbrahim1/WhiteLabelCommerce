@@ -8,5 +8,5 @@ import "./appearance.css";
 export default async function AppearancePage() {
   const { db } = await requireSuperAdmin();
   const [theme, lang] = await Promise.all([readPlatformTheme(db), getServerLang()]);
-  return <AppearanceEditor key={theme.revision} initial={theme} lang={lang} />;
+  return <AppearanceEditor initial={theme} lang={lang} />;
 }

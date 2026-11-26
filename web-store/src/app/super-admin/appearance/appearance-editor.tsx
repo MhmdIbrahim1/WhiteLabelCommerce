@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useState, type CSSProperties, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, ArrowRight, Check, Eye, RotateCcw } from "lucide-react";
-import { LanguageToggle } from "@/components/language-provider";
 import { PlatformBrand } from "@/components/platform-brand";
 import { langDir, type Lang } from "@/lib/i18n";
 import { applyPreset, copyLimits, defaultTheme, fontPairs, parsePlatformTheme, presetOptions, presets,
@@ -54,17 +53,17 @@ export function AppearanceEditor({ initial, lang }: { initial: PlatformTheme; la
       setSaved(published);
       setDraft(published);
       setStatus("saved");
+      router.refresh();
     } catch { setStatus("error"); }
   }
 
-  return <main className="pt-shell appearance" lang={lang} dir={langDir(lang)} style={resolveTheme(defaultTheme) as CSSProperties}>
+  return <main className="appearance" lang={lang} dir={langDir(lang)}>
     <div className="appearance-wrap">
       <nav className="appearance-nav">
         <Link href="/super-admin"><ArrowLeft className="pt-directional" size={17} />{en ? "Platform controls" : "إدارة المنصة"}</Link>
-        <LanguageToggle className="pt-lang" />
       </nav>
       <h1>{en ? "Platform Appearance" : "مظهر المنصة"}</h1>
-      <p>{en ? "Set the identity and launch experience on your platform homepage." : "اختر هوية الصفحة الرئيسية للمنصة وكيف يبدأ التاجر منها."}</p>
+      <p>{en ? "Set the homepage design and the colors, type and corners shared across workspaces." : "خصّص الصفحة الرئيسية وحدّد الألوان والخطوط والزوايا المشتركة بين لوحات المتاجر."}</p>
       <div className="appearance-grid">
         <form onSubmit={publish}>
           <fieldset disabled={busy}>
@@ -133,7 +132,7 @@ export function AppearanceEditor({ initial, lang }: { initial: PlatformTheme; la
               {en ? "Reset to defaults" : "استعادة الإعدادات الافتراضية"}</button>
           </div>
           <div role="status" className="appearance-status">{messages[status]}
-            {status === "conflict" && <button type="button" className="appearance-plain" onClick={() => router.refresh()}>
+            {status === "conflict" && <button type="button" className="appearance-plain" onClick={() => window.location.reload()}>
               {en ? "Load published version" : "تحميل النسخة المنشورة"}</button>}
           </div>
         </form>

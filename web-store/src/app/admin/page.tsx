@@ -1,8 +1,9 @@
-import { canSeeOverview, permissionKeys, permissionNames, type Permission } from "@/lib/team";
+import { canSeeOverview, permissionKeys, permissionNames, type Permission, type Permissions } from "@/lib/team";
 import { Suspense } from "react";
 import { RouteSkeleton } from "@/components/route-skeleton";
 import Link from "next/link";
-import { ArrowLeft, ArrowRight } from "lucide-react";
+import { ArrowRight, Boxes, ClipboardList, Users, Settings, Globe, CreditCard, UsersRound, Smartphone } from "lucide-react";
+import type { Lang } from "@/lib/i18n";
 import { checked, requireAdmin } from "@/lib/db";
 import brand from "@/lib/brand";
 import { photo } from "@/lib/shop";
@@ -140,6 +141,24 @@ function normalizeMetrics(raw: DashboardRpcResult): AnalyticsDashboardMetrics {
   };
 }
 
+const destinations = {
+  manage_products: ["products", Boxes], manage_orders: ["orders", ClipboardList], manage_customers: ["customers", Users],
+  manage_settings: ["settings", Settings], manage_domains: ["settings/domains", Globe], manage_billing: ["billing", CreditCard],
+  manage_staff: ["team", UsersRound], manage_mobile_app: ["mobile-app", Smartphone],
+} as const;
+
+function QuickActions({ permissions, lang, keys = permissionKeys }: { permissions: Permissions; lang: Lang; keys?: Permission[] }) {
+  const en = lang === "en";
+  const allowed = keys.filter(key => permissions[key]);
+  return <section className="ws-panel ws-quick"><h2>{en ? "Quick actions" : "اختصارات العمل"}</h2>
+    {allowed.length ? allowed.map(key => {
+      const [path, Icon] = destinations[key];
+      return <Link href={"/admin/" + path} key={key}><span className="ws-shop-icon"><Icon size={17}/></span>
+        {permissionNames[key][lang]}<ArrowRight className="pt-directional" size={15}/></Link>;
+    }) : <p>{en ? "Ask the store owner to assign your first workspace permission." : "اطلب من مالك المتجر تحديد الصلاحيات التي تحتاج إليها للبدء."}</p>}
+  </section>;
+}
+
 async function Overview({
   searchParams,
 }: PageProps<"/admin">) {
@@ -153,15 +172,9 @@ async function Overview({
   const { db, storeId, activeStore, permissions } = await requireAdmin();
   if (!canSeeOverview(permissions)) {
     const lang = await getServerLang();
-    const routes: Record<Permission, string> = { manage_products: "products", manage_orders: "orders",
-      manage_customers: "customers", manage_settings: "settings", manage_domains: "settings/domains",
-      manage_billing: "billing", manage_staff: "team", manage_mobile_app: "mobile-app" };
-    return <section className="card"><h1>{lang === "en" ? "Your workspace" : "مساحة عملك"}</h1>
-      <p>{lang === "en" ? activeStore.name_en || activeStore.name_ar : activeStore.name_ar}</p>
-      <ul>{permissionKeys.filter(key => permissions[key]).map(key =>
-        <li key={key}><Link href={"/admin/" + routes[key]}>{permissionNames[key][lang]}</Link></li>)}</ul>
-      {!Object.keys(permissions).length && <p>{lang === "en" ? "Ask the owner to assign access to your role." : "اطلب من مالك المتجر تحديد صلاحيات دورك."}</p>}
-    </section>;
+    return <div className="ws-dashboard"><header className="ws-dash-head"><div><h1>{lang === "en" ? "Your workspace" : "مساحة عملك"}</h1>
+      <p dir="auto">{lang === "en" ? activeStore.name_en || activeStore.name_ar : activeStore.name_ar}</p></div></header>
+      <QuickActions permissions={permissions} lang={lang} /></div>;
   }
 
   const [
@@ -218,36 +231,16 @@ async function Overview({
   const metrics = normalizeMetrics(rawMetrics);
   const recentOrders = (checked(recentOrdersRes) ?? []) as RecentOrder[];
   const isEn = lang === "en";
-  const ArrowIcon = isEn ? ArrowRight : ArrowLeft;
-
-  return (
-    <>
-      <StoreLaunchChecklist
-        storeId={storeId}
-        storefrontUrl={liveUrl}
-        storeSlug={activeStore.slug}
-        storeNameAr={settingsRes.data?.store_name || activeStore.name_ar}
-        storeNameEn={activeStore.name_en || activeStore.name_ar}
-        productsCount={toNumber(rawMetrics.product_count)}
-        couponsCount={couponsRes.count ?? 0}
-      />
-      <AnalyticsDashboard
-        metrics={metrics}
-        range={range}
-        currency={currency}
-        openTickets={ticketsRes.count ?? 0}
-      />
-      <section className="card">
-        <div className="row">
-          <h2>{isEn ? "Recent Orders" : "أحدث الطلبات"}</h2>
-          <Link href="/admin/orders">
-            {isEn ? "All Orders" : "كل الطلبات"} <ArrowIcon size={15} />
-          </Link>
-        </div>
-        <OrderTable rows={recentOrders} />
-      </section>
-    </>
-  );
+  return <AnalyticsDashboard metrics={metrics} range={range} currency={currency} openTickets={ticketsRes.count ?? 0}>
+    <div className="ws-overview-grid"><section className="ws-panel"><div className="ws-panel-head"><h2>{isEn ? "Recent orders" : "أحدث الطلبات"}</h2>
+      <Link href="/admin/orders">{isEn ? "View all" : "عرض الكل"} <ArrowRight size={14} className="pt-directional" /></Link></div>
+      <OrderTable rows={recentOrders} /></section>
+      <QuickActions lang={lang} permissions={permissions} keys={["manage_products","manage_orders","manage_settings"]} />
+    </div>
+    <StoreLaunchChecklist storeId={storeId} storefrontUrl={liveUrl} storeSlug={activeStore.slug}
+      storeNameAr={settingsRes.data?.store_name || activeStore.name_ar} storeNameEn={activeStore.name_en || activeStore.name_ar}
+      productsCount={toNumber(rawMetrics.product_count)} couponsCount={couponsRes.count ?? 0} />
+  </AnalyticsDashboard>;
 }
 
 export default function Page(props: PageProps<"/admin">) {

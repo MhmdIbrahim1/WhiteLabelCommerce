@@ -5,6 +5,7 @@ import { cycleName, limitLabel, quotaKeys, quotaResources, resourceName, statusN
 import { formatDate, langDir, localizedText } from "@/lib/i18n";
 import { getServerLang } from "@/lib/i18n-server";
 import { PlanComparison } from "@/components/plan-comparison";
+import { PlatformModeBar } from "@/components/workspace-surface";
 import { BillingControls } from "./controls";
 import "./billing.css";
 
@@ -23,7 +24,7 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
     const [plans, stores] = await Promise.all([getPlanCatalog(true), getBillingStores()]);
     const target = stores.find(s => s.store_id === params.store)?.store_id ?? storeId;
     const sub = await db.rpc("billing_admin_subscription", { p_store: target }).single<Subscription>();
-    return <div className="billing-page" dir={langDir(lang)}>{heading}
+    return <div className="billing-page" dir={langDir(lang)}><PlatformModeBar />{heading}
       <BillingControls lang={lang} plans={plans} subscription={checked(sub)} stores={stores.map(s => ({
         id: s.store_id, name: localizedText(lang, s.stores.name_ar, s.stores.name_en), slug: s.stores.slug,
       }))} />
@@ -48,12 +49,12 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
       </dl>
     </section>
     <section className="billing-box" aria-labelledby="usage-title">
-      <div className="billing-section-head"><h2 id="usage-title">{en ? "Store usage" : "استخدام المتجر"}</h2><small>{month} · UTC</small></div>
+      <div className="billing-section-head"><h2 id="usage-title">{en ? "Store usage" : "استخدام المتجر"}</h2><small><bdi dir="ltr">{month} · UTC</bdi></small></div>
       <div className="billing-meters">{quotaKeys.map(key => {
         const resource = quotaResources[key], used = bill[resource], cap = bill.entitlements[key];
         return <div className="billing-meter" key={key}>
           <div><strong id={key}>{resourceName(resource, lang)}</strong>
-            <span><bdi>{limitLabel(used, lang)} / {limitLabel(cap, lang)}</bdi></span></div>
+            <span><bdi dir="ltr">{limitLabel(used, lang)} / {limitLabel(cap, lang)}</bdi></span></div>
           {cap === null ? <div className="billing-unlimited-track" aria-hidden="true" /> :
             <progress aria-labelledby={key} value={cap === 0 ? 1 : Math.min(used, cap)} max={Math.max(1, cap)}
               aria-valuetext={limitLabel(used, lang) + " / " + limitLabel(cap, lang)} />}

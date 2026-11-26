@@ -122,3 +122,10 @@ export function storePath(path: string) {
       /(?:\\|%2f|%5c)/i.test(pathname) || pathname.includes("//")) return "invalid";
   return { slug, pathname, basePath: "/" + match[1] + "/" + slug };
 }
+
+export function platformAuthScreen(platform: boolean, aliased: boolean, path: string) {
+  if (!platform || aliased) return null;
+  if (path === "/login") return "login";
+  if (path === "/register") return "register";
+  return path === "/auth/reset-password" ? "reset-password" : null;
+}

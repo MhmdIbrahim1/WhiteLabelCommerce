@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { serverDb } from "@/lib/db";
 import { CreateStoreWizard } from "./wizard";
+import { AuthShell } from "@/components/workspace-surface";
 
 export const dynamic = "force-dynamic";
 
@@ -19,5 +20,5 @@ export default async function CreateStorePage({ searchParams }: {
     redirect("/login?next=" + encodeURIComponent(next));
   }
 
-  return <CreateStoreWizard userEmail={user.email ?? ""} initialName={initialName} />;
+  return <AuthShell wide account={user.email}><CreateStoreWizard initialName={initialName} /></AuthShell>;
 }

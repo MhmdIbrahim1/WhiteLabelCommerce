@@ -84,10 +84,10 @@ export default async function Products({
             background: atLimit
               ? "rgba(220, 38, 38, 0.1)"
               : "color-mix(in srgb, var(--primary) 10%, transparent)",
-            color: atLimit ? "#b91c1c" : "var(--primary)",
+            color: atLimit ? "var(--ws-danger)" : "var(--primary)",
           }}
         >
-          {lang === "en" ? "Active products" : "المنتجات المنشورة"} · <bdi>{limitLabel(billing.used, lang)} / {limitLabel(cap, lang)}</bdi>
+          {lang === "en" ? "Active products" : "المنتجات المنشورة"} · <bdi dir="ltr">{limitLabel(billing.used, lang)} / {limitLabel(cap, lang)}</bdi>
         </span>
       </div>
       {(atLimit || denied) && <QuotaPrompt canViewBilling={Boolean(permissions.manage_billing)} resource="products" lang={lang} />}
@@ -208,17 +208,17 @@ export default async function Products({
                   {flashActive ? (
                     <>
                       <strong className="admin-flash-price-text">
-                        {money(effPrice, undefined, lang)}
+                        <bdi dir="ltr">{money(effPrice, undefined, lang)}</bdi>
                       </strong>{" "}
-                      <del>{money(p.price, undefined, lang)}</del>
+                      <del><bdi dir="ltr">{money(p.price, undefined, lang)}</bdi></del>
                     </>
                   ) : (
-                    money(p.price, undefined, lang)
+                    <bdi dir="ltr">{money(p.price, undefined, lang)}</bdi>
                   )}
                   {Number(p.cost_price ?? 0) > 0
-                    ? ` · ${t(lang, "adminCost")} ${money(Number(p.cost_price), undefined, lang)}`
+                    ? <> · {t(lang, "adminCost")} <bdi dir="ltr">{money(Number(p.cost_price), undefined, lang)}</bdi></>
                     : ""}{" "}
-                  · {t(lang, "adminStock")} {p.stock} ·{" "}
+                  · {t(lang, "adminStock")} <bdi dir="ltr">{p.stock}</bdi> ·{" "}
                   {p.is_active
                     ? t(lang, "adminPublished")
                     : t(lang, "adminDraft")}

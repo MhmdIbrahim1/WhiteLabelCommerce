@@ -64,7 +64,7 @@ export default async function OrderDetails({
     ]);
     const name = localizedText(lang, brand.data?.store_name || activeStore.name_ar, activeStore.name_en);
     const title = invoice ? (isEn ? "Invoice" : "فاتورة") : (isEn ? "Shipping label" : "بوليصة الشحن");
-    const amount = (value: number | null) => money(value, o.currency, lang);
+    const amount = (value: number | null) => <bdi dir="ltr">{money(value, o.currency, lang)}</bdi>;
     return (
       <article className="order-document" dir={isEn ? "ltr" : "rtl"}>
         <nav className="document-actions">
@@ -77,16 +77,16 @@ export default async function OrderDetails({
           <strong>{name}</strong>
           <h1>{title}</h1>
         </header>
-        <p>{t(lang, "orderNumberLabel")} <bdi>{id}</bdi> · {date(o.created_at, lang)}</p>
+        <p>{t(lang, "orderNumberLabel")} <bdi dir="ltr">{id}</bdi> · {date(o.created_at, lang)}</p>
         <section>
           <h2>{t(lang, "shippingAddressLabel")}</h2>
           {(o.recipient_name || customer?.data?.full_name) && <strong>{o.recipient_name || customer?.data?.full_name}</strong>}
           <p>{o.shipping_address}</p>
-          {o.phone && <p>{t(lang, "deliveryPhone")} · <bdi>{o.phone}</bdi></p>}
+          {o.phone && <p>{t(lang, "deliveryPhone")} · <bdi dir="ltr">{o.phone}</bdi></p>}
           {o.shipping_carrier && <p>{localizeCarrierLabel(o.shipping_carrier, lang)}</p>}
-          {o.tracking_number && <p>{t(lang, "trackingNumber")} · <bdi>{o.tracking_number}</bdi></p>}
+          {o.tracking_number && <p>{t(lang, "trackingNumber")} · <bdi dir="ltr">{o.tracking_number}</bdi></p>}
           {o.tracking_url && isSafeHttpUrl(o.tracking_url) &&
-            <p>{t(lang, "trackShipment")} · <a href={o.tracking_url} dir="ltr">{o.tracking_url}</a></p>}
+            <p>{t(lang, "trackShipment")} · <a href={o.tracking_url} dir="ltr"><bdi dir="ltr">{o.tracking_url}</bdi></a></p>}
         </section>
         <table>
           <thead><tr><th>{t(lang, "adminProductCol")}</th><th>{t(lang, "adminQtyCol")}</th>
@@ -128,7 +128,7 @@ export default async function OrderDetails({
         {isEn ? "← Back to Orders" : "← العودة إلى الطلبات"}
       </Link>
       <h1>
-        {isEn ? "Order" : "طلب"} <bdi>#{id.slice(0, 8)}</bdi>
+        {isEn ? "Order" : "طلب"} <bdi dir="ltr">#{id.slice(0, 8)}</bdi>
       </h1>
       <nav className="document-actions">
         <Link href={orderHref + "?print=invoice"} prefetch={false}>{isEn ? "Invoice" : "فاتورة"}</Link>
@@ -166,7 +166,7 @@ export default async function OrderDetails({
               {linkedReturnMeta.label}
             </span>
             <span dir="ltr" style={{ fontWeight: 700 }}>
-              {money(linkedReturn.refund_amount, o.currency, lang)}
+              <bdi dir="ltr">{money(linkedReturn.refund_amount, o.currency, lang)}</bdi>
             </span>
           </div>
           <Link href="/admin/returns" className="btn-outline-admin">
@@ -194,7 +194,7 @@ export default async function OrderDetails({
               <Phone size={15} />
               <div>
                 <small>{t(lang, "deliveryPhone")}</small>
-                <strong dir="ltr">{o.phone}</strong>
+                <strong><bdi dir="ltr">{o.phone}</bdi></strong>
               </div>
             </div>
           )}
@@ -234,7 +234,7 @@ export default async function OrderDetails({
                   <FileText size={15} />
                   <div>
                     <small>{t(lang, "trackingNumber")}</small>
-                    <strong dir="ltr">{o.tracking_number}</strong>
+                    <strong><bdi dir="ltr">{o.tracking_number}</bdi></strong>
                   </div>
                 </div>
               )}
@@ -339,7 +339,7 @@ export default async function OrderDetails({
                         )}
                       </td>
                       <td>{i.quantity}</td>
-                      <td>{money(i.unit_price, o.currency, lang)}</td>
+                      <td><bdi dir="ltr">{money(i.unit_price, o.currency, lang)}</bdi></td>
                     </tr>
                   ),
                 )}
@@ -359,23 +359,23 @@ export default async function OrderDetails({
                 ? isEn
                   ? "Free"
                   : "مجاني"
-                : money(o.shipping_fee, o.currency, lang)}
+                : <bdi dir="ltr">{money(o.shipping_fee, o.currency, lang)}</bdi>}
             </p>
             {Number(o.wallet_discount ?? 0) > 0 && (
-              <p style={{ color: "#15803d", fontWeight: 600 }}>
+              <p style={{ color: "var(--ws-good)", fontWeight: 600 }}>
                 {isEn ? "Wallet Credit Used" : "خصم رصيد المحفظة"} · -
-                {money(Number(o.wallet_discount), o.currency, lang)}
+                <bdi dir="ltr">{money(Number(o.wallet_discount), o.currency, lang)}</bdi>
               </p>
             )}
             {Number(o.cashback_earned ?? 0) > 0 && (
-              <p style={{ color: "#0369a1", fontWeight: 600 }}>
+              <p style={{ color: "var(--ws-info)", fontWeight: 600 }}>
                 {isEn ? "Cashback Credited" : "الكاش باك المضاف"} · +
-                {money(Number(o.cashback_earned), o.currency, lang)}
+                <bdi dir="ltr">{money(Number(o.cashback_earned), o.currency, lang)}</bdi>
               </p>
             )}
           </div>
           <strong>
-            {isEn ? "Total" : "الإجمالي"} · {money(o.total, o.currency, lang)}
+            {isEn ? "Total" : "الإجمالي"} · <bdi dir="ltr">{money(o.total, o.currency, lang)}</bdi>
           </strong>
         </div>
       </section>

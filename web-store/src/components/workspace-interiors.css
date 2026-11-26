@@ -1,0 +1,87 @@
+/* Existing merchant tools inherit the workspace palette. Branded previews keep their own tokens. */
+.ws-content > h1 { margin-block-end: 1.15rem; }
+.ws-content :where(button:not([class]),button[class=""]), .ws-content .btn-compact-admin, .ws-content .billing-editor footer button,
+.ws-content .plan-cycles button[aria-pressed=true] {
+  color: var(--pt-on-fill); background: var(--pt-fill); border: 1px solid var(--ws-control-line); border-radius: var(--pt-radius);
+}
+.ws-surface .pt-action { border-color: var(--ws-control-line); }
+.ws-content .card, .ws-content .team-box, .ws-content .billing-box, .ws-content .plan-card, .ws-content .mobile-order-card {
+  background: var(--surface); border-color: var(--line); color: var(--ink); border-radius: var(--pt-card-radius); box-shadow: none;
+}
+.ws-content :is(th,.seat-summary,.billing-summary,.plan-cycles,.team-role,.domain-record,.team-feedback:not(:empty)) { background: var(--card); color: var(--ink); }
+.ws-content .billing-page { --billing-line: var(--line); color: var(--ink); }
+.ws-content .plan-comparison { --plan-ink: var(--ink); --plan-line: var(--line); color: var(--ink); }
+.ws-content :is(.billing-heading nav a,.billing-facts dt,.billing-summary p,.billing-box small,.billing-meter span,.plan-card .plan-description) { color: var(--muted); }
+.ws-content .billing-heading nav a[aria-current=page] { color: var(--ink); background: var(--card); }
+.ws-content .billing-editor label { color: var(--ink); }
+.ws-content .billing-editor :is(input:not([type=checkbox]),textarea,select) { background: var(--surface); border-color: var(--ws-control-line); color: var(--ink); border-radius: var(--pt-radius); }
+.ws-content .seat-summary progress, .ws-content .billing-meter progress { accent-color: var(--ws-link); background: var(--card); }
+.ws-content .billing-meter progress::-webkit-progress-bar { background: var(--card); }
+.ws-content .billing-meter progress::-webkit-progress-value { background: var(--ws-link); }
+.ws-content .billing-meter progress::-moz-progress-bar { background: var(--ws-link); }
+.ws-content :is(.team-unlimited,.billing-unlimited-track) { background: var(--card); border: 1px dashed var(--ws-control-line); }
+.ws-content .plan-card[data-current=true], .ws-content .billing-plan-name { border-color: var(--ws-control-line); }
+.ws-content :is(.team-secondary,.btn-outline-admin,.btn-ship-link,.domain-record button,.domain-actions .domain-primary,.domain-remove button) {
+  color: var(--ws-link); background: var(--surface); border: 1px solid var(--ws-control-line);
+}
+.ws-content .team-page button.team-secondary { color: var(--ws-link); background: var(--surface); border-color: var(--ws-control-line); }
+.ws-content :is(.quota-prompt,.plan-tag,.domain-status,.badge,.cancel-stock-note,.danger) { background: var(--card); color: var(--ink); }
+.ws-content .quota-prompt { border-color: var(--line); border-inline-start-color: var(--ws-warn); }
+.ws-content .quota-prompt a { color: var(--ws-link); }
+.ws-content :is(.plan-tag,.badge.delivered,.badge.closed,.domain-status[data-state="active"],.domain-status[data-state="verified"]) { color: var(--ws-good); }
+.ws-content :is(.badge.pending,.cancel-stock-note) { color: var(--ws-warn); }
+.ws-content :is(.badge.shipped,.badge.confirmed,.badge.in_progress) { color: var(--ws-info); }
+.ws-content :is(.danger,.badge.cancelled,.domain-status[data-state="error"],.admin-flash-price-text) { color: var(--ws-danger); }
+.ws-content .admin-flash-pill { background: var(--card); color: var(--ws-danger); }
+.ws-content :is(.admin-flash-error,.admin-flash-pct-inline,.admin-flash-summary .with-icon svg) { color: var(--ws-danger); }
+.ws-content .admin-flash-card { border-color: var(--line); background: var(--card); }
+.ws-preview-modes { display: inline-flex; padding: 3px; border: 1px solid var(--line); border-radius: var(--pt-radius); background: var(--card); }
+.ws-content .ws-preview-modes button { min-block-size: 34px; padding: .3rem .7rem; border: 1px solid transparent; color: var(--muted); background: transparent; font-size: .8rem; }
+.ws-content .ws-preview-modes button[aria-pressed=true] { color: var(--ink); background: var(--surface); border-color: var(--line); }
+.ws-content .team-feedback:not(:empty) { border-inline-start-color: var(--ws-link); }
+.ws-content .ws-report > summary::after { content: none; }
+.ws-surface .notif-drawer-backdrop { backdrop-filter: none; -webkit-backdrop-filter: none; }
+.ws-surface .notif-drawer { color: var(--ink); background: var(--surface); box-shadow: none; border-color: var(--line); }
+.ws-surface .notif-drawer :is(.notif-drawer-head,.notif-push-bar,.notif-card,.notif-icon-btn,.notif-pill-count,.notif-cat-icon) { color: var(--ink); background: var(--card); border-color: var(--line); }
+.ws-surface .notif-drawer .notif-card.is-read { background: var(--surface); }
+.ws-surface .notif-drawer :is(.notif-push-note,.notif-empty,.notif-card small,.notif-card-body) { color: var(--muted); }
+.ws-surface .notif-drawer .notif-push-ok { color: var(--ws-good); }
+.ws-surface .notif-drawer .notif-item-del-btn { color: var(--ws-danger); background: var(--surface); }
+.ws-surface .notif-drawer .notif-enable-btn, .ws-surface .notif-bell-badge { color: var(--pt-on-fill); background: var(--pt-fill); border-color: var(--ws-control-line); }
+.ws-surface .notif-unread-dot { background: var(--ws-link); }
+
+/* The portal uses the same status and control roles as the merchant tools. */
+.ws-super-content .bg-white { background: var(--surface); }
+.ws-super-content .bg-slate-50 { background: var(--ws-canvas); }
+.ws-super-content :is(.bg-slate-100,.bg-sky-50,.bg-rose-50,.bg-amber-50,.bg-emerald-50) { background: var(--card); }
+.ws-super-content :is(.bg-slate-900,.bg-slate-800) { background: var(--pt-fill); color: var(--pt-on-fill); }
+.ws-super-content :is(.border-slate-100,.border-slate-200,.border-sky-200,.border-rose-200,.border-amber-200,.border-emerald-200) { border-color: var(--line); }
+.ws-super-content :is(.text-slate-700,.text-slate-800,.text-slate-900) { color: var(--ink); }
+.ws-super-content :is(.text-slate-300,.text-slate-400,.text-slate-500,.text-slate-600) { color: var(--muted); }
+.ws-super-content :is(.text-rose-700,.text-rose-800) { color: var(--ws-danger); }
+.ws-super-content :is(.text-amber-700,.text-amber-800) { color: var(--ws-warn); }
+.ws-super-content :is(.text-emerald-700,.text-emerald-800) { color: var(--ws-good); }
+.ws-super-content :is(.text-cyan-700,.text-sky-800) { color: var(--ws-info); }
+.ws-super-content :is(.shadow-sm,.shadow-xl) { box-shadow: none; }
+.ws-super-content .rounded-2xl { border-radius: var(--pt-card-radius); }
+.ws-super-content .rounded-xl { border-radius: var(--pt-radius); }
+.ws-super-content tbody tr:hover { background: var(--card); }
+.ws-super-content .appearance { background: var(--ws-canvas); }
+.ws-super-content .appearance-sample .pt-action { border-color: transparent; }
+.ws-super-content .appearance-preview { background: var(--surface); }
+.ws-super-content .appearance-presets button { color: var(--ink); background: var(--surface); border-radius: var(--pt-radius); }
+.ws-super-content .appearance-presets button[aria-pressed=true] { border-color: var(--ink); outline-color: var(--ink); }
+.ws-super-content .appearance-presets button svg { color: var(--surface); background: var(--ink); }
+.ws-super-content .appearance label { color: var(--ink); }
+.ws-super-content .appearance :is(input,select,textarea) { color: var(--ink); background: var(--surface); border-color: var(--ws-control-line); border-radius: var(--pt-radius); }
+.ws-super-content .appearance-toggle input { accent-color: var(--ws-link); }
+
+/* Invoices and carrier labels use paper colors and print without navigation. */
+.ws-surface .order-document { --ink: #111315; --surface: #fff; --muted: #565b63; --card: #f4f4f5; --line: #dadbdd; --pt-muted: #565b63; --pt-ink: #111315; color-scheme: light; }
+@media print {
+  .ws-surface:has(.order-document), .ws-layout:has(.order-document), .ws-body:has(.order-document), .ws-content:has(.order-document) {
+    display: block; padding: 0; margin: 0; min-block-size: 0; inline-size: auto; background: white;
+  }
+  .ws-layout:has(.order-document) > :not(.ws-body), .ws-body:has(.order-document) > :not(main),
+  .ws-content:has(.order-document) > :not(.order-document) { display: none !important; }
+}

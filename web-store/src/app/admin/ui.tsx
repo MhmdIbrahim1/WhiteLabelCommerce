@@ -77,40 +77,12 @@ export type Order = {
 
 export async function OrderTable({ rows }: { rows: Order[] }) {
   const lang = await getServerLang();
-  if (!rows.length)
-    return (
-      <Empty>
-        {lang === "en" ? "No orders to display." : "لا توجد طلبات للعرض."}
-      </Empty>
-    );
-  return (
-    <div className="scroll">
-      <table>
-        <thead>
-          <tr>
-            <th>{t(lang, "orderNumberLabel")}</th>
-            <th>{lang === "en" ? "Date" : "التاريخ"}</th>
-            <th>{lang === "en" ? "Status" : "الحالة"}</th>
-            <th>{lang === "en" ? "Total" : "الإجمالي"}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((o) => (
-            <tr key={o.id}>
-              <td>
-                <Link className="code" href={"/admin/orders/" + o.id}>
-                  #{o.id.slice(0, 8)}
-                </Link>
-              </td>
-              <td>{date(o.created_at, lang)}</td>
-              <td>
-                <Status value={o.status} />
-              </td>
-              <td>{money(o.total, o.currency, lang)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
+  if (!rows.length) return <p className="ws-empty"><Inbox size={22} />
+    {lang === "en" ? "Your first order will appear here." : "سيظهر أول طلب لمتجرك هنا."}</p>;
+  return <ul className="ws-order-list">{rows.map(o => <li key={o.id}>
+    <Link href={"/admin/orders/" + o.id}><span className="ws-order-id"><bdi dir="ltr">#{o.id.slice(0, 8)}</bdi>
+      <small><bdi dir="ltr">{date(o.created_at, lang)}</bdi></small></span>
+      <span className="ws-status" data-status={o.status}>{orderStatusLabel(o.status, lang)}</span>
+      <strong><bdi dir="ltr">{money(o.total, o.currency, lang)}</bdi></strong>
+    </Link></li>)}</ul>;
 }

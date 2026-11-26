@@ -130,7 +130,7 @@ async function OrdersPage({
                             className="code"
                             href={"/admin/orders/" + o.id}
                           >
-                            #{o.id.slice(0, 8)}
+                            <bdi dir="ltr">#{o.id.slice(0, 8)}</bdi>
                           </Link>
                           <br />
                           <small>{date(o.created_at, lang)}</small>
@@ -147,7 +147,7 @@ async function OrdersPage({
                           </strong>
                           {o.phone && (
                             <small className="order-meta-line" dir="ltr">
-                              {o.phone}
+                              <bdi dir="ltr">{o.phone}</bdi>
                             </small>
                           )}
                           <small className="order-meta-line">
@@ -158,7 +158,7 @@ async function OrdersPage({
                           <span>{itemsSummary(o.order_items ?? [], lang)}</span>
                         </td>
                         <td>
-                          <strong>{money(o.total, o.currency, lang)}</strong>
+                          <strong><bdi dir="ltr">{money(o.total, o.currency, lang)}</bdi></strong>
                         </td>
                         <td>
                           <Status value={o.status} />
@@ -244,7 +244,7 @@ async function OrdersPage({
                   <div className="row">
                     <div>
                       <Link className="code" href={"/admin/orders/" + o.id}>
-                        #{o.id.slice(0, 8)}
+                        <bdi dir="ltr">#{o.id.slice(0, 8)}</bdi>
                       </Link>
                       <small style={{ display: "block" }}>
                         {date(o.created_at, lang)}
@@ -273,7 +273,7 @@ async function OrdersPage({
                     )}
                   </div>
                   <div className="row">
-                    <strong>{money(o.total, o.currency, lang)}</strong>
+                    <strong><bdi dir="ltr">{money(o.total, o.currency, lang)}</bdi></strong>
                     <Link
                       href={"/admin/orders/" + o.id}
                       className="btn-outline-admin"

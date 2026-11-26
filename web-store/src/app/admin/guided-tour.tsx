@@ -1,13 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import {
   HelpCircle,
   X,
   ArrowLeft,
   ArrowRight,
-  Sparkles,
   Check,
 } from "lucide-react";
 import { useLanguage } from "@/components/language-provider";
@@ -95,33 +94,9 @@ const emptySubscribe = () => () => {};
 export function AdminTourTrigger({ storeId }: { storeId: string }) {
   const { lang } = useLanguage();
   const isEn = lang === "en";
-  return (
-    <button
-      type="button"
-      className="admin-tour-btn"
-      onClick={() => triggerAdminGuidedTour(storeId)}
-      aria-label={isEn ? "Quick Tour" : "جولة سريعة"}
-      title={
-        isEn
-          ? "Start Quick Tour & Reopen Checklist"
-          : "بدء الجولة السريعة وإظهار دليل الإطلاق"
-      }
-      style={{
-        background: "color-mix(in srgb, var(--primary) 10%, transparent)",
-        color: "var(--primary)",
-        border: "1px solid color-mix(in srgb, var(--primary) 24%, transparent)",
-        padding: "0.34rem 0.68rem",
-        fontSize: "0.8rem",
-        borderRadius: "999px",
-        gap: "0.35rem",
-        whiteSpace: "nowrap",
-        flexShrink: 0,
-      }}
-    >
-      <HelpCircle size={15} />
-      <span className="admin-tour-label">{isEn ? "Quick Tour" : "جولة سريعة"}</span>
-    </button>
-  );
+  const label = isEn ? "Replay workspace tour" : "إعادة جولة لوحة المتجر";
+  return <button type="button" className="ws-icon-button" aria-label={label} title={label}
+    onClick={() => triggerAdminGuidedTour(storeId)}><HelpCircle size={18}/></button>;
 }
 
 export function AdminGuidedTour({ storeId }: { storeId: string }) {
@@ -133,7 +108,11 @@ export function AdminGuidedTour({ storeId }: { storeId: string }) {
     () => false,
   );
 
+  const dialog = useRef<HTMLDialogElement>(null);
   const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (open && !dialog.current?.open) dialog.current?.showModal();
+  }, [open]);
   const [stepIndex, setStepIndex] = useState(0);
   const [targetRect, setTargetRect] = useState<RectBox | null>(null);
   const [viewport, setViewport] = useState({ width: 1280, height: 800 });
@@ -160,15 +139,15 @@ export function AdminGuidedTour({ storeId }: { storeId: string }) {
       setTargetRect(null);
       return;
     }
-    const el = document.querySelector<HTMLElement>(
-      `[data-tour="${step.target}"]`,
-    );
+    const targets = document.querySelectorAll<HTMLElement>(`[data-tour="${step.target}"]`);
+    const visible = Array.from(targets).find(target => target.getClientRects().length);
+    const el = visible ?? document.querySelector<HTMLElement>('[data-tour="workspace-menu"]');
     if (!el) {
       setTargetRect(null);
       return;
     }
     el.scrollIntoView({
-      behavior: "smooth",
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches || el.closest('[data-motion="off"]') ? "instant" : "smooth",
       block: "nearest",
       inline: "nearest",
     });
@@ -323,254 +302,25 @@ export function AdminGuidedTour({ storeId }: { storeId: string }) {
   );
 
   return createPortal(
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={isEn ? "Merchant Guided Tour" : "جولة لوحة التحكم"}
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 140,
-        pointerEvents: "auto",
-      }}
-    >
-      {/* Dimmed backdrop when no target rect or narrow mobile fallback */}
-      {!targetRect ? (
-        <div
-          onClick={closeTour}
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(15, 23, 42, 0.58)",
-          }}
-        />
-      ) : (
-        <>
-          <div
-            onClick={closeTour}
-            style={{
-              position: "fixed",
-              inset: 0,
-              background: "transparent",
-            }}
-          />
-          <div
-            aria-hidden="true"
-            style={{
-              position: "fixed",
-              top: targetRect.top,
-              left: targetRect.left,
-              width: targetRect.width,
-              height: targetRect.height,
-              borderRadius: "12px",
-              boxShadow: "0 0 0 9999px rgba(15, 23, 42, 0.58)",
-              outline: "2.5px solid #ffffff",
-              outlineOffset: "2px",
-              pointerEvents: "none",
-              transition:
-                "top 220ms ease, left 220ms ease, width 220ms ease, height 220ms ease",
-            }}
-          />
-        </>
-      )}
-
-      {/* Spotlight Popover Card */}
-      <div
-        dir={isEn ? "ltr" : "rtl"}
-        style={{
-          position: "fixed",
-          top: popoverTop,
-          left: popoverLeft,
-          width: cardWidth,
-          maxWidth: "calc(100vw - 24px)",
-          background: "#ffffff",
-          color: "#0f172a",
-          borderRadius: "16px",
-          border: "1px solid #e2e8f0",
-          boxShadow:
-            "0 20px 45px rgba(15, 23, 42, 0.28), 0 4px 12px rgba(15, 23, 42, 0.12)",
-          padding: "1.15rem 1.2rem",
-          display: "grid",
-          gap: "0.75rem",
-          transition: "top 220ms ease, left 220ms ease",
-          zIndex: 141,
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: "0.5rem",
-          }}
-        >
-          <span
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "0.35rem",
-              fontSize: "0.74rem",
-              fontWeight: 700,
-              padding: "0.2rem 0.6rem",
-              borderRadius: "999px",
-              background: "color-mix(in srgb, var(--primary) 12%, transparent)",
-              color: "var(--primary)",
-            }}
-          >
-            <Sparkles size={12} />
-            <span>
-              {stepIndex + 1} / {TOUR_STEPS.length}
-            </span>
-          </span>
-
-          <button
-            type="button"
-            onClick={closeTour}
-            aria-label={isEn ? "Close tour" : "إغلاق الجولة"}
-            style={{
-              background: "transparent",
-              color: "#64748b",
-              padding: "0.2rem",
-              borderRadius: "8px",
-            }}
-          >
-            <X size={17} />
-          </button>
-        </div>
-
-        <div style={{ display: "grid", gap: "0.35rem" }}>
-          <h3
-            style={{
-              margin: 0,
-              fontSize: "1.02rem",
-              fontWeight: 750,
-              color: "#0f172a",
-            }}
-          >
-            {isEn ? step.titleEn : step.titleAr}
-          </h3>
-          <p
-            style={{
-              margin: 0,
-              fontSize: "0.86rem",
-              lineHeight: 1.55,
-              color: "#475569",
-            }}
-          >
-            {isEn ? step.bodyEn : step.bodyAr}
-          </p>
-        </div>
-
-        {/* Step dots */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "0.35rem",
-          }}
-        >
-          {TOUR_STEPS.map((s, idx) => (
-            <button
-              key={s.target}
-              type="button"
-              aria-label={`Step ${idx + 1}`}
-              onClick={() => setStepIndex(idx)}
-              style={{
-                padding: 0,
-                height: 7,
-                width: idx === stepIndex ? 22 : 7,
-                borderRadius: "999px",
-                background:
-                  idx === stepIndex ? "var(--primary)" : "#cbd5e1",
-                transition: "width 180ms ease, background 180ms ease",
-              }}
-            />
-          ))}
-        </div>
-
-        {/* Controls */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: "0.5rem",
-            paddingTop: "0.45rem",
-            borderTop: "1px solid #f1f5f9",
-          }}
-        >
-          <button
-            type="button"
-            onClick={closeTour}
-            style={{
-              background: "transparent",
-              color: "#64748b",
-              padding: "0.4rem 0.55rem",
-              fontSize: "0.8rem",
-              fontWeight: 600,
-            }}
-          >
-            {isEn ? "Skip" : "تخطي"}
-          </button>
-
-          <div style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}>
-            {!isFirst && (
-              <button
-                type="button"
-                onClick={() => setStepIndex((i) => Math.max(0, i - 1))}
-                style={{
-                  background: "#f1f5f9",
-                  color: "#0f172a",
-                  padding: "0.42rem 0.72rem",
-                  fontSize: "0.82rem",
-                  borderRadius: "9px",
-                  gap: "0.3rem",
-                }}
-              >
-                <PrevIcon size={14} />
-                <span>{isEn ? "Previous" : "السابق"}</span>
-              </button>
-            )}
-
-            {isLast ? (
-              <button
-                type="button"
-                onClick={closeTour}
-                style={{
-                  background: "#16a34a",
-                  color: "#ffffff",
-                  padding: "0.42rem 0.85rem",
-                  fontSize: "0.82rem",
-                  borderRadius: "9px",
-                  gap: "0.35rem",
-                }}
-              >
-                <Check size={14} />
-                <span>{isEn ? "Done" : "إنهاء"}</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() =>
-                  setStepIndex((i) => Math.min(TOUR_STEPS.length - 1, i + 1))
-                }
-                style={{
-                  background: "var(--primary)",
-                  color: "#ffffff",
-                  padding: "0.42rem 0.85rem",
-                  fontSize: "0.82rem",
-                  borderRadius: "9px",
-                  gap: "0.35rem",
-                }}
-              >
-                <span>{isEn ? "Next" : "التالي"}</span>
-                <NextIcon size={14} />
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>,
-    document.body,
-  );
+    <dialog className="ws-tour-dialog" aria-labelledby="ws-tour-title" ref={dialog}
+      onCancel={event => { event.preventDefault(); closeTour(); }} onClick={event => { if (event.target === dialog.current) closeTour(); }}>
+      <svg className="ws-tour-spot" aria-hidden="true">
+        <defs><mask id="ws-tour-mask"><rect width="100%" height="100%" fill="white"/>
+          {targetRect && <rect x={targetRect.left} y={targetRect.top} width={targetRect.width} height={targetRect.height} rx="7" fill="black"/>}</mask></defs>
+        <rect width="100%" height="100%" fill="rgb(7 11 16 / .55)" mask="url(#ws-tour-mask)"/>
+        {targetRect && <rect x={targetRect.left} y={targetRect.top} width={targetRect.width} height={targetRect.height} rx="7" fill="none" stroke="#fff" strokeWidth="2"/>}
+      </svg>
+      <section className="ws-tour-card" style={{ left: popoverLeft, top: popoverTop, width: cardWidth }}>
+        <header className="ws-panel-head"><small>{isEn ? "Workspace tour" : "جولة لوحة المتجر"} · <bdi dir="ltr">{(stepIndex + 1).toLocaleString(lang)} / {TOUR_STEPS.length.toLocaleString(lang)}</bdi></small>
+          <button type="button" className="ws-icon-button" aria-label={isEn ? "Close tour" : "إغلاق الجولة"} onClick={closeTour}><X size={17}/></button></header>
+        <div aria-live="polite"><h2 id="ws-tour-title">{isEn ? step.titleEn : step.titleAr}</h2><p>{isEn ? step.bodyEn : step.bodyAr}</p></div>
+        <nav className="ws-tour-steps" aria-label={isEn ? "Tour steps" : "خطوات الجولة"}>{TOUR_STEPS.map((item, i) =>
+          <button type="button" key={item.target} aria-label={isEn ? item.titleEn : item.titleAr} aria-current={i === stepIndex ? "step" : undefined}
+            onClick={() => setStepIndex(i)}/>)}</nav>
+        <footer><button type="button" className="ws-text-link" onClick={closeTour}>{isEn ? "Skip" : "تخطّي"}</button>
+          {!isFirst && <button type="button" className="ws-icon-button" aria-label={isEn ? "Previous" : "السابق"} onClick={() => setStepIndex(i => i - 1)}><PrevIcon size={16}/></button>}
+          <button type="button" className="pt-action" onClick={isLast ? closeTour : () => setStepIndex(i => i + 1)}>
+            {isLast ? (isEn ? "Finish" : "إنهاء") : (isEn ? "Next" : "التالي")}{isLast ? <Check size={15}/> : <NextIcon size={15}/>}</button></footer>
+      </section>
+    </dialog>, document.querySelector("[data-workspace-overlay]") ?? document.body);
 }

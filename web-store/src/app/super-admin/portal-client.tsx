@@ -32,7 +32,7 @@ import {
   type MobileAppAccess,
   type StoreStatus,
 } from "@/lib/tenant-shared";
-import { LanguageToggle, useLanguage } from "@/components/language-provider";
+import { useLanguage } from "@/components/language-provider";
 import {
   assignStoreOwnerAction,
   openStoreInAdminAction,
@@ -313,12 +313,12 @@ export function SuperAdminPortal({
 
   const statusBadgeStyle = (status: StoreStatus) => {
     if (status === "suspended") {
-      return { background: "#fef2f2", color: "#b91c1c", borderColor: "#fecaca" };
+      return { background: "var(--card)", color: "var(--ws-danger)", borderColor: "var(--line)" };
     }
     if (status === "trial") {
-      return { background: "#fffbeb", color: "#b45309", borderColor: "#fde68a" };
+      return { background: "var(--card)", color: "var(--ws-warn)", borderColor: "var(--line)" };
     }
-    return { background: "#ecfdf5", color: "#047857", borderColor: "#a7f3d0" };
+    return { background: "var(--card)", color: "var(--ws-good)", borderColor: "var(--line)" };
   };
 
   return (
@@ -332,7 +332,7 @@ export function SuperAdminPortal({
             </span>
             <div className="min-w-0">
               <h1 className="text-xl sm:text-2xl font-bold text-slate-900 m-0">
-                {isEn ? "Platform Super-Admin Portal" : "بوابة إدارة المنصة (Super Admin)"}
+                {isEn ? "Platform controls" : "إدارة المنصة"}
               </h1>
               <p className="text-xs text-slate-500 m-0 truncate" dir="ltr">
                 {adminEmail}
@@ -341,7 +341,6 @@ export function SuperAdminPortal({
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
-            <LanguageToggle className="lang-toggle-pill" />
             <Link href="/super-admin/appearance"
               className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs sm:text-sm font-semibold text-slate-700 hover:bg-slate-50 no-underline">
               <SlidersHorizontal size={15} strokeWidth={1.5} />
@@ -364,7 +363,7 @@ export function SuperAdminPortal({
             <Link
               href="/create-store"
               className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2 text-xs sm:text-sm font-semibold hover:bg-slate-800 no-underline"
-              style={{ color: "#ffffff" }}
+              style={{ color: "var(--pt-on-fill)" }}
             >
               <PlusCircle size={15} />
               <span>{isEn ? "New Merchant Store" : "إنشاء متجر جديد"}</span>
@@ -382,7 +381,7 @@ export function SuperAdminPortal({
               <Store size={17} />
             </div>
             <div className="text-3xl font-extrabold text-slate-900">
-              {kpis.total}
+              <bdi dir="ltr">{kpis.total}</bdi>
             </div>
             <p className="text-xs text-slate-500 mt-1 m-0">
               {isEn ? "Multi-tenant SaaS instances" : "متاجر مستقلة على المنصة"}
@@ -396,18 +395,18 @@ export function SuperAdminPortal({
             </div>
             <div className="flex items-baseline gap-2.5 flex-wrap">
               <span className="text-2xl font-extrabold text-emerald-700">
-                {kpis.active}
+                <bdi dir="ltr">{kpis.active}</bdi>
               </span>
               <span className="text-xs font-semibold text-emerald-700">
                 {isEn ? "Active" : "نشط"}
               </span>
               <span className="text-slate-300">·</span>
               <span className="text-sm font-bold text-amber-700">
-                {kpis.trial} {isEn ? "Trial" : "تجريبي"}
+                <bdi dir="ltr">{kpis.trial}</bdi> {isEn ? "Trial" : "تجريبي"}
               </span>
               <span className="text-slate-300">·</span>
               <span className="text-sm font-bold text-rose-700">
-                {kpis.suspended} {isEn ? "Suspended" : "موقوف"}
+                <bdi dir="ltr">{kpis.suspended}</bdi> {isEn ? "Suspended" : "موقوف"}
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-2 m-0">
@@ -421,7 +420,7 @@ export function SuperAdminPortal({
               <ShoppingBag size={17} />
             </div>
             <div className="text-3xl font-extrabold text-slate-900">
-              {kpis.totalOrders}
+              <bdi dir="ltr">{kpis.totalOrders}</bdi>
             </div>
             <p className="text-xs text-slate-500 mt-1 m-0">
               {isEn ? "Across all merchant storefronts" : "عبر جميع المتاجر المسجلة"}
@@ -434,7 +433,7 @@ export function SuperAdminPortal({
               <TrendingUp size={17} />
             </div>
             <div className="text-2xl sm:text-3xl font-extrabold text-slate-900">
-              {money(kpis.totalGmv, "EGP", lang)}
+              <bdi dir="ltr">{money(kpis.totalGmv, "EGP", lang)}</bdi>
             </div>
             <p className="text-xs text-slate-500 mt-1 m-0">
               {isEn ? "Non-cancelled order volume" : "حجم المبيعات للطلبات غير الملغاة"}
@@ -456,7 +455,7 @@ export function SuperAdminPortal({
                 <Search
                   size={15}
                   className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-slate-400"
-                  style={{ [isEn ? "left" : "right"]: "0.7rem" }}
+                  style={{ insetInlineStart: "0.7rem" }}
                 />
                 <input
                   type="search"
@@ -539,11 +538,11 @@ export function SuperAdminPortal({
                           dir="ltr"
                           className="text-xs font-mono text-slate-500 mt-0.5"
                         >
-                          {liveHref}
+                          <bdi dir="ltr">{liveHref}</bdi>
                         </div>
                         {st.custom_domain && (
                           <div dir="ltr" className="text-xs text-cyan-700 mt-0.5">
-                            {st.custom_domain}
+                          <bdi dir="ltr">{st.custom_domain}</bdi>
                           </div>
                         )}
                       </td>
@@ -610,7 +609,7 @@ export function SuperAdminPortal({
 
                       <td className="py-3.5 px-3 align-top min-w-[130px]">
                         <div className="text-xs font-bold text-slate-800">
-                          {st.active_products_count} / {limitLabel(st.productLimit, lang)}
+                          <bdi dir="ltr">{st.active_products_count} / {limitLabel(st.productLimit, lang)}</bdi>
                         </div>
                         <div className="mt-1.5 h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
                           <div
@@ -624,10 +623,10 @@ export function SuperAdminPortal({
 
                       <td className="py-3.5 px-3 align-top">
                         <div className="font-bold text-slate-900">
-                          {money(st.gmv, st.currency || "EGP", lang)}
+                          <bdi dir="ltr">{money(st.gmv, st.currency || "EGP", lang)}</bdi>
                         </div>
                         <div className="text-xs text-slate-500">
-                          {st.orders_count}{" "}
+                          <bdi dir="ltr">{st.orders_count}</bdi>{" "}
                           {isEn ? "orders" : "طلب"}
                         </div>
                       </td>
@@ -639,12 +638,12 @@ export function SuperAdminPortal({
                             disabled={pending}
                             onClick={() => openEditModal(st)}
                             style={{
-                              background: "#f1f5f9",
-                              color: "#0f172a",
+                              background: "var(--card)",
+                              color: "var(--ink)",
                               padding: "0.35rem 0.6rem",
                               fontSize: "0.76rem",
                               borderRadius: "8px",
-                              border: "1px solid #cbd5e1",
+                              border: "1px solid var(--ws-control-line)",
                             }}
                           >
                             <Edit3 size={13} />
@@ -657,16 +656,16 @@ export function SuperAdminPortal({
                             onClick={() => handleToggleStatus(st)}
                             style={{
                               background:
-                                st.status === "suspended" ? "#ecfdf5" : "#fef2f2",
+                                st.status === "suspended" ? "var(--card)" : "var(--card)",
                               color:
-                                st.status === "suspended" ? "#047857" : "#b91c1c",
+                                st.status === "suspended" ? "var(--ws-good)" : "var(--ws-danger)",
                               padding: "0.35rem 0.6rem",
                               fontSize: "0.76rem",
                               borderRadius: "8px",
                               border:
                                 st.status === "suspended"
-                                  ? "1px solid #a7f3d0"
-                                  : "1px solid #fecaca",
+                                  ? "1px solid var(--line)"
+                                  : "1px solid var(--line)",
                             }}
                           >
                             <Power size={13} />
@@ -700,8 +699,8 @@ export function SuperAdminPortal({
                               })
                             }
                             style={{
-                              background: "#0f172a",
-                              color: "#ffffff",
+                              background: "var(--pt-fill)",
+                              color: "var(--pt-on-fill)",
                               padding: "0.35rem 0.6rem",
                               fontSize: "0.76rem",
                               borderRadius: "8px",
@@ -754,7 +753,7 @@ export function SuperAdminPortal({
                 </h2>
                 <p className="text-xs text-slate-500 m-0">
                   {localizedText(lang, editingStore.name_ar, editingStore.name_en)}{" "}
-                  (<span dir="ltr">{storefrontPath(editingStore.slug)}</span>)
+                  (<bdi dir="ltr">{storefrontPath(editingStore.slug)}</bdi>)
                 </p>
               </div>
               <button
@@ -762,7 +761,7 @@ export function SuperAdminPortal({
                 onClick={() => setEditingStore(null)}
                 style={{
                   background: "transparent",
-                  color: "#475569",
+                  color: "var(--muted)",
                   padding: "0.3rem",
                 }}
                 aria-label="Close"
@@ -820,11 +819,11 @@ export function SuperAdminPortal({
                         style={{
                           width: "100%",
                           justifyContent: "center",
-                          background: active ? "#0f172a" : "#f8fafc",
-                          color: active ? "#ffffff" : "#334155",
+                          background: active ? "var(--pt-fill)" : "var(--card)",
+                          color: active ? "var(--pt-on-fill)" : "var(--ink)",
                           border: active
-                            ? "1px solid #0f172a"
-                            : "1px solid #cbd5e1",
+                            ? "1px solid var(--ink)"
+                            : "1px solid var(--ws-control-line)",
                           borderRadius: "9px",
                           padding: "0.52rem 0.45rem",
                           fontSize: "0.78rem",
@@ -883,8 +882,8 @@ export function SuperAdminPortal({
                   type="button"
                   onClick={() => setEditingStore(null)}
                   style={{
-                    background: "#f1f5f9",
-                    color: "#334155",
+                    background: "var(--card)",
+                    color: "var(--ink)",
                   }}
                 >
                   {isEn ? "Cancel" : "إلغاء"}
@@ -910,9 +909,9 @@ export function SuperAdminPortal({
                   type="button"
                   onClick={handleCopyLoginLink}
                   style={{
-                    background: "#ffffff",
-                    color: "#0f172a",
-                    border: "1px solid #cbd5e1",
+                    background: "var(--surface)",
+                    color: "var(--ink)",
+                    border: "1px solid var(--ws-control-line)",
                     padding: "0.28rem 0.6rem",
                     borderRadius: "8px",
                     fontSize: "0.74rem",
@@ -943,15 +942,15 @@ export function SuperAdminPortal({
                   value={handoverEmail}
                   onChange={(e) => setHandoverEmail(e.target.value)}
                   placeholder="merchant@brand.com"
-                  style={{ flex: 1, fontSize: "0.84rem", background: "#ffffff" }}
+                  style={{ flex: 1, fontSize: "0.84rem", background: "var(--surface)" }}
                 />
                 <button
                   type="button"
                   disabled={pending}
                   onClick={handleAssignOwner}
                   style={{
-                    background: "#0284c7",
-                    color: "#ffffff",
+                    background: "var(--pt-fill)",
+                    color: "var(--pt-on-fill)",
                     padding: "0.52rem 0.85rem",
                     borderRadius: "9px",
                     fontSize: "0.8rem",

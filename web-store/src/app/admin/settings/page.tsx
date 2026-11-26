@@ -110,8 +110,8 @@ export default async function Settings({
               gap: "0.35rem",
               fontSize: "0.8rem",
               fontWeight: 600,
-              color: "#15803d",
-              background: "rgba(21, 128, 61, 0.1)",
+              color: "var(--ws-good)",
+              background: "var(--card)",
               padding: "0.25rem 0.65rem",
               borderRadius: "999px",
             }}
@@ -180,9 +180,9 @@ export default async function Settings({
               {hasApiKey && (
                 <small
                   style={{
-                    color: "#15803d",
+                    color: "var(--ws-good)",
                     fontWeight: 700,
-                    background: "rgba(21, 128, 61, 0.1)",
+                    background: "var(--card)",
                     padding: "0.15rem 0.55rem",
                     borderRadius: "999px",
                   }}
@@ -225,9 +225,9 @@ export default async function Settings({
               {hasHmacSecret && (
                 <small
                   style={{
-                    color: "#15803d",
+                    color: "var(--ws-good)",
                     fontWeight: 700,
-                    background: "rgba(21, 128, 61, 0.1)",
+                    background: "var(--card)",
                     padding: "0.15rem 0.55rem",
                     borderRadius: "999px",
                   }}

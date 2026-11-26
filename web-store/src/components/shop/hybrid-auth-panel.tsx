@@ -90,6 +90,7 @@ function localizedAuthError(
 }
 
 export function HybridAuthPanel({
+  platform = false,
   nextPath = "",
   initialOtp = false,
   basePath,
@@ -98,6 +99,7 @@ export function HybridAuthPanel({
   initialError = "",
   initialRegistered = "",
 }: {
+  platform?: boolean;
   nextPath?: string;
   initialOtp?: boolean;
   basePath: string;
@@ -258,13 +260,14 @@ export function HybridAuthPanel({
     <div className="hybrid-auth-root">
       <div
         className="hybrid-auth-tabs"
-        role="tablist"
+        role={platform ? "group" : "tablist"}
         aria-label={isEn ? "Sign-in method" : "طريقة تسجيل الدخول"}
       >
         <button
           type="button"
-          role="tab"
-          aria-selected={mode === "otp"}
+          role={platform ? undefined : "tab"}
+          aria-pressed={platform ? mode === "otp" : undefined}
+          aria-selected={platform ? undefined : mode === "otp"}
           className={`hybrid-auth-tab ${mode === "otp" ? "is-active" : ""}`}
           onClick={() => {
             setMode("otp");
@@ -272,12 +275,13 @@ export function HybridAuthPanel({
           }}
         >
           <Mail size={15} aria-hidden="true" />
-          <span>{isEn ? "Email OTP" : "رمز التحقق"}</span>
+          <span>{isEn ? (platform ? "Email code" : "Email OTP") : "رمز التحقق"}</span>
         </button>
         <button
           type="button"
-          role="tab"
-          aria-selected={mode === "password"}
+          role={platform ? undefined : "tab"}
+          aria-pressed={platform ? mode === "password" : undefined}
+          aria-selected={platform ? undefined : mode === "password"}
           className={`hybrid-auth-tab ${mode === "password" ? "is-active" : ""}`}
           onClick={() => {
             setMode("password");
@@ -285,12 +289,13 @@ export function HybridAuthPanel({
           }}
         >
           <KeyRound size={15} aria-hidden="true" />
-          <span>{isEn ? "Email & Password" : "البريد وكلمة المرور"}</span>
+          <span>{platform ? (isEn ? "Password" : "كلمة المرور") : (isEn ? "Email & Password" : "البريد وكلمة المرور")}</span>
         </button>
       </div>
 
-      {infoMsg && <ToastFeedback kind="info" message={infoMsg} />}
-      {errorCode && <ToastFeedback kind="error" message={localizedAuthError(errorCode, isEn)} />}
+      {infoMsg && (platform ? <p role="status" className="ws-feedback">{infoMsg}</p> : <ToastFeedback kind="info" message={infoMsg} />)}
+      {errorCode && (platform ? <p role="alert" className="ws-feedback ws-error">{localizedAuthError(errorCode, isEn)}</p> :
+        <ToastFeedback kind="error" message={localizedAuthError(errorCode, isEn)} />)}
 
       {mode === "otp" ? (
         !otpSent ? (
@@ -403,7 +408,7 @@ export function HybridAuthPanel({
         )
       ) : (
         <div className="hybrid-pw-wrap">
-          <div className="auth-sub-toggle">
+          {!platform && <div className="auth-sub-toggle">
             <button
               type="button"
               className={pwMode === "signin" ? "is-active" : ""}
@@ -425,7 +430,7 @@ export function HybridAuthPanel({
               <UserPlus size={14} aria-hidden="true" />
               <span>{isEn ? "Create Account" : "حساب جديد"}</span>
             </button>
-          </div>
+          </div>}
 
           <form onSubmit={handlePasswordSubmit} method="post" noValidate className="auth-form">
             {pwMode === "signup" && (
@@ -504,7 +509,7 @@ export function HybridAuthPanel({
             </button>
           </form>
           {emailPasswordResetEnabled && pwMode === "signin" && <a className="section-more-link"
-            href={basePath + "/auth/reset-password"}>{isEn ? "Forgot password?" : "نسيت كلمة المرور؟"}</a>}
+            href={basePath + "/auth/reset-password" + (platform && nextPath ? "?next=" + encodeURIComponent(nextPath) : "")}>{isEn ? "Forgot password?" : "نسيت كلمة المرور؟"}</a>}
         </div>
       )}
     </div>

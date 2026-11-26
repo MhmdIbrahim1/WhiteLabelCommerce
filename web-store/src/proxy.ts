@@ -2,7 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { adminUser, superAdminUser } from "@/lib/access";
 import {
-  classifyHost, isLocalHost, isStoreSlug, platformOrigin, platformRootDomain, publicStoreOrigin,
+  classifyHost, isLocalHost, isStoreSlug, platformAuthScreen, platformOrigin, platformRootDomain, publicStoreOrigin,
   requestAuthority, resolveStoreBinding, storePath,
 } from "@/lib/host-routing";
 import { resolveHostRoute } from "@/lib/host-resolver";
@@ -13,6 +13,7 @@ import {
 
 const privateHeaders = { "Cache-Control": "private, no-store" };
 const landingPath = "/platform-landing";
+const accessPath = "/platform-access";
 const redirectPath = "/platform-redirect";
 const PLATFORM_REDIRECT_HEADER = "x-wlc-platform-redirect";
 const controlPlane = /^\/(?:admin|super-admin|create-store|api\/admin)(?:\/|$)/;
@@ -62,7 +63,7 @@ export async function proxy(request: NextRequest) {
   const alias = storePath(externalPath);
   if (alias === "invalid") return routingError();
   const path = alias?.pathname ?? externalPath;
-  if (path === landingPath || path.startsWith(landingPath + "/") ||
+  if (path === landingPath || path.startsWith(landingPath + "/") || path === accessPath || path.startsWith(accessPath + "/") ||
       path === redirectPath || path.startsWith(redirectPath + "/")) return routingError();
   const platform = classification === "platform";
   const landing = platform && !alias && path === "/";
@@ -118,7 +119,8 @@ export async function proxy(request: NextRequest) {
 
   // Keep rewrites internal to the Next server, even when a trusted ingress terminates TLS.
   const destination = request.nextUrl.clone();
-  destination.pathname = landing ? landingPath : path;
+  const access = platformAuthScreen(platform, Boolean(alias), path);
+  destination.pathname = access ? accessPath + "/" + access : landing ? landingPath : path;
   const forward = () => destination.pathname !== externalPath
     ? NextResponse.rewrite(destination, { request: { headers: outgoing } })
     : NextResponse.next({ request: { headers: outgoing } });

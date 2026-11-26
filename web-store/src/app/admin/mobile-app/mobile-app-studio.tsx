@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Smartphone,
   CheckCircle2,
   Download,
   ExternalLink,
@@ -160,8 +159,7 @@ function AndroidPhoneMockup({
         marginInline: "auto",
         borderRadius: "36px",
         padding: "10px",
-        background: "linear-gradient(155deg, #0f172a, #1e293b)",
-        boxShadow: "0 22px 54px rgba(15, 23, 42, 0.24)",
+        background: "#23262D",
         position: "relative",
       }}
     >
@@ -560,7 +558,7 @@ function AndroidPhoneMockup({
                                   : primary,
                             }}
                           >
-                            {money(effPrice, store.currency, lang)}
+                            <bdi dir="ltr">{money(effPrice, store.currency, lang)}</bdi>
                           </span>
                           {strikePrice && (
                             <del
@@ -569,7 +567,7 @@ function AndroidPhoneMockup({
                                 color: muted,
                               }}
                             >
-                              {money(strikePrice, store.currency, lang)}
+                              <bdi dir="ltr">{money(strikePrice, store.currency, lang)}</bdi>
                             </del>
                           )}
                         </div>
@@ -712,8 +710,8 @@ function QrCodeCard({ url, isEn }: { url: string; isEn: boolean }) {
         gap: "0.45rem",
         padding: "0.75rem",
         borderRadius: "12px",
-        border: "1px solid #e2e8f0",
-        background: "#ffffff",
+        border: "1px solid var(--line)",
+        background: "var(--surface)",
       }}
     >
       <svg
@@ -731,7 +729,7 @@ function QrCodeCard({ url, isEn }: { url: string; isEn: boolean }) {
         style={{
           fontSize: "0.72rem",
           fontWeight: 600,
-          color: "#475569",
+          color: "var(--muted)",
           display: "inline-flex",
           alignItems: "center",
           gap: "0.3rem",
@@ -988,56 +986,9 @@ export function MobileAppStudio({
         flexWrap: "wrap",
       }}
     >
-      <div
-        role="group"
-        aria-label={isEn ? "Preview theme mode" : "وضع معاينة المظهر"}
-        style={{
-          display: "inline-flex",
-          padding: "3px",
-          borderRadius: "999px",
-          background: "#f1f5f9",
-          border: "1px solid #e2e8f0",
-        }}
-      >
-        <button
-          type="button"
-          onClick={() => setPreviewDarkMode(false)}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "0.3rem",
-            padding: "0.28rem 0.65rem",
-            borderRadius: "999px",
-            fontSize: "0.74rem",
-            fontWeight: 700,
-            background: !previewDarkMode ? "#ffffff" : "transparent",
-            color: !previewDarkMode ? "#0f172a" : "#64748b",
-            boxShadow: !previewDarkMode
-              ? "0 1px 3px rgba(15, 23, 42, 0.1)"
-              : "none",
-          }}
-        >
-          <Sun size={12} />
-          <span>{isEn ? "Light" : "فاتح"}</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setPreviewDarkMode(true)}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "0.3rem",
-            padding: "0.28rem 0.65rem",
-            borderRadius: "999px",
-            fontSize: "0.74rem",
-            fontWeight: 700,
-            background: previewDarkMode ? "#0f172a" : "transparent",
-            color: previewDarkMode ? "#ffffff" : "#64748b",
-          }}
-        >
-          <Moon size={12} />
-          <span>{isEn ? "Dark" : "داكن"}</span>
-        </button>
+      <div role="group" className="ws-preview-modes" aria-label={isEn ? "Preview theme mode" : "مظهر المعاينة"}>
+        <button type="button" aria-pressed={!previewDarkMode} onClick={() => setPreviewDarkMode(false)}><Sun size={14}/>{isEn ? "Light" : "فاتح"}</button>
+        <button type="button" aria-pressed={previewDarkMode} onClick={() => setPreviewDarkMode(true)}><Moon size={14}/>{isEn ? "Dark" : "داكن"}</button>
       </div>
 
       <Link
@@ -1048,12 +999,12 @@ export function MobileAppStudio({
           gap: "0.32rem",
           fontSize: "0.75rem",
           fontWeight: 700,
-          color: "#0284c7",
+          color: "var(--ws-link)",
           textDecoration: "none",
           padding: "0.32rem 0.65rem",
           borderRadius: "999px",
-          background: "#f0f9ff",
-          border: "1px solid #bae6fd",
+          background: "var(--card)",
+          border: "1px solid var(--line)",
         }}
       >
         <Palette size={13} />
@@ -1084,41 +1035,41 @@ export function MobileAppStudio({
     if (status === "succeeded") {
       return {
         label: isEn ? "Ready" : "جاهز للتحميل",
-        bg: "#ecfdf5",
-        fg: "#047857",
-        border: "#a7f3d0",
+        bg: "var(--card)",
+        fg: "var(--ws-good)",
+        border: "var(--line)",
         Icon: CheckCircle2,
       };
     }
     if (status === "failed") {
       return {
         label: isEn ? "Failed" : "فشل البناء",
-        bg: "#fef2f2",
-        fg: "#b91c1c",
-        border: "#fecaca",
+        bg: "var(--card)",
+        fg: "var(--ws-danger)",
+        border: "var(--line)",
         Icon: XCircle,
       };
     }
     if (status === "building") {
       return {
         label: isEn ? "Building..." : "جارٍ البناء...",
-        bg: "#eff6ff",
-        fg: "#1d4ed8",
-        border: "#bfdbfe",
+        bg: "var(--card)",
+        fg: "var(--ws-info)",
+        border: "var(--line)",
         Icon: RefreshCw,
       };
     }
     return {
       label: isEn ? "Queued" : "في الانتظار",
-      bg: "#fffbeb",
-      fg: "#b45309",
-      border: "#fde68a",
+      bg: "var(--card)",
+      fg: "var(--ws-warn)",
+      border: "var(--line)",
       Icon: Clock,
     };
   };
 
   return (
-    <div style={{ display: "grid", gap: "1.4rem" }}>
+    <div style={{ display: "grid", gap: "1.4rem", minWidth: 0 }}>
       {/* Header */}
       <div
         style={{
@@ -1130,33 +1081,13 @@ export function MobileAppStudio({
         }}
       >
         <div>
-          <span
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "0.35rem",
-              fontSize: "0.75rem",
-              fontWeight: 700,
-              padding: "0.22rem 0.65rem",
-              borderRadius: "999px",
-              background: "#e0f2fe",
-              color: "#0369a1",
-              border: "1px solid #bae6fd",
-              marginBottom: "0.45rem",
-            }}
-          >
-            <Smartphone size={12} />
-            {isEn
-              ? "Self-Serve White-Label APK Factory"
-              : "مصنع تطبيقات الأندرويد الذاتي"}
-          </span>
           <h1 style={{ margin: 0, fontSize: "1.55rem", fontWeight: 800 }}>
             {isEn ? "Android Mobile App Studio" : "استوديو تطبيق الموبايل (APK)"}
           </h1>
           <p
             style={{
               margin: "0.3rem 0 0",
-              color: "#64748b",
+              color: "var(--muted)",
               fontSize: "0.9rem",
             }}
           >
@@ -1176,9 +1107,9 @@ export function MobileAppStudio({
               fontWeight: 700,
               padding: "0.35rem 0.78rem",
               borderRadius: "999px",
-              background: "#ecfdf5",
-              color: "#047857",
-              border: "1px solid #a7f3d0",
+              background: "var(--card)",
+              color: "var(--ws-good)",
+              border: "1px solid var(--line)",
             }}
           >
             <ShieldCheck size={14} />
@@ -1196,15 +1127,15 @@ export function MobileAppStudio({
             alignItems: "flex-start",
             gap: "0.65rem",
             padding: "0.9rem 1.05rem",
-            borderRadius: "14px",
-            border: isSuperAdmin ? "1px solid #fde68a" : "1px solid #cbd5e1",
-            background: isSuperAdmin ? "#fffbeb" : "#f8fafc",
-            color: isSuperAdmin ? "#92400e" : "#334155",
+            borderRadius: "var(--pt-radius)",
+            border: isSuperAdmin ? "1px solid var(--line)" : "1px solid var(--ws-control-line)",
+            background: isSuperAdmin ? "var(--card)" : "var(--card)",
+            color: isSuperAdmin ? "var(--ws-warn)" : "var(--ink)",
             fontSize: "0.86rem",
           }}
         >
           <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: "2px" }} />
-          <div>
+          <div style={{ minWidth: 0, overflowWrap: "anywhere" }}>
             {isSuperAdmin ? (
               <>
                 <strong>
@@ -1238,27 +1169,27 @@ export function MobileAppStudio({
             justifyContent: "space-between",
             gap: "0.75rem",
             padding: "0.85rem 1rem",
-            borderRadius: "12px",
+            borderRadius: "var(--pt-radius)",
             fontSize: "0.88rem",
             fontWeight: 600,
             border:
               banner.kind === "ok"
-                ? "1px solid #a7f3d0"
+                ? "1px solid var(--line)"
                 : banner.kind === "warn"
-                  ? "1px solid #fde68a"
-                  : "1px solid #fecaca",
+                  ? "1px solid var(--line)"
+                  : "1px solid var(--line)",
             background:
               banner.kind === "ok"
-                ? "#ecfdf5"
+                ? "var(--card)"
                 : banner.kind === "warn"
-                  ? "#fffbeb"
-                  : "#fef2f2",
+                  ? "var(--card)"
+                  : "var(--card)",
             color:
               banner.kind === "ok"
-                ? "#047857"
+                ? "var(--ws-good)"
                 : banner.kind === "warn"
-                  ? "#92400e"
-                  : "#b91c1c",
+                  ? "var(--ws-warn)"
+                  : "var(--ws-danger)",
           }}
         >
           <span>{banner.text}</span>
@@ -1281,22 +1212,24 @@ export function MobileAppStudio({
       <section
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 300px), 1fr))",
           gap: "1.5rem",
           alignItems: "start",
+          minWidth: 0,
         }}
       >
         {/* Config Card */}
         <form
           onSubmit={handleTriggerBuild}
           style={{
-            background: "#ffffff",
-            borderRadius: "18px",
-            border: "1px solid #e2e8f0",
+            background: "var(--surface)",
+            borderRadius: "var(--pt-card-radius)",
+            border: "1px solid var(--line)",
             padding: "1.4rem",
             display: "grid",
             gap: "1rem",
             marginTop: 0,
+            minWidth: 0,
           }}
         >
           <h2 style={{ margin: 0, fontSize: "1.08rem", fontWeight: 800 }}>
@@ -1327,9 +1260,9 @@ export function MobileAppStudio({
             </span>
             <div
               style={{
-                borderRadius: "14px",
-                border: "1px solid #e2e8f0",
-                background: "#f8fafc",
+                borderRadius: "var(--pt-radius)",
+                border: "1px solid var(--line)",
+                background: "var(--card)",
                 padding: "0.9rem",
                 display: "grid",
                 gap: "0.75rem",
@@ -1357,7 +1290,7 @@ export function MobileAppStudio({
                     fontWeight: 800,
                     border: "1px solid rgba(15, 23, 42, 0.1)",
                     flexShrink: 0,
-                    boxShadow: "0 4px 12px rgba(15, 23, 42, 0.1)",
+                    
                   }}
                 >
                   {iconUrl ? (
@@ -1379,7 +1312,7 @@ export function MobileAppStudio({
                 <div
                   style={{
                     flex: 1,
-                    minWidth: "180px",
+                    minWidth: "min(100%, 180px)",
                     display: "grid",
                     gap: "0.45rem",
                   }}
@@ -1413,9 +1346,9 @@ export function MobileAppStudio({
                         alignItems: "center",
                         gap: "0.4rem",
                         padding: "0.52rem 0.9rem",
-                        borderRadius: "10px",
-                        background: "#0284c7",
-                        color: "#ffffff",
+                        borderRadius: "var(--pt-radius)",
+                        background: "var(--pt-fill)",
+                        color: "var(--pt-on-fill)",
                         fontSize: "0.82rem",
                         fontWeight: 700,
                       }}
@@ -1442,10 +1375,10 @@ export function MobileAppStudio({
                           alignItems: "center",
                           gap: "0.3rem",
                           padding: "0.5rem 0.72rem",
-                          borderRadius: "10px",
-                          background: "#ffffff",
-                          color: "#b91c1c",
-                          border: "1px solid #fecaca",
+                          borderRadius: "var(--pt-radius)",
+                          background: "var(--surface)",
+                          color: "var(--ws-danger)",
+                          border: "1px solid var(--line)",
                           fontSize: "0.78rem",
                           fontWeight: 650,
                         }}
@@ -1455,7 +1388,7 @@ export function MobileAppStudio({
                       </button>
                     )}
                   </div>
-                  <small style={{ color: "#64748b", fontSize: "0.74rem" }}>
+                  <small style={{ color: "var(--muted)", fontSize: "0.74rem" }}>
                     {isEn
                       ? "PNG, JPG, or WEBP · 512×512 square recommended · Max 2 MB"
                       : "PNG أو JPG أو WEBP · يُفضّل 512×512 مربعة · الحد الأقصى 2 ميجابايت"}
@@ -1470,14 +1403,14 @@ export function MobileAppStudio({
                     fontSize: "0.78rem",
                     fontWeight: 600,
                     padding: "0.45rem 0.65rem",
-                    borderRadius: "8px",
+                    borderRadius: "var(--pt-radius)",
                     background:
-                      iconFeedback.kind === "ok" ? "#ecfdf5" : "#fef2f2",
-                    color: iconFeedback.kind === "ok" ? "#047857" : "#b91c1c",
+                      iconFeedback.kind === "ok" ? "var(--card)" : "var(--card)",
+                    color: iconFeedback.kind === "ok" ? "var(--ws-good)" : "var(--ws-danger)",
                     border:
                       iconFeedback.kind === "ok"
-                        ? "1px solid #a7f3d0"
-                        : "1px solid #fecaca",
+                        ? "1px solid var(--line)"
+                        : "1px solid var(--line)",
                   }}
                 >
                   {iconFeedback.text}
@@ -1493,7 +1426,7 @@ export function MobileAppStudio({
                     alignItems: "center",
                     gap: "0.35rem",
                     background: "transparent",
-                    color: "#475569",
+                    color: "var(--muted)",
                     padding: "0.15rem 0",
                     fontSize: "0.76rem",
                     fontWeight: 650,
@@ -1522,7 +1455,7 @@ export function MobileAppStudio({
                       setIconFeedback(null);
                     }}
                     placeholder="https://.../logo.png"
-                    style={{ marginTop: "0.45rem", background: "#ffffff" }}
+                    style={{ marginTop: "0.45rem", background: "var(--surface)" }}
                   />
                 )}
               </div>
@@ -1531,40 +1464,63 @@ export function MobileAppStudio({
 
           <div
             style={{
-              borderRadius: "12px",
-              background: "#f8fafc",
-              border: "1px solid #e2e8f0",
+              borderRadius: "var(--pt-radius)",
+              background: "var(--card)",
+              border: "1px solid var(--line)",
               padding: "0.85rem",
               display: "grid",
               gap: "0.45rem",
               fontSize: "0.8rem",
+              minWidth: 0,
             }}
           >
             <div
               style={{
                 display: "flex",
+                flexWrap: "wrap",
+                alignItems: "baseline",
                 justifyContent: "space-between",
-                gap: "0.5rem",
+                gap: "0.35rem 0.5rem",
+                minWidth: 0,
               }}
             >
-              <span style={{ color: "#64748b", fontWeight: 600 }}>
+              <span style={{ color: "var(--muted)", fontWeight: 600 }}>
                 {isEn ? "Android Package ID" : "معرّف الحزمة (Package ID)"}
               </span>
-              <code dir="ltr" style={{ fontWeight: 700, color: "#0f172a" }}>
+              <code
+                dir="ltr"
+                style={{
+                  fontWeight: 700,
+                  color: "var(--ink)",
+                  overflowWrap: "anywhere",
+                  maxWidth: "100%",
+                }}
+              >
                 {store.packageId}
               </code>
             </div>
             <div
               style={{
                 display: "flex",
+                flexWrap: "wrap",
+                alignItems: "baseline",
                 justifyContent: "space-between",
-                gap: "0.5rem",
+                gap: "0.35rem 0.5rem",
+                minWidth: 0,
               }}
             >
-              <span style={{ color: "#64748b", fontWeight: 600 }}>
+              <span style={{ color: "var(--muted)", fontWeight: 600 }}>
                 {isEn ? "Tenant Store ID" : "معرّف المتجر"}
               </span>
-              <code dir="ltr" style={{ fontSize: "0.74rem", color: "#475569" }}>
+              <code
+                dir="ltr"
+                style={{
+                  fontSize: "0.74rem",
+                  color: "var(--muted)",
+                  overflowWrap: "anywhere",
+                  maxWidth: "100%",
+                }}
+              >
                 {store.storeId.slice(0, 8)}…{store.storeId.slice(-4)}
               </code>
             </div>
@@ -1579,9 +1535,9 @@ export function MobileAppStudio({
               justifyContent: "center",
               gap: "0.5rem",
               padding: "0.85rem 1.2rem",
-              borderRadius: "12px",
-              background: hasActiveBuild ? "#64748b" : "#0f172a",
-              color: "#ffffff",
+              borderRadius: "var(--pt-radius)",
+              background: "var(--pt-fill)",
+              color: "var(--pt-on-fill)",
               fontWeight: 700,
               fontSize: "0.94rem",
             }}
@@ -1606,13 +1562,14 @@ export function MobileAppStudio({
         {/* Live Customizer-Synced Android Preview + Latest QR */}
         <div
           style={{
-            background: "#ffffff",
-            borderRadius: "18px",
-            border: "1px solid #e2e8f0",
+            background: "var(--surface)",
+            borderRadius: "var(--pt-card-radius)",
+            border: "1px solid var(--line)",
             padding: "1.25rem",
             display: "grid",
             gap: "0.95rem",
             justifyItems: "center",
+            minWidth: 0,
           }}
         >
           {PreviewControlsBar}
@@ -1633,12 +1590,13 @@ export function MobileAppStudio({
       {/* Build History */}
       <section
         style={{
-          background: "#ffffff",
-          borderRadius: "18px",
-          border: "1px solid #e2e8f0",
+          background: "var(--surface)",
+          borderRadius: "var(--pt-card-radius)",
+          border: "1px solid var(--line)",
           padding: "1.4rem",
           display: "grid",
           gap: "1rem",
+          minWidth: 0,
         }}
       >
         <div
@@ -1659,7 +1617,7 @@ export function MobileAppStudio({
                 style={{
                   margin: "0.2rem 0 0",
                   fontSize: "0.78rem",
-                  color: "#0284c7",
+                  color: "var(--ws-link)",
                 }}
               >
                 {isEn
@@ -1676,11 +1634,11 @@ export function MobileAppStudio({
               display: "inline-flex",
               alignItems: "center",
               gap: "0.4rem",
-              background: "#f8fafc",
-              color: "#0f172a",
-              border: "1px solid #cbd5e1",
+              background: "var(--card)",
+              color: "var(--ink)",
+              border: "1px solid var(--ws-control-line)",
               padding: "0.45rem 0.8rem",
-              borderRadius: "10px",
+              borderRadius: "var(--pt-radius)",
               fontSize: "0.8rem",
               fontWeight: 650,
             }}
@@ -1695,10 +1653,10 @@ export function MobileAppStudio({
             style={{
               textAlign: "center",
               padding: "2rem 1rem",
-              borderRadius: "14px",
-              background: "#f8fafc",
-              border: "1px dashed #cbd5e1",
-              color: "#64748b",
+              borderRadius: "var(--pt-radius)",
+              background: "var(--card)",
+              border: "1px dashed var(--ws-control-line)",
+              color: "var(--muted)",
               fontSize: "0.88rem",
             }}
           >
@@ -1715,8 +1673,8 @@ export function MobileAppStudio({
                 <article
                   key={b.id}
                   style={{
-                    borderRadius: "14px",
-                    border: "1px solid #e2e8f0",
+                    borderRadius: "var(--pt-radius)",
+                    border: "1px solid var(--line)",
                     padding: "1rem",
                     display: "flex",
                     flexWrap: "wrap",
@@ -1729,7 +1687,7 @@ export function MobileAppStudio({
                     style={{
                       display: "grid",
                       gap: "0.3rem",
-                      minWidth: "200px",
+                      minWidth: "min(100%, 200px)",
                       flex: 1,
                     }}
                   >
@@ -1749,8 +1707,8 @@ export function MobileAppStudio({
                         style={{
                           fontSize: "0.75rem",
                           fontWeight: 700,
-                          color: "#475569",
-                          background: "#f1f5f9",
+                          color: "var(--muted)",
+                          background: "var(--card)",
                           padding: "0.12rem 0.5rem",
                           borderRadius: "999px",
                         }}
@@ -1778,20 +1736,20 @@ export function MobileAppStudio({
                     <div
                       style={{
                         fontSize: "0.76rem",
-                        color: "#64748b",
+                        color: "var(--muted)",
                         display: "flex",
                         gap: "0.75rem",
                         flexWrap: "wrap",
                       }}
                     >
-                      <span dir="ltr">{b.package_id}</span>
+                      <span dir="ltr" style={{ overflowWrap: "anywhere" }}>{b.package_id}</span>
                       <span>{date(b.created_at, lang)}</span>
                     </div>
                     {b.status === "failed" && (
                       <div
                         style={{
                           fontSize: "0.78rem",
-                          color: "#b91c1c",
+                          color: "var(--ws-danger)",
                           marginTop: "0.2rem",
                         }}
                       >
@@ -1818,9 +1776,9 @@ export function MobileAppStudio({
                           alignItems: "center",
                           gap: "0.4rem",
                           padding: "0.5rem 0.9rem",
-                          borderRadius: "10px",
-                          background: "#059669",
-                          color: "#ffffff",
+                          borderRadius: "var(--pt-radius)",
+                          background: "var(--pt-fill)",
+                          color: "var(--pt-on-fill)",
                           fontSize: "0.82rem",
                           fontWeight: 700,
                           textDecoration: "none",
@@ -1840,10 +1798,10 @@ export function MobileAppStudio({
                           alignItems: "center",
                           gap: "0.35rem",
                           padding: "0.48rem 0.78rem",
-                          borderRadius: "10px",
-                          border: "1px solid #cbd5e1",
-                          background: "#ffffff",
-                          color: "#334155",
+                          borderRadius: "var(--pt-radius)",
+                          border: "1px solid var(--ws-control-line)",
+                          background: "var(--surface)",
+                          color: "var(--ink)",
                           fontSize: "0.78rem",
                           fontWeight: 650,
                           textDecoration: "none",

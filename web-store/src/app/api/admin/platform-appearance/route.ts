@@ -30,6 +30,10 @@ export async function POST(request: Request) {
   revalidateTag(themeCacheTag, { expire: 0 });
   revalidatePath("/");
   revalidatePath("/platform-landing");
-  revalidatePath("/super-admin/appearance");
+  revalidatePath("/super-admin", "layout");
+  revalidatePath("/admin", "layout");
+  revalidatePath("/platform-access/[screen]", "page");
+  revalidatePath("/create-store");
+  revalidatePath("/invite/[token]", "page");
   return Response.json({ ...theme, revision });
 }

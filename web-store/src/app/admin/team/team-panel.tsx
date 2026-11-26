@@ -111,7 +111,7 @@ export function TeamPanel({ storeId, team, actor, lang }: {
   const seatText = limitLabel(team.used, lang) + " / " + limitLabel(team.cap, lang);
   return <>
     <section className="team-box seat-summary"><div className="team-between">
-      <h2 id="team-seats">{en ? "Staff seats" : "مقاعد الفريق"}</h2><strong><bdi>{seatText}</bdi></strong></div>
+      <h2 id="team-seats">{en ? "Staff seats" : "مقاعد الفريق"}</h2><strong><bdi dir="ltr">{seatText}</bdi></strong></div>
       {team.cap === null ? <div className="team-unlimited" aria-hidden="true" /> :
         <progress aria-labelledby="team-seats" aria-valuetext={seatText} max={Math.max(team.cap, 1)}
           value={team.cap === 0 ? 1 : Math.min(team.used, team.cap)} />}

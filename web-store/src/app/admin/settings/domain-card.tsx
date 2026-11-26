@@ -28,7 +28,7 @@ const states: Record<DomainState, [string, string]> = {
 function CopyValue({ label, value, en }: { label: string; value: string; en: boolean }) {
   const [feedback, setFeedback] = useState("");
   return <div className="domain-record">
-    <span>{label}</span><code dir="ltr">{value}</code>
+    <span>{label}</span><code><bdi dir="ltr">{value}</bdi></code>
     <button type="button" aria-label={(en ? "Copy " : "نسخ ") + label} onClick={async () => {
       try { await navigator.clipboard.writeText(value); setFeedback(en ? "Copied" : "تم النسخ"); }
       catch { setFeedback(en ? "Select the value to copy it." : "حدد القيمة لنسخها."); }
@@ -47,7 +47,7 @@ export function DomainCard({ storeId, en, subdomain, target, rows, unavailable, 
     <h2 id="domain-title"><Globe size={19} aria-hidden="true" />{t("Store domains", "نطاقات المتجر")}</h2>
     <div className="domain-subdomain">
       <div><small>{t("Your store subdomain", "النطاق الفرعي لمتجرك")}</small>
-        <a href={subdomain} target="_blank" rel="noreferrer" dir="ltr">{new URL(subdomain).host}</a></div>
+        <a href={subdomain} target="_blank" rel="noreferrer" dir="ltr"><bdi dir="ltr">{new URL(subdomain).host}</bdi></a></div>
       <span className="domain-status" data-state="active"><Check size={14} />{t("Active", "نشط")}</span>
     </div>
     <details className="domain-custom">
@@ -63,8 +63,8 @@ export function DomainCard({ storeId, en, subdomain, target, rows, unavailable, 
         </form>}
         <p role="status" aria-live="polite" className="domain-feedback">{pending ? t("Saving…", "جارٍ الحفظ…") : typeof result === "string" && result && messages[result][ix]}</p>
         {rows.map(row => <article className="domain-item" key={row.id}>
-          <header>{row.status === "active" ? <a href={"https://" + row.domain} target="_blank" rel="noreferrer" dir="ltr">{row.domain}</a> :
-            <b dir="ltr">{row.domain}</b>}<span className="domain-status" data-state={row.status}>{states[row.status][ix]}</span></header>
+          <header>{row.status === "active" ? <a href={"https://" + row.domain} target="_blank" rel="noreferrer" dir="ltr"><bdi dir="ltr">{row.domain}</bdi></a> :
+            <b><bdi dir="ltr">{row.domain}</bdi></b>}<span className="domain-status" data-state={row.status}>{states[row.status][ix]}</span></header>
           {row.status !== "active" && <div className="domain-instructions">
             <p>{t("In your DNS provider, add a TXT record with this full name and value. Keep the record in place through activation.",
               "أضف سجل TXT لدى مزود DNS بهذا الاسم الكامل والقيمة. احتفظ بالسجل حتى اكتمال التفعيل.")}</p>

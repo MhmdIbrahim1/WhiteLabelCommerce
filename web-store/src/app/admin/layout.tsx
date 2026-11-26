@@ -1,4 +1,8 @@
-import { LogOut, PanelTop, UserRound, AlertTriangle } from "lucide-react";
+import Link from "next/link";
+import { LogOut, ExternalLink, Plus, AlertTriangle } from "lucide-react";
+import { WorkspaceSurface, ModeControl } from "@/components/workspace-surface";
+import { PlatformBrand } from "@/components/platform-brand";
+import { WorkspaceFrame } from "./workspace-frame";
 import brand from "@/lib/brand";
 import { requireAdmin, checked } from "@/lib/db";
 import { canManageNotifications, canSeeOverview } from "@/lib/team";
@@ -47,74 +51,28 @@ export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
     localizedText(lang, settings.store_name || activeStore.name_ar, activeStore.name_en) ||
     brand.storeName;
 
-  return (
-    <div className="shell">
-      <aside>
-        <AdminStoreSwitcher
-          planName={billing ? localizedText(lang, billing.plan.name_ar, billing.plan.name_en) : null}
-          liveHref={liveUrl}
-          activeStore={activeStore}
-          managedStores={managedStores}
-          isSuperAdmin={isSuperAdmin}
-        />
-        <Navigation
-          permissions={permissions}
-          isSuperAdmin={isSuperAdmin}
-          mobileAppUnlocked={activeStore.mobile_app_unlocked !== false}
-          pendingReturnsCount={pendingReturnsCount}
-          openAbandonedCartsCount={openAbandonedCartsCount}
-        />
-        <form action={logout} className="logout">
-          <button>
-            <LogOut size={18} /> {t(lang, "navLogout")}
-          </button>
-        </form>
-      </aside>
-      <div className="workspace">
-        <header className="top">
-          <span className="admin-top-brand">
-            <PanelTop size={17} /> {storeTitle}
-          </span>
-          <div className="admin-top-actions">
-            {canSeeOverview(permissions) && <AdminTourTrigger storeId={storeId} />}
-            {canManageNotifications(permissions) && <NotificationBell storeId={storeId} userId={user.id} scope="admin" />}
-            <LanguageToggle className="lang-toggle-pill" />
-            <span className="admin-top-email" dir="ltr" title={user.email ?? ""}>
-              <UserRound size={16} />
-              <span className="admin-top-email-text">{user.email}</span>
-            </span>
-          </div>
-        </header>
-        {canSeeOverview(permissions) && <AdminGuidedTour storeId={storeId} />}
-        <main className="content">
-          {activeStore.status === "suspended" && (
-            <div
-              role="alert"
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "0.75rem",
-                padding: "0.85rem 1rem",
-                marginBottom: "1rem",
-                borderRadius: "12px",
-                border: "1px solid #f59e0b",
-                background: "#fffbeb",
-                color: "#92400e",
-                fontSize: "0.9rem",
-                fontWeight: 600,
-              }}
-            >
-              <AlertTriangle size={18} style={{ flexShrink: 0 }} />
-              <span>
-                {isEn
-                  ? "This store is currently suspended. Its public storefront is offline and customers cannot place orders until reactivated by platform administration."
-                  : "هذا المتجر موقوف حالياً. الواجهة العامة للمتجر غير متاحة للعملاء ولا يمكن استقبال طلبات جديدة حتى إعادة التفعيل من إدارة المنصة."}
-              </span>
-            </div>
-          )}
-          {children}
-        </main>
-      </div>
-    </div>
-  );
+  const sidebar = <>
+    <Link className="ws-wordmark" href="/admin" aria-label="WhiteLabelCommerce"><PlatformBrand /></Link>
+    <Navigation permissions={permissions} isSuperAdmin={isSuperAdmin} mobileAppUnlocked={activeStore.mobile_app_unlocked !== false}
+      pendingReturnsCount={pendingReturnsCount} openAbandonedCartsCount={openAbandonedCartsCount} />
+    <div className="ws-sidebar-foot">
+      {(managedStores.length > 1 || isSuperAdmin) && <Link href="/create-store"><Plus size={16}/>{isEn ? "Create store" : "إنشاء متجر"}</Link>}
+      {user.email && <bdi dir="ltr" title={user.email}>{user.email}</bdi>}
+      <form action={logout}><button type="submit"><LogOut size={16} />{t(lang, "navLogout")}</button></form>
+    </div></>;
+  return <WorkspaceSurface><WorkspaceFrame sidebar={sidebar} store={<AdminStoreSwitcher title={storeTitle}
+    planName={billing ? localizedText(lang, billing.plan.name_ar, billing.plan.name_en) : null} activeStore={activeStore}
+    managedStores={managedStores} isSuperAdmin={isSuperAdmin} />} tools={<>
+      <Link href={liveUrl} className="ws-view-store" target="_blank" rel="noreferrer" aria-label={isEn ? "View storefront" : "معاينة المتجر"}>
+        <ExternalLink size={16} /><span>{isEn ? "View storefront" : "معاينة المتجر"}</span></Link>
+      {canSeeOverview(permissions) && <AdminTourTrigger storeId={storeId} />}
+      {canManageNotifications(permissions) && <NotificationBell storeId={storeId} userId={user.id} scope="admin" />}
+      <ModeControl /><LanguageToggle className="pt-lang" />
+    </>}>
+      {canSeeOverview(permissions) && <AdminGuidedTour storeId={storeId} />}
+      {activeStore.status === "suspended" && <div role="alert" className="ws-suspension"><AlertTriangle size={18} />
+        {isEn ? "This store is suspended. Customers can place orders once platform administration reactivates it."
+          : "هذا المتجر موقوف. يمكن للعملاء الطلب مجدداً بعد أن تعيد إدارة المنصة تفعيله."}</div>}
+      {children}
+  </WorkspaceFrame></WorkspaceSurface>;
 }
