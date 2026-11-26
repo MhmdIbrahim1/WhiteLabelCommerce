@@ -5,6 +5,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireSuperAdmin } from "@/lib/db";
+import type { PlanCode } from "@/lib/billing";
 import {
   ADMIN_STORE_COOKIE,
   computeMobileAppUnlocked,
@@ -14,6 +15,8 @@ import {
 } from "@/lib/tenant-shared";
 
 export type SuperAdminStoreOverview = {
+  billingPlan: PlanCode;
+  productLimit: number | null;
   store_id: string;
   slug: string;
   name_ar: string;

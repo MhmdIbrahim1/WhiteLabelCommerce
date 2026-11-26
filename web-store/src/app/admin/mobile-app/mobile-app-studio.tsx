@@ -4,8 +4,6 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Smartphone,
-  Lock,
-  Sparkles,
   CheckCircle2,
   Download,
   ExternalLink,
@@ -15,8 +13,6 @@ import {
   Clock,
   XCircle,
   X,
-  MessageCircle,
-  Mail,
   QrCode,
   ShieldCheck,
   Search,
@@ -43,7 +39,8 @@ import {
   resolveEffectivePrice,
 } from "@/lib/flash-sale";
 import { generateQrSvg } from "@/lib/qr-svg";
-import type { MobileAppAccess, StorePlan } from "@/lib/tenant-shared";
+import { limitReached, quotaFailure } from "@/lib/billing";
+import { QuotaPrompt } from "@/components/quota-prompt";
 import type { StoreAppBuildRow } from "@/app/api/admin/mobile-builds/route";
 
 export type PreviewProduct = {
@@ -66,8 +63,8 @@ type StudioStoreProps = {
   slug: string;
   nameAr: string;
   nameEn: string;
-  plan: StorePlan;
-  mobileAppAccess: MobileAppAccess;
+  planNameAr: string;
+  planNameEn: string;
   logoUrl: string;
   primaryColor: string;
   primaryText: string;
@@ -77,7 +74,6 @@ type StudioStoreProps = {
   borderRadius: number;
   currency: string;
   packageId: string;
-  whatsappNumber: string;
   supportEmail: string;
 };
 
@@ -667,8 +663,8 @@ function AndroidPhoneMockup({
               <div style={{ fontSize: "0.62rem", color: muted }}>
                 {locked
                   ? isEn
-                    ? "Preview · Upgrade to build APK"
-                    : "معاينة · قم بالترقية لبناء التطبيق"
+                    ? "Preview · App builds paused"
+                    : "معاينة · بناء التطبيق متوقف"
                   : isEn
                     ? "Synced live with Customizer & Catalog"
                     : "متزامن مع التصميم ومنتجات متجرك"}
@@ -755,6 +751,7 @@ export function MobileAppStudio({
   isSuperAdmin,
   githubConfigured,
   initialBuilds,
+  initialQuota,
 }: {
   store: StudioStoreProps;
   preview: StorePreviewProps;
@@ -762,6 +759,7 @@ export function MobileAppStudio({
   isSuperAdmin: boolean;
   githubConfigured: boolean;
   initialBuilds: StoreAppBuildRow[];
+  initialQuota: { current: number; limit: number | null };
 }) {
   const { lang } = useLanguage();
   const isEn = lang === "en";
@@ -786,7 +784,8 @@ export function MobileAppStudio({
     kind: "ok" | "err" | "warn";
     text: string;
   } | null>(null);
-  const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
+  const [quota, setQuota] = useState(initialQuota);
+  const [builderDisabled, setBuilderDisabled] = useState(false);
 
   const handleIconFileChange = async (
     e: React.ChangeEvent<HTMLInputElement>,
@@ -891,7 +890,9 @@ export function MobileAppStudio({
         cache: "no-store",
       });
       if (!resp.ok) return;
-      const data = (await resp.json()) as { builds?: StoreAppBuildRow[] };
+      const data = (await resp.json()) as { builds?: StoreAppBuildRow[]; quota?: typeof initialQuota; unlocked?: boolean };
+      if (data.quota) setQuota(data.quota);
+      if (typeof data.unlocked === "boolean") setBuilderDisabled(!data.unlocked);
       if (Array.isArray(data.builds)) {
         setBuilds(data.builds);
       }
@@ -933,6 +934,13 @@ export function MobileAppStudio({
         message_en?: string;
       };
       if (!resp.ok) {
+        const failure = quotaFailure({ message: json.error, details: json });
+        if (failure?.resource === "apk_builds") {
+          setQuota({ current: failure.current, limit: failure.limit });
+          setBuilderDisabled(failure.code === "feature_not_in_plan");
+          return;
+        }
+        if (resp.status === 502) void fetchBuilds();
         setBanner({
           kind: resp.status === 503 ? "warn" : "err",
           text:
@@ -945,6 +953,7 @@ export function MobileAppStudio({
       }
       if (json.build) {
         setBuilds((prev) => [json.build!, ...prev]);
+        setQuota(previous => ({ ...previous, current: previous.current + 1 }));
       }
       setBanner({
         kind: "ok",
@@ -964,29 +973,7 @@ export function MobileAppStudio({
     }
   };
 
-  const planLabel =
-    store.plan === "enterprise"
-      ? isEn
-        ? "Enterprise"
-        : "مؤسسي"
-      : store.plan === "growth"
-        ? isEn
-          ? "Growth"
-          : "نمو"
-        : isEn
-          ? "Starter"
-          : "مبتدئ";
-
-  const whatsappUpgradeHref = (() => {
-    const cleanNum = (store.whatsappNumber || "201000000000").replace(
-      /[^\d]/g,
-      "",
-    );
-    const msg = isEn
-      ? `Hello! I would like to upgrade my store "${store.nameEn}" (/${store.slug}) to unlock the Branded Android Mobile App.`
-      : `مرحباً! أرغب في ترقية باقة متجري "${store.nameAr}" (/${store.slug}) لتفعيل تطبيق الأندرويد الخاص بمتجري.`;
-    return `https://wa.me/${cleanNum}?text=${encodeURIComponent(msg)}`;
-  })();
+  const planLabel = localizedText(lang, store.planNameAr, store.planNameEn);
 
   const PreviewControlsBar = (
     <div
@@ -1077,412 +1064,16 @@ export function MobileAppStudio({
     </div>
   );
 
-  // =========================================================================
-  // LOCKED STATE (Starter Plan / Disabled Override) — Flagship Upsell Screen
-  // =========================================================================
-  if (!unlocked) {
-    return (
-      <div style={{ display: "grid", gap: "1.4rem" }}>
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: "0.75rem",
-          }}
-        >
-          <div>
-            <span
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "0.35rem",
-                fontSize: "0.75rem",
-                fontWeight: 700,
-                padding: "0.22rem 0.65rem",
-                borderRadius: "999px",
-                background: "#fef3c7",
-                color: "#92400e",
-                border: "1px solid #fde68a",
-                marginBottom: "0.45rem",
-              }}
-            >
-              <Lock size={12} />
-              {isEn ? "Growth & Enterprise Feature" : "ميزة باقة النمو والمؤسسي"}
-            </span>
-            <h1 style={{ margin: 0, fontSize: "1.55rem", fontWeight: 800 }}>
-              {isEn
-                ? "Launch Your Store's Branded Android App"
-                : "أطلق تطبيق أندرويد خاصاً بعلامتك التجارية"}
-            </h1>
-            <p
-              style={{
-                margin: "0.35rem 0 0",
-                color: "#64748b",
-                fontSize: "0.92rem",
-              }}
-            >
-              {isEn
-                ? "Your current plan covers your web storefront. Upgrade to Growth or Enterprise to generate ready-to-install branded APKs in one click."
-                : "باقتك الحالية تشمل المتجر الإلكتروني (الويب) فقط. قم بالترقية إلى باقة النمو أو المؤسسي لبناء تطبيق أندرويد باسم متجرك وأيقونتك بضغطة زر."}
-            </p>
-          </div>
-          <span
-            style={{
-              fontSize: "0.82rem",
-              fontWeight: 700,
-              padding: "0.38rem 0.85rem",
-              borderRadius: "999px",
-              background: "#f1f5f9",
-              color: "#334155",
-              border: "1px solid #cbd5e1",
-            }}
-          >
-            {isEn ? `Current Plan: ${planLabel}` : `الباقة الحالية: ${planLabel}`}
-          </span>
-        </div>
-
-        {/* Hero Upsell Split Card */}
-        <section
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(290px, 1fr))",
-            gap: "1.75rem",
-            alignItems: "center",
-            background: "#ffffff",
-            borderRadius: "20px",
-            border: "1px solid #e2e8f0",
-            padding: "1.75rem",
-            boxShadow: "0 8px 30px rgba(15, 23, 42, 0.05)",
-          }}
-        >
-          <div style={{ display: "grid", gap: "1.1rem" }}>
-            <div style={{ display: "grid", gap: "0.45rem" }}>
-              <span
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "0.35rem",
-                  color: "#0284c7",
-                  fontSize: "0.8rem",
-                  fontWeight: 700,
-                }}
-              >
-                <Sparkles size={14} />
-                {isEn
-                  ? "White-Label Native Android Experience"
-                  : "تجربة تطبيق أصلي باسم متجرك"}
-              </span>
-              <h2 style={{ margin: 0, fontSize: "1.3rem", fontWeight: 800 }}>
-                {isEn
-                  ? "Turn one-time visitors into loyal mobile shoppers"
-                  : "حوّل زوار متجرك إلى عملاء دائمين عبر تطبيقهم الخاص"}
-              </h2>
-            </div>
-
-            <ul
-              style={{
-                listStyle: "none",
-                padding: 0,
-                margin: 0,
-                display: "grid",
-                gap: "0.65rem",
-                fontSize: "0.9rem",
-                color: "#334155",
-              }}
-            >
-              {(isEn
-                ? [
-                    "Custom app name, launcher icon & isolated Android Package ID",
-                    "Real-time sync with your products, Flash Deals, Coupons & Theme",
-                    "Native RTL Arabic / LTR English support & dark mode",
-                    "Instant APK download link + scannable QR code for customers",
-                  ]
-                : [
-                    "اسم التطبيق وأيقونة التشغيل ومعرّف حزمة (Package ID) مستقل لمتجرك",
-                    "مزامنة فورية مع منتجاتك، العروض المؤقتة، الكوبونات وتصميم المتجر",
-                    "دعم كامل للغتين العربية (RTL) والإنجليزية (LTR) والوضع الليلي",
-                    "رابط تحميل مباشر لملف APK مع رمز QR جاهز للمشاركة مع عملائك",
-                  ]
-              ).map((item) => (
-                <li
-                  key={item}
-                  style={{
-                    display: "flex",
-                    alignItems: "flex-start",
-                    gap: "0.5rem",
-                  }}
-                >
-                  <CheckCircle2
-                    size={17}
-                    style={{ color: "#059669", flexShrink: 0, marginTop: "2px" }}
-                  />
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: "0.75rem",
-              }}
-            >
-              <div
-                style={{
-                  borderRadius: "12px",
-                  border: "1px solid #e2e8f0",
-                  background: "#f8fafc",
-                  padding: "0.85rem",
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: "0.78rem",
-                    fontWeight: 700,
-                    color: "#64748b",
-                  }}
-                >
-                  {isEn ? "Starter" : "باقة المبتدئ"}
-                </div>
-                <div
-                  style={{
-                    fontSize: "0.88rem",
-                    fontWeight: 800,
-                    marginTop: "0.2rem",
-                  }}
-                >
-                  {isEn ? "Web Storefront Only" : "متجر إلكتروني فقط"}
-                </div>
-                <div
-                  style={{
-                    fontSize: "0.76rem",
-                    color: "#64748b",
-                    marginTop: "0.25rem",
-                  }}
-                >
-                  {isEn
-                    ? "Up to 50 products · Mobile web"
-                    : "حتى 50 منتجاً · ويب متجاوب"}
-                </div>
-              </div>
-              <div
-                style={{
-                  borderRadius: "12px",
-                  border: "2px solid #0284c7",
-                  background: "#f0f9ff",
-                  padding: "0.85rem",
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: "0.78rem",
-                    fontWeight: 700,
-                    color: "#0369a1",
-                  }}
-                >
-                  {isEn ? "Growth & Enterprise" : "النمو والمؤسسي"}
-                </div>
-                <div
-                  style={{
-                    fontSize: "0.88rem",
-                    fontWeight: 800,
-                    marginTop: "0.2rem",
-                    color: "#0f172a",
-                  }}
-                >
-                  {isEn
-                    ? "Web + Branded Android APK"
-                    : "متجر ويب + تطبيق أندرويد"}
-                </div>
-                <div
-                  style={{
-                    fontSize: "0.76rem",
-                    color: "#0369a1",
-                    marginTop: "0.25rem",
-                  }}
-                >
-                  {isEn
-                    ? "500–10,000 products · 1-Click APK"
-                    : "500–10,000 منتج · بناء APK فوري"}
-                </div>
-              </div>
-            </div>
-
-            <div>
-              <button
-                type="button"
-                onClick={() => setUpgradeModalOpen(true)}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "0.55rem",
-                  background: "#0f172a",
-                  color: "#ffffff",
-                  padding: "0.82rem 1.35rem",
-                  borderRadius: "12px",
-                  fontSize: "0.94rem",
-                  fontWeight: 700,
-                }}
-              >
-                <Rocket size={17} />
-                <span>
-                  {isEn
-                    ? "Upgrade Plan to Unlock"
-                    : "ترقية الباقة لتفعيل التطبيق"}
-                </span>
-              </button>
-            </div>
-          </div>
-
-          <div style={{ display: "grid", gap: "0.85rem", justifyItems: "center" }}>
-            {PreviewControlsBar}
-            <AndroidPhoneMockup
-              appName={isEn ? store.nameEn : store.nameAr}
-              iconUrl={store.logoUrl}
-              store={store}
-              preview={preview}
-              isEn={isEn}
-              darkMode={previewDarkMode}
-              locked
-            />
-          </div>
-        </section>
-
-        {/* Upgrade Request Modal */}
-        {upgradeModalOpen && (
-          <div
-            role="dialog"
-            aria-modal="true"
-            onClick={() => setUpgradeModalOpen(false)}
-            style={{
-              position: "fixed",
-              inset: 0,
-              zIndex: 80,
-              background: "rgba(15, 23, 42, 0.55)",
-              display: "grid",
-              placeItems: "center",
-              padding: "1rem",
-            }}
-          >
-            <div
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                width: "100%",
-                maxWidth: "440px",
-                background: "#ffffff",
-                borderRadius: "18px",
-                border: "1px solid #e2e8f0",
-                padding: "1.4rem",
-                display: "grid",
-                gap: "1rem",
-                boxShadow: "0 24px 60px rgba(15, 23, 42, 0.25)",
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                }}
-              >
-                <strong style={{ fontSize: "1.08rem" }}>
-                  {isEn
-                    ? "Upgrade to Unlock Mobile App"
-                    : "ترقية الباقة لتفعيل التطبيق"}
-                </strong>
-                <button
-                  type="button"
-                  onClick={() => setUpgradeModalOpen(false)}
-                  style={{
-                    background: "transparent",
-                    color: "#64748b",
-                    padding: "0.25rem",
-                  }}
-                  aria-label="Close"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-              <p
-                style={{
-                  margin: 0,
-                  fontSize: "0.88rem",
-                  color: "#475569",
-                  lineHeight: 1.6,
-                }}
-              >
-                {isEn
-                  ? `Contact our platform team to upgrade "${store.nameEn}" (/${store.slug}) to Growth or Enterprise. Once activated, the Android APK Builder unlocks immediately.`
-                  : `تواصل مع فريق المنصة لترقية متجر "${store.nameAr}" (/${store.slug}) إلى باقة النمو أو المؤسسي، وسيتم فتح مصنع تطبيق الأندرويد فور التفعيل.`}
-              </p>
-              <div style={{ display: "grid", gap: "0.6rem" }}>
-                <a
-                  href={whatsappUpgradeHref}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "0.5rem",
-                    padding: "0.75rem 1rem",
-                    borderRadius: "11px",
-                    background: "#16a34a",
-                    color: "#ffffff",
-                    fontWeight: 700,
-                    fontSize: "0.9rem",
-                    textDecoration: "none",
-                  }}
-                >
-                  <MessageCircle size={17} />
-                  <span>
-                    {isEn
-                      ? "Request Upgrade via WhatsApp"
-                      : "طلب الترقية عبر واتساب"}
-                  </span>
-                </a>
-                {store.supportEmail && (
-                  <a
-                    href={`mailto:${store.supportEmail}?subject=${encodeURIComponent(
-                      isEn
-                        ? `Upgrade request: ${store.slug}`
-                        : `طلب ترقية باقة: ${store.slug}`,
-                    )}`}
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: "0.5rem",
-                      padding: "0.7rem 1rem",
-                      borderRadius: "11px",
-                      border: "1px solid #cbd5e1",
-                      background: "#f8fafc",
-                      color: "#0f172a",
-                      fontWeight: 650,
-                      fontSize: "0.88rem",
-                      textDecoration: "none",
-                    }}
-                  >
-                    <Mail size={16} />
-                    <span>
-                      {isEn ? "Email Support" : "مراسلة الدعم عبر البريد"}
-                    </span>
-                  </a>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    );
+  if (!unlocked || builderDisabled) {
+    return <section className="card">
+      <h1>{isEn ? "Android Mobile App Studio" : "استوديو تطبيق أندرويد"}</h1>
+      <QuotaPrompt resource="apk_builds" lang={lang} disabled />
+      {PreviewControlsBar}
+      <AndroidPhoneMockup appName={appName} iconUrl={iconUrl} store={store} preview={preview}
+        isEn={isEn} darkMode={previewDarkMode} locked />
+      {store.supportEmail && <a href={"mailto:" + store.supportEmail}>{isEn ? "Contact support" : "تواصل مع الدعم"}</a>}
+    </section>;
   }
-
-  // =========================================================================
-  // UNLOCKED STATE (Growth / Enterprise / Force Enabled) — Live APK Studio
-  // =========================================================================
   const latestSucceeded = builds.find(
     (b) => b.status === "succeeded" && b.apk_download_url,
   );
@@ -1594,6 +1185,7 @@ export function MobileAppStudio({
         </div>
       </div>
 
+      {limitReached(quota.current, quota.limit) && <QuotaPrompt resource="apk_builds" lang={lang} usage={quota} />}
       {!githubConfigured && (
         <div
           role="status"

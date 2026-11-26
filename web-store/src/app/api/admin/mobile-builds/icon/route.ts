@@ -2,11 +2,11 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { serverDb } from "@/lib/db";
 import { adminDb } from "@/lib/supabase/admin";
+import { getStoreBilling } from "@/lib/billing-data";
 import { validateImageMagicBytes } from "@/lib/security";
 import {
   ADMIN_STORE_COOKIE,
   DEFAULT_STORE_ID,
-  computeMobileAppUnlocked,
   getManagedStores,
 } from "@/lib/tenant";
 
@@ -64,20 +64,21 @@ async function resolveActiveAdminStore() {
     "store_has_mobile_app_access",
     { p_store_id: activeStore.store_id },
   );
-  const unlocked =
-    !rpcErr && typeof unlockedRpc === "boolean"
-      ? unlockedRpc
-      : computeMobileAppUnlocked(activeStore.plan, activeStore.mobile_app_access);
+  if (rpcErr) return { error: NextResponse.json({ error: "billing_unavailable",
+    message_en: "Builder access is temporarily unavailable.", message_ar: "تعذّر التحقق من إتاحة البناء مؤقتاً." }, { status: 503 }) };
+  const unlocked = unlockedRpc === true;
 
   if (!unlocked) {
+    const billing = await getStoreBilling(activeStore.store_id);
     return {
       error: NextResponse.json(
         {
-          error: "plan_upgrade_required",
+          error: "feature_not_in_plan",
+          code: "feature_not_in_plan", resource: "apk_builds", current: billing.apk_builds, limit: 0,
           message_ar:
-            "مصنع تطبيق الأندرويد متاح لباقات النمو (Growth) والمؤسسي (Enterprise) فقط.",
+            "بناء تطبيق أندرويد معطّل لهذا المتجر.",
           message_en:
-            "White-label Android APK Builder is available on Growth and Enterprise plans only.",
+            "The Android builder is disabled for this store.",
         },
         { status: 403 },
       ),

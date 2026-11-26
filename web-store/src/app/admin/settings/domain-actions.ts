@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/db";
+import { quotaFailure, type QuotaFailure } from "@/lib/billing";
 import { adminDb } from "@/lib/supabase/admin";
 import { customDomain, platformRootDomain } from "@/lib/host-routing";
 import { verifyDomainTxt, type DnsError } from "@/lib/domain-dns";
@@ -12,7 +13,7 @@ export type DomainRow = {
   last_error: DnsError | null; is_primary: boolean;
 };
 export type DomainResult = "" | DnsError | "added" | "verified" | "activated" | "removed" |
-  "primary_saved" | "invalid" | "taken" | "changed" | "unavailable";
+  "primary_saved" | "invalid" | "taken" | "changed" | "unavailable" | QuotaFailure;
 
 export async function manageDomain(expectedStore: string, _previous: DomainResult, form: FormData): Promise<DomainResult> {
   const { db, storeId } = await requireAdmin();
@@ -24,7 +25,7 @@ export async function manageDomain(expectedStore: string, _previous: DomainResul
     const domain = customDomain(String(form.get("domain") || "").trim(), platformRootDomain());
     if (!domain) return "invalid";
     const { error } = await db.from("store_domains").insert({ store_id: storeId, domain });
-    if (error) return error.code === "23505" ? "taken" : "unavailable";
+    if (error) return quotaFailure(error) ?? (error.code === "23505" ? "taken" : "unavailable");
     result = "added";
   } else {
     if (!/^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(id)) return "invalid";

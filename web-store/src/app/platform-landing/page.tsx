@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { headers } from "next/headers";
-import { ArrowUpRight, Check, Globe, LayoutTemplate, Package, ShoppingBag, Smartphone, Store } from "lucide-react";
+import { ArrowUpRight, Globe, LayoutTemplate, Package, ShoppingBag, Smartphone, Store } from "lucide-react";
+import { getPlanCatalog } from "@/lib/billing-data";
+import { PlanComparison } from "@/components/plan-comparison";
 import { LanguageToggle } from "@/components/language-provider";
 import { getServerLang } from "@/lib/i18n-server";
 import { DEFAULT_STORE_SLUG, PLATFORM_ORIGIN_HEADER, storefrontPath } from "@/lib/tenant-shared";
@@ -18,8 +20,7 @@ const copy = {
       ["Add your products", "Set prices, upload photos and organize your catalog in Arabic and English."],
       ["Open your doors", "Share your storefront link. On eligible plans, build a native Android APK with your name and icon."],
     ],
-    planTitle: "Plans for your catalog", preview: "Plan preview", capacities: ["Up to 50 products", "Up to 500 products", "Up to 10,000 products"],
-    planNames: ["Starter", "Growth", "Enterprise"], web: "Bilingual web storefront", apk: "Branded Android APK", footer: "Back to top", skip: "Skip to content",
+    footer: "Back to top", skip: "Skip to content",
   },
   ar: {
     title: "متجرك على الويب وأندرويد", intro: "أطلق متجراً بالعربية والإنجليزية على نطاقك الخاص. أدِر منتجاتك وطلباتك وتطبيق أندرويد الذي يحمل علامتك من لوحة تحكم واحدة.",
@@ -30,8 +31,7 @@ const copy = {
       ["أضف منتجاتك", "حدّد الأسعار وارفع الصور ورتّب الكتالوج بالعربية والإنجليزية."],
       ["افتح أبواب متجرك", "شارك رابط المتجر. وفي الباقات المؤهلة يمكنك إنشاء ملف APK لتطبيق أندرويد يحمل اسمك وأيقونتك."],
     ],
-    planTitle: "باقات تناسب حجم كتالوجك", preview: "نظرة على الباقات", capacities: ["حتى ٥٠ منتجاً", "حتى ٥٠٠ منتج", "حتى ١٠٬٠٠٠ منتج"],
-    planNames: ["المبتدئ", "النمو", "المؤسسي"], web: "متجر إلكتروني ثنائي اللغة", apk: "تطبيق أندرويد خاص بعلامتك", footer: "العودة إلى الأعلى", skip: "انتقل إلى المحتوى",
+    footer: "العودة إلى الأعلى", skip: "انتقل إلى المحتوى",
   },
 };
 
@@ -47,7 +47,7 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function PlatformLanding() {
-  const lang = await getServerLang();
+  const [lang, plans] = await Promise.all([getServerLang(), getPlanCatalog().catch(() => null)]);
   const c = copy[lang];
   const demo = storefrontPath(DEFAULT_STORE_SLUG);
   const stepIcons = [LayoutTemplate, Package, Store];
@@ -90,12 +90,7 @@ export default async function PlatformLanding() {
           return <li key={i}><Icon size={21} aria-hidden="true"/><h3>{name}</h3><p>{text}</p></li>;
         })}</ol>
       </div></section>
-      <section className="platform-plans platform-wrap" id="plans" aria-label={c.preview}>
-        <h2>{c.planTitle}</h2><div className="platform-plan-grid">{c.planNames.map((name, i) =>
-          <article key={name}><h3>{name}</h3><p>{c.capacities[i]}</p><ul>
-            <li><Check size={15} />{c.web}</li>{i > 0 && <li><Check size={15} />{c.apk}</li>}
-          </ul></article>)}</div>
-      </section>
+      <div className="platform-plans platform-wrap" id="plans"><PlanComparison plans={plans} lang={lang} /></div>
     </main>
     <footer className="platform-end platform-wrap"><bdi>WhiteLabelCommerce</bdi><a href="#top">{c.footer} ↑</a></footer>
   </div>;

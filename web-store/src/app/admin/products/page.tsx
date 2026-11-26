@@ -3,6 +3,9 @@ import Link from "next/link";
 import Image from "next/image";
 import { Package, Plus, Zap } from "lucide-react";
 import { checked, requireAdmin } from "@/lib/db";
+import { getStoreBilling } from "@/lib/billing-data";
+import { limitLabel, limitReached } from "@/lib/billing";
+import { QuotaPrompt } from "@/components/quota-prompt";
 import { adminDb } from "@/lib/supabase/admin";
 import { money } from "@/lib/brand";
 import { photo, searchPattern } from "@/lib/shop";
@@ -25,7 +28,7 @@ import {
 export default async function Products({
   searchParams,
 }: PageProps<"/admin/products">) {
-  const [params, lang, { db, storeId, activeStore }] = await Promise.all([
+  const [params, lang, { db, storeId }] = await Promise.all([
     searchParams,
     getServerLang(),
     requireAdmin(),
@@ -45,14 +48,14 @@ export default async function Products({
     const pattern = JSON.stringify(searchPattern(q));
     query = query.or(["name", "name_en", "slug"].map((field) => field + ".ilike." + pattern).join(","));
   }
-  const [productResult, tenantCount] = await Promise.all([
+  const [productResult, billing] = await Promise.all([
     query.order("name").order("id").range(from, to),
-    q ? secureDb.from("products").select("id", { count: "exact", head: true }).eq("store_id", storeId) : null,
+    getStoreBilling(storeId),
   ]);
-  if (tenantCount?.error) throw new Error("Could not load catalog count");
   const products: AdminProductItem[] = checked(productResult);
-  const totalProductsCount = tenantCount?.count ?? productResult.count ?? products.length;
-  const atLimit = totalProductsCount >= activeStore.max_products;
+  const cap = billing.entitlements.max_products;
+  const atLimit = limitReached(billing.products, cap);
+  const denied = params.result === "plan_limit_reached" || params.result === "limit_reached";
   const categories: AdminCategoryItem[] = [];
   for (let offset = 0; ; offset += 200) {
     const batch = checked(
@@ -84,12 +87,11 @@ export default async function Products({
             color: atLimit ? "#b91c1c" : "var(--primary)",
           }}
         >
-          {lang === "en"
-            ? `Products: ${totalProductsCount} / ${activeStore.max_products}`
-            : `المنتجات: ${totalProductsCount} / ${activeStore.max_products}`}
+          {lang === "en" ? "Active products" : "المنتجات المنشورة"} · <bdi>{limitLabel(billing.products, lang)} / {limitLabel(cap, lang)}</bdi>
         </span>
       </div>
-      <Notice result={params.result} />
+      {(atLimit || denied) && <QuotaPrompt resource="products" lang={lang} />}
+      {!denied && <Notice result={params.result} />}
       <details className="card">
         <summary>
           {t(lang, "adminManageCategories")} <span>{categories.length}</span>

@@ -2,10 +2,11 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { serverDb } from "@/lib/db";
 import { adminDb } from "@/lib/supabase/admin";
+import { getStoreBilling } from "@/lib/billing-data";
+import { limitReached, quotaFailure, quotaMessage, type QuotaFailure } from "@/lib/billing";
 import {
   ADMIN_STORE_COOKIE,
   DEFAULT_STORE_ID,
-  computeMobileAppUnlocked,
   getManagedStores,
 } from "@/lib/tenant";
 
@@ -82,12 +83,17 @@ async function resolveAdminBuildContext() {
     "store_has_mobile_app_access",
     { p_store_id: activeStore.store_id },
   );
-  const unlocked =
-    !rpcErr && typeof unlockedRpc === "boolean"
-      ? unlockedRpc
-      : computeMobileAppUnlocked(activeStore.plan, activeStore.mobile_app_access);
+  const billing = await getStoreBilling(activeStore.store_id).catch(() => null);
+  if (rpcErr || !billing) return { error: NextResponse.json({ error: "billing_unavailable",
+    message_en: "Build allowances are temporarily unavailable.", message_ar: "تعذّر تحميل رصيد البناء مؤقتاً." }, { status: 503 }) };
+  return { db, user, activeStore, unlocked: unlockedRpc === true,
+    quota: { current: billing.apk_builds, limit: billing.entitlements.max_monthly_apk_builds } };
+}
 
-  return { db, user, activeStore, unlocked };
+function quotaResponse(failure: QuotaFailure) {
+  const blocked = failure.code === "feature_not_in_plan";
+  return NextResponse.json({ ...failure, error: failure.code, message_en: quotaMessage(failure.resource, "en", blocked),
+    message_ar: quotaMessage(failure.resource, "ar", blocked) }, { status: blocked ? 403 : 409 });
 }
 
 export async function GET() {
@@ -123,6 +129,7 @@ export async function GET() {
   return NextResponse.json({
     store: activeStore,
     unlocked,
+    quota: ctx.quota,
     builds: (builds ?? []) as StoreAppBuildRow[],
     githubConfigured,
   });
@@ -131,20 +138,14 @@ export async function GET() {
 export async function POST(req: Request) {
   const ctx = await resolveAdminBuildContext();
   if ("error" in ctx) return ctx.error;
-  const { user, activeStore, unlocked } = ctx;
+  const { user, activeStore, unlocked, quota } = ctx;
 
-  // 1. Strict server-side plan & super-admin override enforcement
+  // The queue transaction rechecks access and capacity after acquiring the store lock.
   if (!unlocked) {
-    return NextResponse.json(
-      {
-        error: "plan_upgrade_required",
-        message_ar:
-          "مصنع تطبيق الأندرويد متاح لباقات النمو (Growth) والمؤسسي (Enterprise) فقط. قم بترقية باقتك للتفعيل.",
-        message_en:
-          "White-label Android APK Builder is available on Growth and Enterprise plans. Upgrade your plan to unlock.",
-      },
-      { status: 403 },
-    );
+    return quotaResponse({ code: "feature_not_in_plan", resource: "apk_builds", current: quota.current, limit: 0 });
+  }
+  if (quota.limit !== null && limitReached(quota.current, quota.limit)) {
+    return quotaResponse({ code: "plan_limit_reached", resource: "apk_builds", current: quota.current, limit: quota.limit });
   }
 
   let body: { appName?: unknown; iconUrl?: unknown } = {};
@@ -187,7 +188,7 @@ export async function POST(req: Request) {
     );
   }
 
-  // 2. Verify GitHub Actions configuration before creating a build row
+  // Check dispatch configuration before reserving a build.
   const ghToken = process.env.GITHUB_ACTIONS_TOKEN?.trim() || "";
   const ghOwner = process.env.GITHUB_REPO_OWNER?.trim() || "";
   const ghRepo = process.env.GITHUB_REPO_NAME?.trim() || "";
@@ -205,7 +206,6 @@ export async function POST(req: Request) {
     );
   }
 
-  // 3. Use Service-Role adminDb() for store_app_builds writes (direct client writes are revoked by RLS)
   let serviceDb;
   try {
     serviceDb = adminDb();
@@ -224,72 +224,21 @@ export async function POST(req: Request) {
     );
   }
 
-  // 4. Concurrency guard: prevent duplicate simultaneous builds for the same store
-  const { data: activeBuilds, error: activeErr } = await serviceDb
-    .from("store_app_builds")
-    .select("id,status,created_at")
-    .eq("store_id", activeStore.store_id)
-    .in("status", ["queued", "building"])
-    .limit(1);
-
-  if (activeErr) {
-    console.error("[mobile-builds][POST] concurrency check failed:", activeErr.message);
-    return NextResponse.json(
-      {
-        error: "db_check_failed",
-        message_ar: "تعذر التحقق من حالة البناء الحالية. يرجى المحاولة مرة أخرى.",
-        message_en: "Failed to check active builds right now. Please try again.",
-      },
-      { status: 500 },
-    );
-  }
-
-  if (activeBuilds && activeBuilds.length > 0) {
-    return NextResponse.json(
-      {
-        error: "build_in_progress",
-        message_ar:
-          "يوجد بناء APK قيد التنفيذ حالياً لهذا المتجر. انتظر حتى ينتهي.",
-        message_en:
-          "An APK build is already in progress for this store. Please wait for it to finish.",
-      },
-      { status: 409 },
-    );
-  }
-
-  // 5. Compute monotonically increasing version_code for this store
-  const { data: latestRow } = await serviceDb
-    .from("store_app_builds")
-    .select("version_code")
-    .eq("store_id", activeStore.store_id)
-    .order("version_code", { ascending: false })
-    .limit(1)
-    .maybeSingle<{ version_code: number }>();
-
-  const nextVersionCode = Math.max(100, Number(latestRow?.version_code ?? 99) + 1);
-  const nextVersionName = `1.0.${nextVersionCode - 99}`;
   const appIdSuffix = slugToAppIdSuffix(activeStore.slug);
   const packageId = `com.whitelabel.commerce${appIdSuffix}`;
   const workflowPageUrl = `https://github.com/${encodeURIComponent(ghOwner)}/${encodeURIComponent(ghRepo)}/actions/workflows/build-store-apk.yml`;
 
   const { data: created, error: insertError } = await serviceDb
-    .from("store_app_builds")
-    .insert({
-      store_id: activeStore.store_id,
-      requested_by: user.id,
-      app_name: appName,
-      app_id_suffix: appIdSuffix,
-      package_id: packageId,
-      icon_url: rawIcon || null,
-      version_code: nextVersionCode,
-      version_name: nextVersionName,
-      status: "queued",
-      github_run_url: workflowPageUrl,
-    })
+    .rpc("queue_store_apk", { p_store: activeStore.store_id, p_requester: user.id, p_name: appName,
+      p_suffix: appIdSuffix, p_package: packageId, p_icon: rawIcon || null, p_workflow: workflowPageUrl })
     .select(BUILD_SELECT)
     .single<StoreAppBuildRow>();
 
   if (insertError || !created) {
+    const failure = quotaFailure(insertError);
+    if (failure) return quotaResponse(failure);
+    if (insertError?.message === "build_in_progress") return NextResponse.json({ error: "build_in_progress",
+      message_en: "An APK build is already in progress for this store.", message_ar: "يوجد طلب بناء قيد التنفيذ لهذا المتجر." }, { status: 409 });
     const detail = insertError?.message || "Unknown database insert error";
     console.error("[mobile-builds][POST] insert failed:", detail);
     return NextResponse.json(
@@ -302,7 +251,7 @@ export async function POST(req: Request) {
     );
   }
 
-  // 6. Dispatch .github/workflows/build-store-apk.yml with strictly stringified inputs matching workflow YAML 1-to-1
+  // Dispatch the exact version reserved by PostgreSQL.
   const dispatchUrl = `https://api.github.com/repos/${encodeURIComponent(ghOwner)}/${encodeURIComponent(ghRepo)}/actions/workflows/build-store-apk.yml/dispatches`;
   const dispatchPayload = {
     ref: "main",
@@ -313,8 +262,8 @@ export async function POST(req: Request) {
       app_name: String(appName),
       app_id_suffix: String(appIdSuffix),
       icon_url: String(rawIcon || ""),
-      version_code: String(nextVersionCode),
-      version_name: String(nextVersionName),
+      version_code: String(created.version_code),
+      version_name: created.version_name,
     },
   };
 

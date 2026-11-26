@@ -19,6 +19,7 @@ import {
   RotateCcw,
   Megaphone,
   ShoppingCart,
+  CreditCard,
 } from "lucide-react";
 import { useLanguage } from "@/components/language-provider";
 import type { DictKey } from "@/lib/i18n";
@@ -45,6 +46,7 @@ const sections: {
   { url: "/admin/tickets", key: "adminTickets", icon: MessagesSquare },
   { url: "/admin/customizer", key: "adminCustomizer", icon: Palette, tourId: "nav-customizer" },
   { url: "/admin/mobile-app", key: "adminMobileApp", icon: Smartphone, isMobileApp: true },
+  { url: "/admin/billing", key: "adminBilling", icon: CreditCard },
   { url: "/admin/settings", key: "adminSettings", icon: Settings, tourId: "nav-settings" },
 ];
 
@@ -140,7 +142,7 @@ export default function Navigation({
                 }}
               >
                 <Lock size={10} />
-                PRO
+                {isEn ? "Paused" : "متوقف"}
               </span>
             )}
           </Link>

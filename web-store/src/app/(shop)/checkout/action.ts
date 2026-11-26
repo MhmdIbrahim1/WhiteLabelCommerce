@@ -1,4 +1,5 @@
 "use server";
+import { quotaFailure, quotaMessage } from "@/lib/billing";
 import { serverDb } from "@/lib/db";
 import { getServerLang } from "@/lib/i18n-server";
 import { notifyOrderCreated } from "@/lib/notifications/events";
@@ -177,6 +178,8 @@ export async function checkout(
     .single<{ order_number: string; amount: number; order_currency: string }>();
 
   if (error || !data) {
+    const quota = quotaFailure(error);
+    if (quota?.resource === "orders") return { error: quotaMessage("orders", isEn ? "en" : "ar") };
     switch (error?.message) {
       case "store_suspended":
         return {

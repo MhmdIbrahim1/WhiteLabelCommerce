@@ -1,0 +1,21 @@
+.plan-comparison { --plan-ink: #1f4337; --plan-line: #d7e1d9; color: var(--plan-ink); }
+.plan-comparison > header, .plan-card-title { display: flex; align-items: center; justify-content: space-between; gap: .65rem; flex-wrap: wrap; }
+.plan-comparison > header { margin-block-end: 1.2rem; }
+.plan-comparison > header h2 { margin: 0; }
+.plan-cycles { display: inline-flex; border: 1px solid var(--plan-line); border-radius: 2rem; padding: 3px; background: #f3f6f1; }
+.plan-cycles button { min-height: 2.25rem; border: 0; border-radius: 2rem; padding: .35rem .9rem; font: inherit; font-size: .88rem; cursor: pointer; background: transparent; color: var(--plan-ink); }
+.plan-cycles button[aria-pressed=true] { background: var(--plan-ink); color: white; }
+.plan-cards { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,220px),1fr)); gap: 1rem; align-items: stretch; }
+.plan-card { display: flex; flex-direction: column; border: 1px solid var(--plan-line); border-radius: .85rem; padding: clamp(1rem,2.1vw,1.55rem); background: #fffefa; min-width: 0; overflow-wrap: anywhere; }
+.plan-card[data-current=true] { border-color: #478166; }
+.plan-card h3, .plan-card p { margin: 0; }
+.plan-card h3 { font-size: 1.2rem; }
+.plan-card .plan-description { margin-block: .45rem 1.1rem; font-size: .93rem; color: #52665c; }
+.plan-card .plan-price { display: flex; gap: .35rem; align-items: baseline; flex-wrap: wrap; margin-block-start: auto; color: var(--plan-ink); }
+.plan-price strong { font-size: clamp(1.45rem,2.7vw,2.15rem); line-height: 1.2; font-variant-numeric: tabular-nums; }
+.plan-price span { font-size: .85rem; }
+.plan-tag { display: inline-block; align-self: flex-start; width: fit-content; border-radius: 1rem; padding: .18rem .6rem; color: #1c563b; background: #e7f2e6; font-size: .77rem; }
+.plan-savings { margin-block-start: .45rem; }
+.plan-card dl { margin: 1rem 0 0; padding-block-start: .7rem; border-top: 1px solid var(--plan-line); }
+.plan-card dl > div { display: flex; justify-content: space-between; align-items: baseline; gap: .7rem; padding-block: .28rem; font-size: .89rem; }
+.plan-card dd { font-weight: 650; margin: 0; text-align: end; }

@@ -16,3 +16,4 @@ Prefer rolled-back SQL tests. For browser submissions, identify test records pre
 - The Architect implements the change, applies required migrations, runs the agreed build checks, then writes `STATUS: READY_FOR_QA` in the ignored root `.handoff.md` and stops. Include changed files, applied migrations, environment variables, exact QA steps and a suggested commit message.
 - QA/Release verifies the SQL and affected browser flows, fixes minor issues, cleans up its test records and inventory, then commits and pushes. After release, reset the handoff to `STATUS: IDLE`.
 - For a deep architectural or SQL issue, QA/Release writes `STATUS: NEEDS_ARCH_FIX` with the evidence and returns the work to the Architect before release.
+- For live browser QA, always run headless Playwright/Node scripts from the terminal — NEVER use `chrome-devtools` MCP.

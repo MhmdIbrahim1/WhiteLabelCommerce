@@ -14,12 +14,10 @@ export type StoreStatus = "active" | "trial" | "suspended";
 export type MobileAppAccess = "plan" | "enabled" | "disabled";
 
 export function computeMobileAppUnlocked(
-  plan: StorePlan,
+  _plan: StorePlan,
   access?: MobileAppAccess | null,
 ): boolean {
-  if (access === "enabled") return true;
-  if (access === "disabled") return false;
-  return plan === "growth" || plan === "enterprise";
+  return access !== "disabled";
 }
 
 export type StoreRecord = {

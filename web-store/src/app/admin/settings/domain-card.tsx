@@ -2,10 +2,11 @@
 
 import { useActionState, useState } from "react";
 import { Check, ChevronDown, Copy, Globe } from "lucide-react";
+import { QuotaPrompt } from "@/components/quota-prompt";
 import { manageDomain, type DomainResult, type DomainRow, type DomainState } from "./domain-actions";
 import "./domains.css";
 
-const messages: Record<Exclude<DomainResult, "">, [string, string]> = {
+const messages: Record<Exclude<Extract<DomainResult, string>, "">, [string, string]> = {
   added: ["Domain added. Publish the TXT record below.", "تمت إضافة النطاق. انشر سجل TXT الموضح أدناه."],
   verified: ["Ownership verified. Connect the domain to your hosting provider, then activate it.", "تم إثبات الملكية. اربط النطاق بالاستضافة ثم فعّله."],
   activated: ["Your custom domain is active.", "تم تفعيل نطاقك المخصص."],
@@ -36,8 +37,8 @@ function CopyValue({ label, value, en }: { label: string; value: string; en: boo
   </div>;
 }
 
-export function DomainCard({ storeId, en, subdomain, target, rows, unavailable }: {
-  storeId: string; en: boolean; subdomain: string; target: string | null; rows: DomainRow[]; unavailable: boolean;
+export function DomainCard({ storeId, en, subdomain, target, rows, unavailable, canAdd }: {
+  storeId: string; en: boolean; subdomain: string; target: string | null; rows: DomainRow[]; unavailable: boolean; canAdd: boolean;
 }) {
   const [result, act, pending] = useActionState(manageDomain.bind(null, storeId), "");
   const t = (english: string, arabic: string) => en ? english : arabic;
@@ -53,13 +54,14 @@ export function DomainCard({ storeId, en, subdomain, target, rows, unavailable }
       <summary><span>{t("Custom domains", "النطاقات المخصصة")}</span><ChevronDown size={17} /></summary>
       {unavailable ? <p role="status">{messages.unavailable[ix]}</p> : <>
         <p>{t("Connect an address you own. Your store subdomain stays available.", "اربط عنواناً تملكه بمتجرك. يبقى النطاق الفرعي متاحاً.")}</p>
-        <form action={act} className="domain-add">
+        {(!canAdd || typeof result === "object") && <QuotaPrompt resource="custom_domains" lang={en ? "en" : "ar"} />}
+        {canAdd && <form action={act} className="domain-add">
           <label htmlFor="new-domain">{t("Domain name", "اسم النطاق")}</label>
           <input id="new-domain" name="domain" dir="ltr" type="text" inputMode="url" autoCapitalize="none"
             autoComplete="off" spellCheck={false} required maxLength={253} placeholder="shop.example.com" />
           <button name="action" value="add" disabled={pending}>{t("Add domain", "إضافة نطاق")}</button>
-        </form>
-        <p role="status" aria-live="polite" className="domain-feedback">{pending ? t("Saving…", "جارٍ الحفظ…") : result && messages[result][ix]}</p>
+        </form>}
+        <p role="status" aria-live="polite" className="domain-feedback">{pending ? t("Saving…", "جارٍ الحفظ…") : typeof result === "string" && result && messages[result][ix]}</p>
         {rows.map(row => <article className="domain-item" key={row.id}>
           <header>{row.status === "active" ? <a href={"https://" + row.domain} target="_blank" rel="noreferrer" dir="ltr">{row.domain}</a> :
             <b dir="ltr">{row.domain}</b>}<span className="domain-status" data-state={row.status}>{states[row.status][ix]}</span></header>

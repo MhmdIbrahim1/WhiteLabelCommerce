@@ -17,7 +17,6 @@ import {
   TrendingUp,
   Activity,
   LayoutDashboard,
-  CheckCircle2,
   Smartphone,
   Lock,
   UserPlus,
@@ -27,10 +26,10 @@ import {
 } from "lucide-react";
 import { date, money } from "@/lib/brand";
 import { localizedText } from "@/lib/i18n";
+import { limitLabel, type Plan } from "@/lib/billing";
 import {
   storefrontPath,
   type MobileAppAccess,
-  type StorePlan,
   type StoreStatus,
 } from "@/lib/tenant-shared";
 import { LanguageToggle, useLanguage } from "@/components/language-provider";
@@ -41,17 +40,14 @@ import {
   type SuperAdminStoreOverview,
 } from "./actions";
 
-const PLAN_PRESETS: { plan: StorePlan; maxProducts: number; ar: string; en: string }[] = [
-  { plan: "starter", maxProducts: 50, ar: "مبتدئ (50 منتج)", en: "Starter (50 products)" },
-  { plan: "growth", maxProducts: 500, ar: "نمو (500 منتج)", en: "Growth (500 products)" },
-  { plan: "enterprise", maxProducts: 10000, ar: "مؤسسي (10,000 منتج)", en: "Enterprise (10,000 products)" },
-];
 
 export function SuperAdminPortal({
   initialStores,
+  plans,
   adminEmail,
 }: {
   initialStores: SuperAdminStoreOverview[];
+  plans: Pick<Plan, "code" | "name_ar" | "name_en">[];
   adminEmail: string;
 }) {
   const { lang } = useLanguage();
@@ -64,8 +60,6 @@ export function SuperAdminPortal({
 
   const [editingStore, setEditingStore] =
     useState<SuperAdminStoreOverview | null>(null);
-  const [modalPlan, setModalPlan] = useState<StorePlan>("starter");
-  const [modalMaxProducts, setModalMaxProducts] = useState<string>("50");
   const [modalExpiresAt, setModalExpiresAt] = useState<string>("");
   const [modalClearExpiry, setModalClearExpiry] = useState<boolean>(false);
   const [modalMobileAccess, setModalMobileAccess] =
@@ -96,7 +90,7 @@ export function SuperAdminPortal({
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return stores.filter((s) => {
-      if (planFilter !== "all" && s.plan !== planFilter) return false;
+      if (planFilter !== "all" && s.billingPlan !== planFilter) return false;
       if (statusFilter !== "all" && s.status !== statusFilter) return false;
       if (!q) return true;
       return (
@@ -110,8 +104,6 @@ export function SuperAdminPortal({
 
   const openEditModal = (st: SuperAdminStoreOverview) => {
     setEditingStore(st);
-    setModalPlan(st.plan);
-    setModalMaxProducts(String(st.max_products));
     setModalExpiresAt(
       st.subscription_expires_at
         ? st.subscription_expires_at.slice(0, 10)
@@ -222,14 +214,10 @@ export function SuperAdminPortal({
     e.preventDefault();
     if (!editingStore) return;
     const targetId = editingStore.store_id;
-    const parsedMax = Number(modalMaxProducts);
-    if (!Number.isFinite(parsedMax) || parsedMax < 0) return;
 
     startTransition(async () => {
       const res = await updateStorePlanAndStatusAction({
         storeId: targetId,
-        plan: modalPlan,
-        maxProducts: Math.trunc(parsedMax),
         subscriptionExpiresAt: modalClearExpiry
           ? null
           : modalExpiresAt
@@ -243,8 +231,8 @@ export function SuperAdminPortal({
         setFeedback({
           kind: "err",
           text: isEn
-            ? "Could not update store plan and limits."
-            : "تعذر تحديث باقة وحدود المتجر.",
+            ? "Could not update the store settings."
+            : "تعذر تحديث إعدادات المتجر.",
         });
         return;
       }
@@ -268,8 +256,8 @@ export function SuperAdminPortal({
       setFeedback({
         kind: "ok",
         text: isEn
-          ? "Store plan, limits & Mobile App access updated successfully."
-          : "تم تحديث الباقة والحدود وصلاحية تطبيق الموبايل بنجاح.",
+          ? "Store settings saved."
+          : "تم حفظ إعدادات المتجر.",
       });
     });
   };
@@ -312,10 +300,9 @@ export function SuperAdminPortal({
     });
   };
 
-  const planLabel = (plan: StorePlan) => {
-    if (plan === "enterprise") return isEn ? "Enterprise" : "مؤسسي";
-    if (plan === "growth") return isEn ? "Growth" : "نمو";
-    return isEn ? "Starter" : "مبتدئ";
+  const planLabel = (code: Plan["code"]) => {
+    const plan = plans.find(p => p.code === code)!;
+    return localizedText(lang, plan.name_ar, plan.name_en);
   };
 
   const statusLabel = (status: StoreStatus) => {
@@ -489,9 +476,7 @@ export function SuperAdminPortal({
                 style={{ width: "auto", fontSize: "0.86rem" }}
               >
                 <option value="all">{isEn ? "All Plans" : "كل الباقات"}</option>
-                <option value="starter">{isEn ? "Starter" : "مبتدئ"}</option>
-                <option value="growth">{isEn ? "Growth" : "نمو"}</option>
-                <option value="enterprise">{isEn ? "Enterprise" : "مؤسسي"}</option>
+                {plans.map(p => <option key={p.code} value={p.code}>{planLabel(p.code)}</option>)}
               </select>
 
               <select
@@ -536,13 +521,8 @@ export function SuperAdminPortal({
                 {filtered.map((st) => {
                   const title = localizedText(lang, st.name_ar, st.name_en);
                   const liveHref = storefrontPath(st.slug);
-                  const pct =
-                    st.max_products > 0
-                      ? Math.min(
-                          100,
-                          Math.round((st.products_count / st.max_products) * 100),
-                        )
-                      : 100;
+                  const pct = st.productLimit === null ? 0 : st.productLimit === 0 ? 100 :
+                    Math.min(100, Math.round(100 * st.active_products_count / st.productLimit));
                   return (
                     <tr
                       key={st.store_id}
@@ -584,7 +564,7 @@ export function SuperAdminPortal({
                       <td className="py-3.5 px-3 align-top">
                         <div className="flex flex-wrap items-center gap-1.5">
                           <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-bold text-slate-800">
-                            {planLabel(st.plan)}
+                            {planLabel(st.billingPlan)}
                           </span>
                           <span
                             className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-bold"
@@ -625,7 +605,7 @@ export function SuperAdminPortal({
 
                       <td className="py-3.5 px-3 align-top min-w-[130px]">
                         <div className="text-xs font-bold text-slate-800">
-                          {st.products_count} / {st.max_products}
+                          {st.active_products_count} / {limitLabel(st.productLimit, lang)}
                         </div>
                         <div className="mt-1.5 h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
                           <div
@@ -663,7 +643,7 @@ export function SuperAdminPortal({
                             }}
                           >
                             <Edit3 size={13} />
-                            <span>{isEn ? "Plan & Limits" : "الباقة والحدود"}</span>
+                            <span>{isEn ? "Store settings" : "إعدادات المتجر"}</span>
                           </button>
 
                           <button
@@ -789,38 +769,11 @@ export function SuperAdminPortal({
             <form onSubmit={handleSaveModal} className="space-y-4" style={{ marginTop: 0 }}>
               <div className="space-y-2">
                 <span className="block text-xs font-bold text-slate-700">
-                  {isEn ? "Subscription Tier" : "باقة الاشتراك"}
+                  {isEn ? "Subscription and quotas" : "الاشتراك وحدود الاستخدام"}
                 </span>
-                <div className="grid gap-2">
-                  {PLAN_PRESETS.map((tier) => {
-                    const active = modalPlan === tier.plan;
-                    return (
-                      <button
-                        key={tier.plan}
-                        type="button"
-                        onClick={() => {
-                          setModalPlan(tier.plan);
-                          setModalMaxProducts(String(tier.maxProducts));
-                        }}
-                        style={{
-                          width: "100%",
-                          justifyContent: "space-between",
-                          background: active ? "#f0f9ff" : "#ffffff",
-                          color: "#0f172a",
-                          border: active
-                            ? "2px solid #0284c7"
-                            : "1px solid #e2e8f0",
-                          borderRadius: "10px",
-                          padding: "0.65rem 0.85rem",
-                          fontSize: "0.86rem",
-                        }}
-                      >
-                        <span>{isEn ? tier.en : tier.ar}</span>
-                        {active && <CheckCircle2 size={16} className="text-sky-600" />}
-                      </button>
-                    );
-                  })}
-                </div>
+                <Link className="underline" href={"/admin/billing?tab=manage&store=" + editingStore.store_id + "#subscriptions"}>
+                  {isEn ? "Manage in Billing" : "إدارة الاشتراك في الفوترة"}
+                </Link>
               </div>
 
               {/* 3-Way Android App Builder Override */}
@@ -880,22 +833,11 @@ export function SuperAdminPortal({
                 </div>
                 <p className="text-[11px] text-slate-500 m-0">
                   {isEn
-                    ? "Follow Plan unlocks APK Builder on Growth & Enterprise plans and locks Starter."
-                    : "خيار «حسب الباقة» يفعّل بناء التطبيق لباقات النمو والمؤسسي ويقفله لباقة المبتدئ."}
+                    ? "Build requests use the store’s monthly APK allowance."
+                    : "تُحتسب طلبات البناء ضمن الرصيد الشهري المحدد لهذا المتجر."}
                 </p>
               </div>
 
-              <label>
-                <span>{isEn ? "Max Products Limit" : "الحد الأقصى للمنتجات"}</span>
-                <input
-                  type="number"
-                  min={0}
-                  step={1}
-                  required
-                  value={modalMaxProducts}
-                  onChange={(e) => setModalMaxProducts(e.target.value)}
-                />
-              </label>
 
               <label>
                 <span>

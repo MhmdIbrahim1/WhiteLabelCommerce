@@ -1,4 +1,5 @@
 import { requireAdmin } from "@/lib/db";
+import { getStoreBilling } from "@/lib/billing-data";
 import { adminDb } from "@/lib/supabase/admin";
 import brand from "@/lib/brand";
 import { photo } from "@/lib/shop";
@@ -17,7 +18,6 @@ type StoreSettingsSelect = {
   surface_color: string | null;
   border_radius: number | null;
   currency: string | null;
-  whatsapp_number: string | null;
   support_email: string | null;
   banners: string[] | null;
   theme_template: string | null;
@@ -43,11 +43,11 @@ export default async function AdminMobileAppPage() {
   const { db, storeId, activeStore, isSuperAdmin } = await requireAdmin();
   const secureDb = adminDb();
 
-  const [settingsRes, accessRes, buildsRes, productsRes] = await Promise.all([
+  const [settingsRes, accessRes, buildsRes, productsRes, billing] = await Promise.all([
     db
       .from("store_settings")
       .select(
-        "store_name,primary_color,secondary_color,surface_color,border_radius,currency,whatsapp_number,support_email,banners,theme_template,ui_config",
+        "store_name,primary_color,secondary_color,surface_color,border_radius,currency,support_email,banners,theme_template,ui_config",
       )
       .eq("store_id", storeId)
       .maybeSingle<StoreSettingsSelect>(),
@@ -69,6 +69,7 @@ export default async function AdminMobileAppPage() {
       .eq("is_active", true)
       .order("created_at", { ascending: false })
       .limit(4),
+    getStoreBilling(storeId),
   ]);
 
   const unlocked =
@@ -145,14 +146,14 @@ export default async function AdminMobileAppPage() {
 
   return (
     <MobileAppStudio
-      key={activeStore.store_id}
+      key={[storeId, billing.period_ym, billing.entitlements.max_monthly_apk_builds, billing.apk_builds, unlocked].join(":")}
       store={{
         storeId: activeStore.store_id,
         slug: activeStore.slug,
         nameAr: s?.store_name || activeStore.name_ar,
         nameEn: activeStore.name_en || s?.store_name || activeStore.name_ar,
-        plan: activeStore.plan,
-        mobileAppAccess: activeStore.mobile_app_access ?? "plan",
+        planNameAr: billing.plan.name_ar,
+        planNameEn: billing.plan.name_en,
         logoUrl: lastUploadedIcon,
         primaryColor: uiConfig.global.primaryButtonBg,
         primaryText: uiConfig.global.primaryButtonText,
@@ -162,7 +163,6 @@ export default async function AdminMobileAppPage() {
         borderRadius: uiConfig.global.borderRadius,
         currency: s?.currency || brand.currency,
         packageId: `com.whitelabel.commerce.${safeSlug}`,
-        whatsappNumber: s?.whatsapp_number ?? "",
         supportEmail: s?.support_email ?? "",
       }}
       preview={{
@@ -193,6 +193,7 @@ export default async function AdminMobileAppPage() {
       isSuperAdmin={isSuperAdmin}
       githubConfigured={githubConfigured}
       initialBuilds={builds}
+      initialQuota={{ current: billing.apk_builds, limit: billing.entitlements.max_monthly_apk_builds }}
     />
   );
 }

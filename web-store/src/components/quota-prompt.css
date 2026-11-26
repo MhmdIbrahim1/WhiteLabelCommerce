@@ -1,0 +1,2 @@
+.quota-prompt { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: .5rem 1rem; padding: .8rem 1rem; margin-block: .65rem; border: 1px solid #c8daca; border-inline-start: 3px solid #598268; border-radius: .55rem; color: #2f503e; background: #f3f8f1; font-size: .92rem; }
+.quota-prompt a { color: #234c37; font-weight: 650; text-decoration: underline; text-underline-offset: .16em; }

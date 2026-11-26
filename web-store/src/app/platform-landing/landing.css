@@ -52,23 +52,18 @@
 .platform-launch { background: #f0f2e9; border-block: 1px solid var(--rule); }
 .platform-launch > div, .platform-plans { padding-block: clamp(38px, 5vw, 78px); }
 .platform-page h2 { font-size: clamp(1.7rem, 3vw, 2.65rem); font-weight: 650; line-height: 1.3; margin: 0 0 1.6rem; }
-.platform-launch ol, .platform-plan-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: clamp(18px, 4vw, 65px); }
-.platform-launch ol, .platform-plans ul { list-style: none; padding: 0; margin: 0; }
+.platform-launch ol { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: clamp(18px, 4vw, 65px); list-style: none; padding: 0; margin: 0; }
 .platform-launch li { padding-block-start: 1.1rem; border-top: 2px solid #a8bcaa; }
 .platform-page h3 { margin: .6rem 0 .4rem; font-size: 1.25rem; font-weight: 680; }
-.platform-launch li p, .platform-plans p { color: #52675b; }
-.platform-plan-grid { gap: 1rem; }
-.platform-plan-grid article { padding: 1.2rem 1.4rem; border: 1px solid var(--rule); border-radius: .65rem; background: #fffef9; }
-.platform-plans h3 { margin-top: 0; }
-.platform-plans ul { border-top: 1px solid var(--rule); margin-top: 1rem; padding-top: .65rem; }
-.platform-plans li { display: flex; gap: .4rem; align-items: center; font-size: .9rem; }
+.platform-launch li p { color: #52675b; }
+.platform-plans h3, .platform-plans .plan-comparison h2 { margin: 0; }
 .platform-end { border-top: 1px solid var(--rule); justify-content: space-between; padding-block: 1.25rem; gap: 1rem; font-size: .85rem; }
 @media (max-width: 800px) {
   .platform-hero { grid-template-columns: 1fr; gap: 1.8rem; }
   .platform-pitch h1 { font-size: clamp(2.7rem, 8.5vw, 4rem); }
   .platform-preview { width: min(100%, 540px); }
   .platform-photo { height: clamp(112px, 29vw, 200px); }
-  .platform-launch ol, .platform-plan-grid { grid-template-columns: 1fr; }
+  .platform-launch ol { grid-template-columns: 1fr; }
 }
 @media (max-width: 540px) {
   .platform-bar > div { min-height: 60px; }

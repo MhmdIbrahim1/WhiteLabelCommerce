@@ -15,11 +15,13 @@ import type { ManagedStoreSummary } from "@/lib/tenant-shared";
 import { switchAdminStore } from "./mutations";
 
 export function AdminStoreSwitcher({
+  planName,
   activeStore,
   liveHref,
   managedStores,
   isSuperAdmin,
 }: {
+  planName: string | null;
   activeStore: ManagedStoreSummary;
   liveHref: string;
   managedStores: ManagedStoreSummary[];
@@ -32,12 +34,6 @@ export function AdminStoreSwitcher({
 
   const canSwitch = managedStores.length > 1 || isSuperAdmin;
   const activeName = localizedText(lang, activeStore.name_ar, activeStore.name_en);
-
-  const planLabel = (plan: string) => {
-    if (plan === "enterprise") return isEn ? "Enterprise" : "مؤسسي";
-    if (plan === "growth") return isEn ? "Growth" : "نمو";
-    return isEn ? "Starter" : "مبتدئ";
-  };
 
   const statusColor =
     activeStore.status === "suspended"
@@ -95,9 +91,9 @@ export function AdminStoreSwitcher({
                 flexShrink: 0,
               }}
             />
-            <span style={{ whiteSpace: "nowrap", flexShrink: 0 }}>
-              {planLabel(activeStore.plan)}
-            </span>
+            {planName && <span style={{ whiteSpace: "nowrap", flexShrink: 0 }}>
+              {planName}
+            </span>}
             <span
               dir="ltr"
               title={`/${activeStore.slug}`}

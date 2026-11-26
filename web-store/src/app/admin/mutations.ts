@@ -16,6 +16,7 @@ import {
   resolveCarrierLabel,
 } from "@/lib/shipping";
 import { requireAdmin } from "@/lib/db";
+import { quotaFailure } from "@/lib/billing";
 import { ADMIN_STORE_COOKIE } from "@/lib/tenant-shared";
 import { adminDb } from "@/lib/supabase/admin";
 import { dispatchNotification } from "@/lib/notifications/dispatcher";
@@ -130,7 +131,7 @@ function orderLimitField(form: FormData, name: string, destination: string) {
 
 export async function saveProduct(f: FormData) {
   const destination = productListDestination(f);
-  const { db, storeId, activeStore } = await requireAdmin(),
+  const { db, storeId } = await requireAdmin(),
     id = text(f, "id"),
     oldPrice = text(f, "old_price"),
     costPriceRaw = text(f, "cost_price"),
@@ -241,17 +242,6 @@ export async function saveProduct(f: FormData) {
     finish(destination, false);
   }
 
-  // Enforce plan max_products cap before uploading/inserting a new product
-  if (!id) {
-    const { count } = await db
-      .from("products")
-      .select("id", { count: "exact", head: true })
-      .eq("store_id", storeId);
-    if ((count ?? 0) >= activeStore.max_products) {
-      finish(destination, false, "limit_reached");
-    }
-  }
-
   const bucket = db.storage.from("product-images");
   const file = f.get("image");
   let image: string | undefined;
@@ -312,8 +302,8 @@ export async function saveProduct(f: FormData) {
       previous.startsWith("products/"))
   )
     await bucket.remove([previous]).catch(() => undefined);
-  if (result.error?.message?.includes("store_product_limit_reached")) {
-    finish(destination, false, "limit_reached");
+  if (quotaFailure(result.error)?.resource === "products") {
+    finish(destination, false, "plan_limit_reached");
   }
   if (!result.error && id) {
     if (previousStock !== null && previousStock <= 0 && stock > 0) {

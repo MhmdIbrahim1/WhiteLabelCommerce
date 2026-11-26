@@ -1,6 +1,7 @@
 import { LogOut, PanelTop, UserRound, AlertTriangle } from "lucide-react";
 import brand from "@/lib/brand";
 import { requireAdmin, checked } from "@/lib/db";
+import { getStoreBilling } from "@/lib/billing-data";
 import { localizedText, t } from "@/lib/i18n";
 import { getServerLang } from "@/lib/i18n-server";
 import { merchantStorefrontUrl } from "@/lib/tenant";
@@ -15,7 +16,7 @@ export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
   const [{ db, user, storeId, activeStore, managedStores, isSuperAdmin }, lang] =
     await Promise.all([requireAdmin(), getServerLang()]);
   const isEn = lang === "en";
-  const [settingsRes, pendingReturnsRes, openAbandonedRes, liveUrl] = await Promise.all([
+  const [settingsRes, pendingReturnsRes, openAbandonedRes, liveUrl, billing] = await Promise.all([
     db
       .from("store_settings")
       .select("store_id,store_name")
@@ -32,6 +33,7 @@ export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
       .eq("store_id", storeId)
       .eq("status", "open"),
     merchantStorefrontUrl(activeStore.slug),
+    getStoreBilling(storeId).catch(() => null),
   ]);
   const settings = checked(settingsRes);
   const pendingReturnsCount = pendingReturnsRes.error
@@ -48,6 +50,7 @@ export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
     <div className="shell">
       <aside>
         <AdminStoreSwitcher
+          planName={billing ? localizedText(lang, billing.plan.name_ar, billing.plan.name_en) : null}
           liveHref={liveUrl}
           activeStore={activeStore}
           managedStores={managedStores}
