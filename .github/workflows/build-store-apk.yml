@@ -275,6 +275,7 @@ jobs:
           GITHUB_REPO: ${{ github.repository }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          EMAIL_PASSWORD_RESET_ENABLED: ${{ vars.EMAIL_PASSWORD_RESET_ENABLED || 'false' }}
           WEB_STORE_BASE_URL: ${{ secrets.WEB_STORE_BASE_URL || vars.WEB_STORE_BASE_URL }}
           STORE_ID_INPUT: ${{ env.SAFE_STORE_ID }}
           APP_NAME_INPUT: ${{ env.SAFE_APP_NAME }}
@@ -311,6 +312,7 @@ jobs:
           "$APKSIGNER" verify --verbose "$RELEASE_APK"
           RELEASE_TAG="store-${STORE_SLUG}-b${VERSION_CODE_INPUT}"
           echo "RELEASE_APK=${RELEASE_APK}" >> "$GITHUB_ENV"
+          echo "APK_SHA256=$(sha256sum "$RELEASE_APK" | cut -d" " -f1)" >> "$GITHUB_ENV"
           echo "APK_FILENAME=${APK_FILENAME}" >> "$GITHUB_ENV"
           echo "RELEASE_TAG=${RELEASE_TAG}" >> "$GITHUB_ENV"
           ls -lh "$RELEASE_APK"
@@ -334,7 +336,7 @@ jobs:
           DOWNLOAD_URL: https://github.com/${{ github.repository }}/releases/download/${{ env.RELEASE_TAG }}/${{ env.APK_FILENAME }}
         run: |
           if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
-            exit 0
+            exit 1
           fi
           python3 - << 'PY'
           import datetime, json, os, re, sys, urllib.parse, urllib.request
@@ -346,6 +348,7 @@ jobs:
           url = f"{os.environ['SUPABASE_URL'].rstrip('/')}/rest/v1/store_app_builds?{query}"
           payload = json.dumps({
               "status": "succeeded",
+              "sha256": os.environ["APK_SHA256"],
               "apk_download_url": os.environ["DOWNLOAD_URL"],
               "error_message": None,
               "updated_at": now_iso,
@@ -359,12 +362,15 @@ jobs:
                   "apikey": os.environ["SUPABASE_SERVICE_ROLE_KEY"],
                   "Authorization": f"Bearer {os.environ['SUPABASE_SERVICE_ROLE_KEY']}",
                   "Content-Type": "application/json",
-                  "Prefer": "return=minimal",
+                  "Prefer": "return=representation",
                   "User-Agent": "WhiteLabelCommerce-CI/1.0",
               },
           )
           with urllib.request.urlopen(req, timeout=20) as resp:
-              print("Marked build succeeded:", resp.status)
+              rows = json.load(resp)
+              if len(rows) != 1 or rows[0].get("sha256") != os.environ["APK_SHA256"]:
+                  sys.exit("::error::Build metadata was not persisted.")
+              print("Recorded signed APK and checksum.")
           PY
 
       - name: Mark build failed in Supabase

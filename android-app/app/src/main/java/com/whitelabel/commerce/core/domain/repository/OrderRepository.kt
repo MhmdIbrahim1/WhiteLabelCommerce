@@ -1,5 +1,7 @@
 package com.whitelabel.commerce.core.domain.repository
 
+import com.whitelabel.commerce.core.domain.model.OrderCardSummary
+import com.whitelabel.commerce.core.domain.model.AccountCounts
 import com.whitelabel.commerce.core.domain.model.CartItem
 import com.whitelabel.commerce.core.domain.model.CheckoutResult
 import com.whitelabel.commerce.core.domain.model.GuestOrderTracking
@@ -50,7 +52,9 @@ interface OrderRepository {
      * Reads orders belonging to the currently signed-in customer (`orders.user_id = auth.uid()`).
      * Returns an empty list for anonymous guests without triggering an unauthorized query.
      */
-    suspend fun getMyOrders(): Result<List<Order>>
+    suspend fun getMyOrders(filter: String = "all", after: OrderCardSummary? = null): Result<List<OrderCardSummary>>
+    suspend fun getOrderDetail(id: String): Result<Order?>
+    suspend fun getAccountCounts(): Result<AccountCounts>
 
     suspend fun saveLocalOrderReceipt(receipt: SavedOrderReceipt)
 

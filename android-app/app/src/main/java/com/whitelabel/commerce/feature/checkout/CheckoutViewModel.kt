@@ -377,6 +377,7 @@ class CheckoutViewModel @Inject constructor(
                             quantity = line.quantity,
                             size = line.selectedSize,
                             color = line.selectedColor,
+                            imageUrl = line.imageUrl,
                         )
                     },
                 )

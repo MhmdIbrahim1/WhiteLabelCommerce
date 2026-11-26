@@ -16,15 +16,17 @@ data class SavedOrderLineEntity(
     val quantity: Int,
     val size: String? = null,
     val color: String? = null,
+    val imageUrl: String? = null,
 ) {
     fun toDomain(): SavedOrderLine = SavedOrderLine(
         productId = productId,
         productName = productName,
-            productNameEn = productNameEn,
+        productNameEn = productNameEn,
         unitPrice = unitPrice,
         quantity = quantity,
         size = size,
         color = color,
+        imageUrl = imageUrl,
     )
 
     companion object {
@@ -36,6 +38,7 @@ data class SavedOrderLineEntity(
             quantity = line.quantity,
             size = line.size,
             color = line.color,
+            imageUrl = line.imageUrl,
         )
     }
 }

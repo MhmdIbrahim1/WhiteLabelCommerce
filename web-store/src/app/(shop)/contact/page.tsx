@@ -21,6 +21,7 @@ export default async function Contact({ searchParams }: PageProps<"/contact">) {
         <section className="panel">
           <h2>{isEn ? "Send a Support Message" : "أرسل رسالة للدعم"}</h2>
           <form action={sendTicket}>
+            {typeof params.order === "string" && <input type="hidden" name="order" value={params.order} />}
             <label>
               {t(lang, "contactSubject")}
               <input name="subject" required maxLength={160} />

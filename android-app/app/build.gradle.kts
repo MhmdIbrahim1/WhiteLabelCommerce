@@ -150,6 +150,7 @@ android {
             useSupportLibrary = true
         }
 
+        buildConfigField("boolean", "EMAIL_PASSWORD_RESET_ENABLED", resolveConfigValue("EMAIL_PASSWORD_RESET_ENABLED", "false").equals("true", true).toString())
         buildConfigField("String", "STORE_ID", "\"$resolvedStoreId\"")
         buildConfigField("Boolean", "IS_WHITE_LABEL_TENANT", isWhiteLabelTenant.toString())
         buildConfigField("String", "WEB_STORE_BASE_URL", "\"${resolveConfigValue("WEB_STORE_BASE_URL", "http://10.0.2.2:3000")}\"")

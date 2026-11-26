@@ -13,6 +13,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import io.github.jan.supabase.SupabaseClient
+import io.github.jan.supabase.postgrest.postgrest
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import okhttp3.CacheControl
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -28,6 +32,7 @@ import kotlin.coroutines.coroutineContext
 @Singleton
 class GitHubReleaseUpdater @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val supabase: SupabaseClient,
 ) {
     private val json = Json {
         ignoreUnknownKeys = true
@@ -52,26 +57,6 @@ class GitHubReleaseUpdater @Inject constructor(
             .build()
     }
 
-    suspend fun checkTenantVersion(): String? = withContext(Dispatchers.IO) {
-        runCatching {
-            val base = java.net.URL(BuildConfig.WEB_STORE_BASE_URL)
-            require(com.whitelabel.commerce.feature.checkout.isAllowedWebStoreBase(base))
-            val url = java.net.URL(base, "/api/mobile/update?store_id=" + BuildConfig.STORE_ID +
-                "&version_code=" + BuildConfig.VERSION_CODE)
-            val connection = url.openConnection() as java.net.HttpURLConnection
-            try {
-                connection.instanceFollowRedirects = false
-                connection.connectTimeout = 5000
-                connection.readTimeout = 5000
-                if (connection.responseCode != 200) return@runCatching null
-                val body = connection.inputStream.bufferedReader().use { it.readText() }
-                org.json.JSONObject(body).optJSONObject("update")?.getString("version_name")
-            } finally {
-                connection.disconnect()
-            }
-        }.getOrNull()
-    }
-
     private fun updatesDirectory(): File = File(context.cacheDir, "updates")
 
     /**
@@ -93,7 +78,15 @@ class GitHubReleaseUpdater @Inject constructor(
         currentVersionCode: Int = BuildConfig.VERSION_CODE,
         currentVersionName: String = BuildConfig.VERSION_NAME,
     ): AvailableUpdate? = withContext(Dispatchers.IO) {
-        if (!BuildConfig.ENABLE_GITHUB_UPDATER || BuildConfig.IS_WHITE_LABEL_TENANT) return@withContext null
+        if (!BuildConfig.ENABLE_GITHUB_UPDATER) return@withContext null
+        val storeBuild = runCatching {
+            supabase.postgrest.rpc("get_latest_mobile_app_build", buildJsonObject {
+                put("p_store_id", BuildConfig.STORE_ID)
+                put("p_package_name", context.packageName)
+            }).decodeList<StoreBuild>().singleOrNull()
+        }.getOrNull()
+        storeBuild?.updateFor(BuildConfig.STORE_ID, context.packageName, currentVersionCode)?.let { return@withContext it }
+        if (!allowOfficialFallback(BuildConfig.STORE_ID, context.packageName)) return@withContext null
 
         val cleanRepo = githubRepo.trim().trim('/')
         if (cleanRepo.isEmpty() ||

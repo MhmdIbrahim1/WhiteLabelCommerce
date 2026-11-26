@@ -68,6 +68,7 @@ import com.whitelabel.commerce.feature.checkout.PaymentFlowOutcome
 import com.whitelabel.commerce.feature.home.HomeScreen
 import com.whitelabel.commerce.feature.home.parseHeroCategoryParam
 import com.whitelabel.commerce.feature.notifications.NotificationsScreen
+import com.whitelabel.commerce.feature.orders.OrderRetrySelection
 import com.whitelabel.commerce.feature.orders.OrderDetailScreen
 import com.whitelabel.commerce.feature.orders.OrdersScreen
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -105,6 +106,7 @@ fun WhiteLabelAppShell(
     // Cross-tab handoff states
     var pendingCategoryId by remember { mutableStateOf<String?>(null) }
     var pendingFlashDealsOnly by remember { mutableStateOf(false) }
+    var pendingOrderRetry by remember { mutableStateOf<OrderRetrySelection?>(null) }
     var pendingTrackOrder by remember { mutableStateOf<Triple<String, String, PaymentFlowOutcome?>?>(null) }
 
     fun openSearch() = navController.navigate(AppRoutes.SEARCH, AppRoutes.searchOptions)
@@ -424,6 +426,8 @@ fun WhiteLabelAppShell(
                 OrdersScreen(
                     initialOrderNumber = pendingTrackOrder?.first,
                     initialPhone = pendingTrackOrder?.second,
+                    initialRetry = pendingOrderRetry,
+                    onConsumeRetry = { pendingOrderRetry = null },
                     initialPaymentOutcome = pendingTrackOrder?.third,
                     onConsumePrefill = { pendingTrackOrder = null },
                     onOpenOrderDetail = { orderId ->
@@ -449,6 +453,11 @@ fun WhiteLabelAppShell(
                 val orderId = backStackEntry.arguments?.getString("orderId").orEmpty()
                 OrderDetailScreen(
                     orderId = orderId,
+                    onRetryPayment = { retry ->
+                        pendingOrderRetry = retry
+                        navigateToTab(AppRoutes.ORDERS)
+                    },
+                    onReviewProduct = { navController.navigate(AppRoutes.productDetail(it)) },
                     onBack = { navController.popBackStack() },
                     onSearch = ::openSearch,
                     onOpenSupport = { id -> navController.navigate(AppRoutes.support(id)) },

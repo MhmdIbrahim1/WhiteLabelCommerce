@@ -1,5 +1,6 @@
 "use client";
 
+import { emailPasswordResetEnabled } from "@/lib/password-policy";
 import { ToastFeedback } from "@/components/floating-toast";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { normalizeDigits } from "@/lib/phone";
@@ -498,6 +499,8 @@ export function HybridAuthPanel({
               )}
             </button>
           </form>
+          {emailPasswordResetEnabled && pwMode === "signin" && <a className="section-more-link"
+            href={(nextPath.match(/^\/s\/[a-z0-9-]+/)?.[0] ?? "") + "/auth/reset-password"}>{isEn ? "Forgot password?" : "نسيت كلمة المرور؟"}</a>}
         </div>
       )}
     </div>

@@ -6,7 +6,7 @@ import com.whitelabel.commerce.core.data.remote.PhoneNormalizer
 import com.whitelabel.commerce.core.designsystem.localized
 import com.whitelabel.commerce.core.domain.model.AuthSessionState
 import com.whitelabel.commerce.core.domain.model.CustomerProfile
-import com.whitelabel.commerce.core.domain.model.Order
+import com.whitelabel.commerce.core.domain.model.AccountCounts
 import com.whitelabel.commerce.core.domain.model.SignUpOutcome
 import com.whitelabel.commerce.core.domain.model.StoreSettings
 import com.whitelabel.commerce.core.domain.model.WalletSummary
@@ -77,7 +77,7 @@ data class AccountUiState(
     val session: AuthSessionState = AuthSessionState.Loading,
     val authForm: AuthFormState = AuthFormState(),
     val profileForm: ProfileFormState = ProfileFormState(),
-    val orders: List<Order> = emptyList(),
+    val counts: AccountCounts = AccountCounts(),
     val isLoadingOrders: Boolean = false,
     val walletSummary: WalletSummary = WalletSummary(),
     val isLoadingWallet: Boolean = false,
@@ -95,7 +95,7 @@ class AccountViewModel @Inject constructor(
     private val authFormState = MutableStateFlow(AuthFormState())
     private val profileFormState = MutableStateFlow(ProfileFormState())
     private val accountError = MutableStateFlow<String?>(null)
-    private val ordersState = MutableStateFlow<List<Order>>(emptyList())
+    private val countsState = MutableStateFlow(AccountCounts())
     private val loadingOrdersState = MutableStateFlow(false)
     private val walletSummaryState = MutableStateFlow(WalletSummary())
     private val loadingWalletState = MutableStateFlow(false)
@@ -106,14 +106,14 @@ class AccountViewModel @Inject constructor(
         authRepository.sessionState,
         authFormState,
         profileFormState,
-        combine(ordersState, loadingOrdersState, storeRepository.storeSettings) { o, l, s -> Triple(o, l, s) },
+        combine(countsState, loadingOrdersState, storeRepository.storeSettings) { o, l, s -> Triple(o, l, s) },
         combine(walletSummaryState, loadingWalletState) { w, lw -> w to lw },
     ) { session, authForm, profileForm, (orders, loadingOrders, settings), (wallet, loadingWallet) ->
         AccountUiState(
             session = session,
             authForm = authForm,
             profileForm = profileForm,
-            orders = orders,
+            counts = orders,
             isLoadingOrders = loadingOrders,
             walletSummary = wallet,
             isLoadingWallet = loadingWallet,
@@ -151,13 +151,13 @@ class AccountViewModel @Inject constructor(
                                 address = profile.address,
                             )
                         }
-                        loadAccountOrders()
+                        loadCounts()
                         loadWallet()
                     }
 
                     AuthSessionState.SignedOut -> {
                         profileFormState.value = ProfileFormState()
-                        ordersState.value = emptyList()
+                        countsState.value = AccountCounts()
                         walletSummaryState.value = WalletSummary()
                     }
 
@@ -447,7 +447,7 @@ class AccountViewModel @Inject constructor(
                 authFormState.value = AuthFormState()
                 profileFormState.update { it.copy(isSaving = false, saveSuccess = true) }
                 // Reload synced orders immediately so any newly claimed guest orders appear
-                loadAccountOrders()
+                loadCounts()
             }.onFailure { err ->
                 val raw = err.message.orEmpty().lowercase()
                 profileFormState.update {
@@ -470,21 +470,25 @@ class AccountViewModel @Inject constructor(
         }
     }
 
-    fun loadAccountOrders() {
+    fun loadCounts() {
         viewModelScope.launch {
             loadingOrdersState.value = true
-            orderRepository.getMyOrders()
-                .onSuccess { list -> ordersState.value = list; accountError.value = null }
+            orderRepository.getAccountCounts()
+                .onSuccess { list -> countsState.value = list; accountError.value = null }
                 .onFailure { accountError.value = localized("تعذر تحميل الطلبات.", "Could not load your orders.") }
             loadingOrdersState.value = false
         }
     }
 
+    suspend fun changePassword(password: String) = authRepository.changePassword(password)
+    suspend fun requestRecovery(email: String) = authRepository.requestPasswordRecovery(email)
+    suspend fun finishRecovery(token: String, password: String) = authRepository.completePasswordRecovery(token, password)
+
     fun signOut(onSignedOut: () -> Unit = {}) {
         viewModelScope.launch {
             authRepository.signOut()
             authFormState.value = AuthFormState()
-            ordersState.value = emptyList()
+            countsState.value = AccountCounts()
             profileFormState.value = ProfileFormState()
             onSignedOut()
         }

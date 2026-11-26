@@ -1,5 +1,7 @@
 package com.whitelabel.commerce.core.data.repository
 
+import com.whitelabel.commerce.core.domain.model.OrderCardSummary
+import com.whitelabel.commerce.core.domain.model.AccountCounts
 import com.whitelabel.commerce.core.designsystem.localized
 
 import androidx.datastore.core.DataStore
@@ -173,22 +175,38 @@ class OrderRepositoryImpl @Inject constructor(
             ?.toDomain()
     }
 
-    override suspend fun getMyOrders(): Result<List<Order>> = runSuspendCatching {
-        val userId = supabase.auth.currentUserOrNull()?.id ?: return@runSuspendCatching emptyList()
+    override suspend fun getMyOrders(filter: String, after: OrderCardSummary?): Result<List<OrderCardSummary>> = runSuspendCatching {
+        val owner = supabase.auth.currentUserOrNull()?.id ?: return@runSuspendCatching emptyList()
+        supabase.postgrest.rpc("my_order_cards", buildJsonObject {
+            put("p_store_id", com.whitelabel.commerce.BuildConfig.STORE_ID)
+            put("p_filter", filter)
+            put("p_limit", 13)
+            if (after != null) { put("p_before", after.createdAt); put("p_before_id", after.id) }
+        }).decodeList<OrderCardSummary>().map { it.copy(userId = owner) }
+    }
+
+    override suspend fun getAccountCounts(): Result<AccountCounts> = runSuspendCatching {
+        supabase.postgrest.rpc("my_account_counts", buildJsonObject {
+            put("p_store_id", com.whitelabel.commerce.BuildConfig.STORE_ID)
+        }).decodeAs<AccountCounts>()
+    }
+
+    override suspend fun getOrderDetail(id: String): Result<Order?> = runSuspendCatching {
+        val userId = supabase.auth.currentUserOrNull()?.id ?: return@runSuspendCatching null
 
         supabase
             .from("orders")
             .select(columns = Columns.raw(
                 "id,user_id,status,shipping_address,phone,payment_method,currency,subtotal,shipping_fee," +
                     "wallet_discount,cashback_earned,total,guest_tracking,created_at,payment_status," +
-                    "tracking_number,shipping_carrier,order_items(id,order_id,product_id,product_name,unit_price,quantity,size,color)",
+                    "tracking_number,shipping_carrier,lat,lng,order_items(id,order_id,product_id,product_name,unit_price,quantity,size,color)",
             )) {
-                filter { eq("user_id", userId)
+                filter { eq("id", id); eq("user_id", userId)
                     eq("store_id", com.whitelabel.commerce.BuildConfig.STORE_ID) }
-                order(column = "created_at", order = SortOrder.DESCENDING)
+                limit(1)
             }
             .decodeList<OrderDto>()
-            .mapNotNull { it.toDomainOrNull() }.onEach { syncReceipt(it.id, it.status, it.paymentStatus, it.paymentMethod?.rawValue ?: "cod", it.carrier, it.trackingNumber, it.createdAt) }
+            .singleOrNull()?.toDomainOrNull()?.also { syncReceipt(it.id, it.status, it.paymentStatus, it.paymentMethod?.rawValue ?: "cod", it.carrier, it.trackingNumber, it.createdAt) }
     }
 
     override suspend fun saveLocalOrderReceipt(receipt: SavedOrderReceipt) {

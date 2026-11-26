@@ -1,63 +1,23 @@
-import { AddressBook } from "@/components/shop/address-book";
 import Link from "next/link";
-import {
-  UserRound,
-  ShoppingBag,
-  Wallet,
-  PackageCheck,
-  ArrowLeft,
-  ArrowRight,
-  LogOut,
-  Sparkles,
-  LockKeyhole,
-  Heart,
-} from "lucide-react";
+import { ArrowLeft, ArrowRight, Heart, LifeBuoy, LockKeyhole, LogOut, MapPin, Pencil, Settings2, ShoppingBag, Sparkles, UserRound, Wallet } from "lucide-react";
+import { AddressBook } from "@/components/shop/address-book";
+import { WalletSection, type WalletSummaryData } from "@/components/shop/wallet-section";
+import { ToastFeedback } from "@/components/floating-toast";
+import { PasswordForm } from "@/components/shop/password-form";
+import { LanguageToggle } from "@/components/language-provider";
+import { EgyptAddressFields } from "@/components/shop/egypt-address-fields";
+import { HybridAuthPanel } from "@/components/shop/hybrid-auth-panel";
 import { serverDb, checked } from "@/lib/db";
-import { money } from "@/lib/brand";
 import { settings } from "@/lib/shop";
 import { storeHref } from "@/lib/tenant";
-import { t } from "@/lib/i18n";
 import { getServerLang } from "@/lib/i18n-server";
-import { Timeline } from "@/components/shop/tracking";
-import { HybridAuthPanel } from "@/components/shop/hybrid-auth-panel";
-import { EgyptAddressFields } from "@/components/shop/egypt-address-fields";
-import {
-  WalletSection,
-  type WalletSummaryData,
-} from "@/components/shop/wallet-section";
-import { normalizeReturnRecord, type ReturnRequestRecord } from "@/lib/returns";
-import type { Summary } from "../orders/actions";
+import { t } from "@/lib/i18n";
 import { logout, saveCustomerAccount } from "../../login/actions";
+import "./account.css";
 
-type CustomerProfileRow = {
-  full_name: string;
-  phone: string;
-  email: string;
-  governorate: string;
-  city: string;
-  address: string;
-};
-
-type AccountOrderRow = Summary & {
-  total: number | null;
-  currency: string;
-};
-
-export default async function AccountPage({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
-  const [params, store, lang, db] = await Promise.all([
-    searchParams,
-    settings(),
-    getServerLang(),
-    serverDb(),
-  ]);
-  const {
-    data: { user },
-  } = await db.auth.getUser();
-
+export default async function AccountPage({ searchParams }: Pick<PageProps<"/account">, "searchParams">) {
+  const [params, store, lang, db] = await Promise.all([searchParams, settings(), getServerLang(), serverDb()]);
+  const { data: { user } } = await db.auth.getUser();
   if (!user) {
     const error = typeof params.error === "string" ? params.error : "";
     const registered =
@@ -96,194 +56,50 @@ export default async function AccountPage({
     );
   }
 
-  const [addresses, profileRes, ordersRes, walletRes] = await Promise.all([
-    db.rpc("my_addresses", { p_store_id: store.storeId }),
-    db
-      .from("store_customers")
-      .select("full_name,phone,email,governorate,city,address")
-      .eq("store_id", store.storeId)
-      .eq("user_id", user.id)
-      .maybeSingle<CustomerProfileRow>(),
-    db
-      .from("orders")
-      .select(
-        "id,status,created_at,total,currency,payment_method,payment_status,shipping_carrier,tracking_number,tracking_url,courier_note,shipped_at,delivered_at,order_items(id,product_name,quantity,unit_price,size,color)",
-      )
-      .eq("store_id", store.storeId)
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(50),
-    db.rpc("get_customer_wallet_summary", {
-      p_store_id: store.storeId,
-      p_user_id: user.id,
-    }),
-  ]);
-
-  const rawWallet = (!walletRes.error && walletRes.data
-    ? (walletRes.data as Partial<WalletSummaryData>)
-    : null);
-  const walletSummary: WalletSummaryData = {
-    balance: Math.max(0, Number(rawWallet?.balance ?? 0)),
-    currency: String(rawWallet?.currency || store.currency),
-    cashback_enabled:
-      rawWallet?.cashback_enabled ?? store.incentives.cashbackEnabled,
-    cashback_percentage: Number(
-      rawWallet?.cashback_percentage ?? store.incentives.cashbackPercentage,
-    ),
-    transactions: Array.isArray(rawWallet?.transactions)
-      ? rawWallet.transactions
-      : [],
-  };
-
-  const ArrowIcon = lang === "en" ? ArrowRight : ArrowLeft;
-  const profile = profileRes.data;
-  const rawOrders = (checked(ordersRes) as AccountOrderRow[]) ?? [];
-  const recentOrderIds = rawOrders.slice(0, 4).map((o) => o.id);
-  const returnsByOrder = new Map<string, ReturnRequestRecord>();
-  if (recentOrderIds.length > 0) {
-    const retRes = await db
-      .from("return_requests")
-      .select("*")
-      .eq("store_id", store.storeId)
-      .eq("user_id", user.id)
-      .in("order_id", recentOrderIds)
-      .order("created_at", { ascending: false });
-    if (!retRes.error && Array.isArray(retRes.data)) {
-      for (const raw of retRes.data as Record<string, unknown>[]) {
-        const rec = normalizeReturnRecord(raw);
-        if (!returnsByOrder.has(rec.order_id)) {
-          returnsByOrder.set(rec.order_id, rec);
-        }
-      }
-    }
+  const en = lang === "en";
+  const view = typeof params.section === "string" ? params.section : params.result ? "profile" : "";
+  const href = (path: string) => storeHref(store.basePath, path);
+  const { data: profile } = await db.from("store_customers").select("full_name,email,phone,governorate,city,address")
+    .eq("store_id", store.storeId).eq("user_id", user.id).maybeSingle();
+  const name = profile?.full_name || user.email?.split("@")[0] || (en ? "My account" : "حسابي");
+  const tiles = [
+    { key: "orders", icon: ShoppingBag, label: en ? "My Orders" : "طلباتي", path: "/orders" },
+    { key: "addresses", icon: MapPin, label: en ? "Saved Addresses" : "عناويني", path: "/account/addresses" },
+    { key: "tickets", icon: LifeBuoy, label: en ? "Support Tickets" : "تذاكر الدعم", path: "/account/tickets" },
+    { key: "wishlist", icon: Heart, label: en ? "Wishlist" : "المفضلة", path: "/wishlist" },
+  ];
+  const groups = [
+    { key: "profile", icon: UserRound, label: en ? "Personal information" : "بياناتي الشخصية" },
+    { key: "security", icon: LockKeyhole, label: en ? "Security & password" : "الأمان وكلمة المرور" },
+    { key: "preferences", icon: Settings2, label: en ? "Preferences" : "التفضيلات" },
+    { key: "wallet", icon: Wallet, label: en ? "Store wallet" : "محفظة المتجر" },
+  ];
+  const Arrow = en ? ArrowRight : ArrowLeft;
+  const account = en ? "My Account" : "حسابي";
+  if (!view) {
+    const counts = checked(await db.rpc("my_account_counts", { p_store_id: store.storeId })) as Record<string, number>;
+    return <section className="account-hub">
+      <h1>{account}</h1>
+      <header className="hub-profile"><span className="hub-avatar" aria-hidden="true">{Array.from(String(name).trim())[0]}</span>
+        <div><h2>{name}</h2><p dir="auto">{user.email}</p>{profile?.phone && <small dir="ltr">{profile.phone}</small>}</div>
+        <Link href={href("/account/profile")}><Pencil size={16}/>{en ? "Edit profile" : "تعديل الحساب"}</Link>
+      </header>
+      <nav className="hub-tiles" aria-label={en ? "Quick access" : "وصول سريع"}>{tiles.map(({ key, icon: Icon, label, path }) =>
+        <Link key={key} href={href(path)}><Icon size={23}/><strong>{label}</strong><span>{Number(counts[key] ?? 0).toLocaleString(lang)}</span></Link>)}</nav>
+      <nav className="hub-settings" aria-label={en ? "Account settings" : "إعدادات الحساب"}>
+        {groups.map(({ key, icon: Icon, label }) => <Link key={key} href={href("/account/"+key)}><Icon size={19}/>{label}<Arrow size={16}/></Link>)}
+        <form action={logout}><button><LogOut size={18}/>{t(lang, "navLogout")}</button></form>
+      </nav>
+    </section>;
   }
-  const allOrders: AccountOrderRow[] = rawOrders.map((o) => ({
-    ...o,
-    return_request: returnsByOrder.get(o.id) ?? null,
-  }));
-  const totalOrders = allOrders.length;
-  const deliveredOrders = allOrders.filter((o) => o.status === "delivered");
-  const totalSpent = deliveredOrders.reduce(
-    (sum, o) => sum + Number(o.total ?? 0),
-    0,
-  );
-  const result = typeof params.result === "string" ? params.result : "";
-
-  return (
-    <>
-      <div className="split section-head">
-        <div>
-          <span className="section-kicker">{t(lang, "accountKicker")}</span>
-          <h1>
-            {t(lang, "accountHello")}{" "}
-            {profile?.full_name || user.email?.split("@")[0] || ""}
-          </h1>
-          <p dir="ltr" style={{ marginTop: "0.2rem" }}>
-            {user.email}
-          </p>
-        </div>
-        <div className="actions">
-          <Link
-            href={storeHref(store.basePath, "/wishlist")}
-            className="section-more-link"
-          >
-            <Heart size={15} />
-            <span>{t(lang, "navWishlist")}</span>
-          </Link>
-          <Link
-            href={storeHref(store.basePath, "/orders")}
-            className="section-more-link"
-          >
-            <span>{t(lang, "accountAllOrders")}</span>
-            <ArrowIcon size={15} />
-          </Link>
-          <form action={logout} style={{ margin: 0 }}>
-            <button className="orders-logout-btn">
-              <LogOut size={15} /> {t(lang, "navLogout")}
-            </button>
-          </form>
-        </div>
-      </div>
-
-      <div className="account-kpis shop-animate">
-        <article className="panel account-kpi-card">
-          <span className="trust-icon">
-            <ShoppingBag size={18} />
-          </span>
-          <div>
-            <small>{t(lang, "accountTotalOrders")}</small>
-            <strong>{totalOrders}</strong>
-          </div>
-        </article>
-        <article className="panel account-kpi-card">
-          <span className="trust-icon">
-            <PackageCheck size={18} />
-          </span>
-          <div>
-            <small>{t(lang, "accountDelivered")}</small>
-            <strong>{deliveredOrders.length}</strong>
-          </div>
-        </article>
-        <article className="panel account-kpi-card">
-          <span className="trust-icon">
-            <Wallet size={18} />
-          </span>
-          <div>
-            <small>{t(lang, "accountTotalSpent")}</small>
-            <strong>{money(totalSpent, store.currency, lang)}</strong>
-          </div>
-        </article>
-      </div>
-
-      <AddressBook key={store.storeId + user.id} storeId={store.storeId} initial={checked(addresses)} profile={{recipient_name: profile?.full_name || "", phone: profile?.phone || ""}} />
-      <WalletSection summary={walletSummary} />
-
-      <div className="details-grid" style={{ marginTop: "1.75rem" }}>
-        <section className="panel">
-          <div className="split" style={{ marginBottom: "0.75rem" }}>
-            <h2
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "0.45rem",
-              }}
-            >
-              <UserRound size={18} /> {t(lang, "accountProfileTitle")}
-            </h2>
-          </div>
-
-          {(result === "phone_unavailable" || result === "profile_setup") && (
-            <p className="account-notice account-notice--error" role="alert">
-              {result === "phone_unavailable"
-                ? lang === "en" ? "You’re signed in. Enter a different mobile number for this store." : "تم تسجيل دخولك. أدخل رقم موبايل آخر لهذا المتجر."
-                : lang === "en" ? "You’re signed in. Please save your shipping details below to finish setup." : "تم تسجيل دخولك. احفظ بيانات الشحن أدناه لإكمال إعداد الحساب."}
-            </p>
-          )}
-          {result === "saved" && (
-            <p className="account-notice account-notice--ok" role="status">
-              {lang === "en"
-                ? "Your profile has been saved."
-                : "تم حفظ بيانات حسابك."}
-            </p>
-          )}
-          {(result === "error" ||
-            result === "phone_error" ||
-            result === "phone_in_use") && (
-            <p className="account-notice account-notice--error" role="alert">
-              {result === "phone_error"
-                ? lang === "en"
-                  ? "Enter a valid 8–15 digit phone number."
-                  : "تحقق من رقم الهاتف (8 إلى 15 رقماً)."
-                : result === "phone_in_use"
-                  ? lang === "en"
-                    ? "This phone number is already linked to another account."
-                    : "رقم الهاتف مسجل بالفعل بحساب آخر."
-                  : lang === "en"
-                    ? "Could not save profile. Please try again."
-                    : "تعذر حفظ البيانات. أعد المحاولة."}
-            </p>
-          )}
-
+  const heading = [...tiles, ...groups].find(item => item.key === view)?.label || account;
+  let content;
+  if (view === "profile") {
+    const result = params.result;
+    content = <>{result && <ToastFeedback kind={result === "saved" ? "success" : "error"} message={result === "saved"
+      ? en ? "Profile saved." : "تم حفظ بياناتك."
+      : result === "phone_in_use" || result === "phone_unavailable" ? en ? "Choose a different phone number." : "أدخل رقم هاتف آخر."
+      : en ? "Check your name, phone and address." : "تحقق من الاسم والهاتف والعنوان."} />}
           <form action={saveCustomerAccount}>
             <label>
               {t(lang, "fullNameLabel")}
@@ -312,46 +128,21 @@ export default async function AccountPage({
             />
             <button>{t(lang, "accountSaveBtn")}</button>
           </form>
-        </section>
-
-        <section className="panel order-panel">
-          <div className="split" style={{ marginBottom: "0.75rem" }}>
-            <h2>{t(lang, "accountRecentOrders")}</h2>
-            <Link
-              href={storeHref(store.basePath, "/orders")}
-              className="section-more-link"
-            >
-              {t(lang, "viewAll")} <ArrowIcon size={14} />
-            </Link>
-          </div>
-          {allOrders.length > 0 ? (
-            <div className="orders-list">
-              {allOrders.slice(0, 4).map((o, idx) => (
-                <Timeline
-                  key={o.id}
-                  row={o}
-                  index={idx}
-                  detailHref={storeHref(store.basePath, `/orders/${o.id}`)}
-                  currency={o.currency || store.currency}
-                />
-              ))}
-            </div>
-          ) : (
-            <div
-              style={{
-                display: "grid",
-                gap: "0.85rem",
-                marginTop: "0.75rem",
-              }}
-            >
-              <p>{t(lang, "accountNoOrders")}</p>
-              <Link href={storeHref(store.basePath, "/products")} className="cta">
-                {t(lang, "heroShopProducts")}
-              </Link>
-            </div>
-          )}
-        </section>
-      </div>
-    </>
-  );
+    </>;
+  } else if (view === "addresses") {
+    const addresses = checked(await db.rpc("my_addresses", {p_store_id: store.storeId}));
+    content = <AddressBook storeId={store.storeId} initial={addresses} profile={{recipient_name: profile?.full_name || "", phone: profile?.phone || ""}} />;
+  } else if (view === "wallet") {
+    const wallet = checked(await db.rpc("get_customer_wallet_summary", {p_store_id: store.storeId, p_user_id: user.id})) as WalletSummaryData;
+    content = <WalletSection summary={wallet} />;
+  } else if (view === "tickets") {
+    const tickets = checked(await db.from("support_tickets").select("id,subject,status,admin_reply").eq("store_id",store.storeId)
+      .eq("customer_id",user.id).order("created_at",{ascending:false}).limit(50));
+    content = <><Link className="section-more-link" href={href("/contact")}>{en ? "Contact support" : "تواصل مع الدعم"}</Link>
+      {tickets.length ? tickets.map(ticket => <details key={ticket.id}><summary>{ticket.subject} · {ticket.status}</summary>
+        <p>{ticket.admin_reply || (en ? "Awaiting a reply" : "في انتظار الرد")}</p></details>) : <p>{en ? "You have no support tickets." : "لا توجد تذاكر دعم."}</p>}</>;
+  } else if (view === "security") content = <PasswordForm mode="change" />;
+  else content = <LanguageToggle className="lang-toggle-pill"/>;
+  return <section className="account-hub hub-spoke"><Link className="section-more-link" href={href("/account")}>{account}</Link>
+    <h1>{heading}</h1><section className="panel hub-content">{content}</section></section>;
 }

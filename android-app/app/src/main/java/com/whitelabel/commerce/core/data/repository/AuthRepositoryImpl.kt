@@ -1,5 +1,7 @@
 package com.whitelabel.commerce.core.data.repository
 
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import com.whitelabel.commerce.BuildConfig
 import com.whitelabel.commerce.core.data.remote.PhoneNormalizer
 import com.whitelabel.commerce.core.data.remote.dto.CustomerProfileDto
@@ -168,6 +170,32 @@ class AuthRepositoryImpl @Inject constructor(
         )
         saved
     }
+
+    override suspend fun changePassword(password: String): Result<Unit> = runSuspendCatching {
+        require(password.length in 8..128 && supabase.auth.currentUserOrNull() != null)
+        supabase.auth.updateUser { this.password = password }
+        Unit
+    }
+
+    private val recoveryHttp by lazy { okhttp3.OkHttpClient.Builder().followRedirects(false).build() }
+
+    private suspend fun recoveryRequest(path: String, payload: org.json.JSONObject): Result<Unit> = runSuspendCatching {
+        check(com.whitelabel.commerce.BuildConfig.EMAIL_PASSWORD_RESET_ENABLED)
+        val url = java.net.URL(java.net.URL(com.whitelabel.commerce.BuildConfig.WEB_STORE_BASE_URL), path)
+        require(url.protocol == "https" || (com.whitelabel.commerce.BuildConfig.DEBUG && url.host in setOf("localhost", "10.0.2.2")))
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val request = okhttp3.Request.Builder().url(url)
+                .post(payload.toString().toRequestBody("application/json".toMediaType())).build()
+            recoveryHttp.newCall(request).execute().use { check(it.isSuccessful) }
+        }
+    }
+
+    override suspend fun requestPasswordRecovery(email: String) = recoveryRequest("/api/auth/password-reset", org.json.JSONObject()
+        .put("email", email.trim()).put("store_id", com.whitelabel.commerce.BuildConfig.STORE_ID)
+        .put("package_name", com.whitelabel.commerce.BuildConfig.APPLICATION_ID))
+
+    override suspend fun completePasswordRecovery(token: String, password: String) = recoveryRequest("/api/auth/password-reset/complete",
+        org.json.JSONObject().put("token_hash", token).put("password", password))
 
     override suspend fun signOut(): Result<Unit> = runSuspendCatching {
         supabase.auth.signOut()

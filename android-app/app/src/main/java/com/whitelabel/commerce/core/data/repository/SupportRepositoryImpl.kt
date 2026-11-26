@@ -59,12 +59,14 @@ class SupportRepositoryImpl @Inject constructor(
             cleanMessage
         }
 
-        // Strictly obeys `submit_guest_ticket`, `open_own_ticket`, and `protect_ticket_staff_fields`
-        // RLS policies: inserts ONLY `subject` and `message` without chaining `.select()`.
+        val accountOrder = cleanOrderRef?.takeIf {
+            supabase.auth.currentUserOrNull() != null && runCatching { UUID.fromString(it) }.isSuccess
+        }
         supabase.postgrest.rpc("mobile_support", buildJsonObject {
             put("p_store", com.whitelabel.commerce.BuildConfig.STORE_ID)
             put("p_subject", cleanSubject)
-            put("p_message", payloadMessage)
+            put("p_message", if (accountOrder == null) payloadMessage else cleanMessage)
+            if (accountOrder != null) put("p_order", accountOrder)
         })
 
         if (supabase.auth.currentUserOrNull() != null) return@runSuspendCatching

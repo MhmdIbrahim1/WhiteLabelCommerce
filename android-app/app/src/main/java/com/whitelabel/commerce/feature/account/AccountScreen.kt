@@ -1,5 +1,6 @@
 package com.whitelabel.commerce.feature.account
 
+import androidx.compose.runtime.setValue
 import com.whitelabel.commerce.core.designsystem.components.BannerFeedback
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
@@ -17,16 +18,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
-import androidx.compose.material.icons.automirrored.rounded.Logout
-import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.DarkMode
-import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.NorthEast
@@ -48,18 +44,13 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -68,12 +59,9 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.whitelabel.commerce.core.designsystem.LocalBrandColors
 import com.whitelabel.commerce.core.designsystem.components.EgyptCascadingAddressFields
-import com.whitelabel.commerce.core.designsystem.components.OrderStatusBadge
-import com.whitelabel.commerce.core.designsystem.components.WishlistRoseColor
 import com.whitelabel.commerce.core.designsystem.formatPrice
 import com.whitelabel.commerce.core.designsystem.localized
 import com.whitelabel.commerce.core.domain.model.AuthSessionState
-import com.whitelabel.commerce.core.domain.model.Order
 import com.whitelabel.commerce.feature.orders.formatOrderDate
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -142,399 +130,190 @@ fun AccountScreen(
         }
 
         is AuthSessionState.SignedIn -> {
+            var section by androidx.compose.runtime.saveable.rememberSaveable(session.userId) { androidx.compose.runtime.mutableStateOf("hub") }
             val profileForm = state.profileForm
-
-            Scaffold(
-                modifier = modifier.fillMaxSize(),
-                containerColor = MaterialTheme.colorScheme.background,
-                topBar = {
-                    if (showBackButton) {
-                        TopAppBar(
-                            title = {
-                                Text(
-                                    text = localized("حسابي", "My Account"),
-                                    style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.Bold,
-                                )
-                            },
-                            navigationIcon = {
-                                IconButton(onClick = onBack) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                                        contentDescription = localized("رجوع", "Back"),
-                                    )
+            val name = profileForm.fullName.ifBlank { session.email.substringBefore("@") }
+            androidx.activity.compose.BackHandler(section != "hub") { section = "hub" }
+            androidx.compose.runtime.LaunchedEffect(section, session.userId) {
+                if (section == "hub") viewModel.loadCounts()
+                if (section == "wallet") viewModel.loadWallet()
+            }
+            Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                if (section != "hub") TextButton(onClick = { section = "hub" }) { Text(localized("العودة إلى حسابي", "Back to account")) }
+                when (section) {
+                    "hub" -> {
+                        Text(localized("حسابي", "My Account"), style = MaterialTheme.typography.headlineMedium)
+                        Card(Modifier.fillMaxWidth()) {
+                            Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
+                                    Box(Modifier.size(46.dp), contentAlignment = Alignment.Center) { Text(name.take(1).uppercase()) }
                                 }
-                            },
-                            actions = {
-                                IconButton(
-                                    onClick = {
-                                        viewModel.signOut {
-                                            onShowMessage(localized("تم تسجيل الخروج", "Signed out"))
-                                        }
-                                    },
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Rounded.Logout,
-                                        contentDescription = localized("تسجيل الخروج", "Sign Out"),
-                                        tint = MaterialTheme.colorScheme.error,
-                                    )
+                                Column(Modifier.weight(1f)) {
+                                    Text(name, fontWeight = FontWeight.Bold); Text(session.email, style = MaterialTheme.typography.bodySmall)
+                                    if (profileForm.phone.isNotBlank()) Text(profileForm.phone, style = MaterialTheme.typography.bodySmall)
                                 }
-                            },
-                            colors = TopAppBarDefaults.topAppBarColors(
-                                containerColor = MaterialTheme.colorScheme.surface,
-                                titleContentColor = MaterialTheme.colorScheme.onSurface,
-                            ),
-                        )
-                    }
-                },
-            ) { innerPadding ->
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding)
-                        .verticalScroll(rememberScrollState())
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    state.authForm.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                    state.errorMessage?.let {
-                        Text(it, color = MaterialTheme.colorScheme.error)
-                        androidx.compose.material3.TextButton(onClick = viewModel::loadAccountOrders) {
-                            Text(localized("إعادة المحاولة", "Retry"))
-                        }
-                    }
-                    // 1. Account Identity Header Card
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        border = BorderStroke(1.dp, brandColors.hairline),
-                        shape = MaterialTheme.shapes.medium,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            val displayName = profileForm.fullName.ifBlank {
-                                session.email.substringBefore("@")
-                            }
-                            Surface(
-                                shape = CircleShape,
-                                color = MaterialTheme.colorScheme.primaryContainer,
-                                modifier = Modifier.size(48.dp),
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Text(
-                                        text = displayName.take(1).uppercase(),
-                                        style = MaterialTheme.typography.titleLarge,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        fontWeight = FontWeight.Bold,
-                                    )
-                                }
-                            }
-
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = displayName,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                )
-                                Text(
-                                    text = session.email,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-
-                            OutlinedButton(
-                                onClick = {
-                                    viewModel.signOut {
-                                        onShowMessage(localized("تم تسجيل الخروج", "Signed out"))
-                                    }
-                                },
-                                shape = MaterialTheme.shapes.small,
-                            ) {
-                                Text(localized("خروج", "Sign Out"))
+                                TextButton(onClick = { section = "profile" }) { Text(localized("تعديل", "Edit")) }
                             }
                         }
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            HubTile(localized("طلباتي","My Orders"), state.counts.orders, Modifier.weight(1f), onOpenOrders)
+                            HubTile(localized("عناويني","Saved Addresses"), state.counts.addresses, Modifier.weight(1f)) { section = "addresses" }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            HubTile(localized("تذاكر الدعم","Support Tickets"), state.counts.tickets, Modifier.weight(1f), onOpenSupport)
+                            HubTile(localized("المفضلة","Wishlist"), state.counts.wishlist, Modifier.weight(1f), onOpenWishlist)
+                        }
+                        Card(Modifier.fillMaxWidth()) {
+                            listOf("profile" to localized("بياناتي الشخصية","Personal information"), "security" to localized("الأمان وكلمة المرور","Security & password"),
+                                "preferences" to localized("التفضيلات","Preferences"), "wallet" to localized("محفظة المتجر","Store wallet")).forEach { (key,label) ->
+                                TextButton(onClick = { section = key }, modifier = Modifier.fillMaxWidth()) { Text(label, Modifier.weight(1f)) }
+                            }
+                            TextButton(onClick = { viewModel.signOut { onShowMessage(localized("تم تسجيل الخروج","Signed out")) } },
+                                modifier = Modifier.fillMaxWidth()) { Text(localized("تسجيل الخروج","Sign out"), Modifier.weight(1f)) }
+                        }
                     }
-
-                    com.whitelabel.commerce.feature.addresses.AddressBook(session.email,
+                    "addresses" -> com.whitelabel.commerce.feature.addresses.AddressBook(session.email,
                         com.whitelabel.commerce.core.domain.model.CustomerAddress(recipientName = profileForm.fullName, phone = profileForm.phone))
+                    "preferences" -> PreferencesAndSupportCard(darkThemeOverride, onSetDarkThemePreference, isRtl, onSelectLanguage, onOpenSupport)
+                    "security" -> PasswordPanel(PasswordMode.Change, viewModel = viewModel)
+                    "wallet" -> WalletAccountCard(balance = state.walletSummary.balance, currency = state.walletSummary.currency.ifBlank { state.storeSettings.currency },
+                        locale = state.storeSettings.locale, cashbackEnabled = state.storeSettings.cashbackEnabled,
+                        cashbackPercentage = state.storeSettings.cashbackPercentage, transactions = state.walletSummary.transactions,
+                        isLoading = state.isLoadingWallet, onRefresh = viewModel::loadWallet)
+                    "profile" -> ProfileCard(profileForm, viewModel)
+                }
+            }
+        }
+    }
+}
 
-                    // 1a. Preferences & Support Card (Appearance, Language, Customer Support)
-                    PreferencesAndSupportCard(
-                        darkThemeOverride = darkThemeOverride,
-                        onSetDarkThemePreference = onSetDarkThemePreference,
-                        isRtl = isRtl,
-                        onSelectLanguage = onSelectLanguage,
-                        onOpenSupport = onOpenSupport,
-                    )
+@Composable
+private fun ProfileCard(profileForm: ProfileFormState, viewModel: AccountViewModel) {
+    val brandColors = LocalBrandColors.current
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, brandColors.hairline),
+        shape = MaterialTheme.shapes.medium,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = localized("بيانات الشحن الافتراضية", "Default Shipping Profile"),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = localized(
+                    "تُستخدم هذه البيانات لملء عنوان الشحن عند الدفع.",
+                    "Used to fill in your shipping details at checkout.",
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
 
-                    // 1b. Cloud Wishlist Shortcut Card
-                    Card(
-                        onClick = onOpenWishlist,
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        border = BorderStroke(1.dp, brandColors.hairline),
-                        shape = MaterialTheme.shapes.medium,
-                        modifier = Modifier.fillMaxWidth(),
+            if (profileForm.saveSuccess) {
+                Surface(
+                    color = brandColors.success.copy(alpha = 0.14f),
+                    contentColor = brandColors.success,
+                    shape = MaterialTheme.shapes.small,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(14.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            Surface(
-                                shape = CircleShape,
-                                color = WishlistRoseColor.copy(alpha = 0.12f),
-                                modifier = Modifier.size(40.dp),
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Favorite,
-                                        contentDescription = null,
-                                        tint = WishlistRoseColor,
-                                        modifier = Modifier.size(20.dp),
-                                    )
-                                }
-                            }
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = localized("قائمة المفضلة", "My Wishlist"),
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold,
-                                )
-                                Text(
-                                    text = localized(
-                                        "منتجاتك المحفوظة وتنبيهات انخفاض السعر",
-                                        "Your saved items & price-drop alerts",
-                                    ),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            Icon(
-                                imageVector = Icons.Rounded.ChevronRight,
-                                modifier = Modifier.graphicsLayer { scaleX = if (state.storeSettings.isRtl) -1f else 1f },
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-
-                    // 1b. Store Credit & Cashback Wallet Card
-                    WalletAccountCard(
-                        balance = state.walletSummary.balance,
-                        currency = state.walletSummary.currency.ifBlank { state.storeSettings.currency },
-                        locale = state.storeSettings.locale,
-                        cashbackEnabled = state.storeSettings.cashbackEnabled,
-                        cashbackPercentage = state.storeSettings.cashbackPercentage,
-                        transactions = state.walletSummary.transactions,
-                        isLoading = state.isLoadingWallet,
-                        onRefresh = viewModel::loadWallet,
-                    )
-
-                    // 2. Editable Default Shipping Profile Card
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        border = BorderStroke(1.dp, brandColors.hairline),
-                        shape = MaterialTheme.shapes.medium,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            Text(
-                                text = localized("بيانات الشحن الافتراضية", "Default Shipping Profile"),
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                            )
-                            Text(
-                                text = localized(
-                                    "تُستخدم هذه البيانات لملء عنوان الشحن عند الدفع.",
-                                    "Used to fill in your shipping details at checkout.",
-                                ),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-
-                            if (profileForm.saveSuccess) {
-                                Surface(
-                                    color = brandColors.success.copy(alpha = 0.14f),
-                                    contentColor = brandColors.success,
-                                    shape = MaterialTheme.shapes.small,
-                                    modifier = Modifier.fillMaxWidth(),
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(10.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.CheckCircle,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(18.dp),
-                                        )
-                                        Text(
-                                            text = localized(
-                                                "تم حفظ بيانات حسابك.",
-                                                "Your profile has been saved.",
-                                            ),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            fontWeight = FontWeight.SemiBold,
-                                        )
-                                    }
-                                }
-                            }
-
-                            profileForm.saveError?.let { BannerFeedback(it) }
-
-                            OutlinedTextField(
-                                value = profileForm.fullName,
-                                onValueChange = viewModel::onProfileNameChange,
-                                label = { Text(localized("الاسم بالكامل", "Full Name")) },
-                                leadingIcon = { Icon(Icons.Rounded.Person, contentDescription = null) },
-                                singleLine = true,
-                                shape = MaterialTheme.shapes.small,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-
-                            OutlinedTextField(
-                                value = profileForm.phone,
-                                onValueChange = viewModel::onProfilePhoneChange,
-                                label = { Text(localized("رقم الموبايل المصري", "Egyptian Mobile Number")) },
-                                placeholder = { Text("01012345678") },
-                                leadingIcon = { Icon(Icons.Rounded.Phone, contentDescription = null) },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                                isError = profileForm.phoneError != null,
-                                supportingText = profileForm.phoneError?.let { { Text(it) } },
-                                singleLine = true,
-                                shape = MaterialTheme.shapes.small,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-
-                            EgyptCascadingAddressFields(
-                                governorate = profileForm.governorate,
-                                city = profileForm.city,
-                                streetAddress = profileForm.address,
-                                onGovernorateSelected = viewModel::onProfileGovernorateChange,
-                                onCitySelected = viewModel::onProfileCityChange,
-                                onStreetAddressChange = viewModel::onProfileAddressChange,
-                            )
-
-                            Button(
-                                onClick = viewModel::saveProfile,
-                                enabled = !profileForm.isSaving,
-                                shape = MaterialTheme.shapes.small,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(48.dp),
-                            ) {
-                                if (profileForm.isSaving) {
-                                    CircularProgressIndicator(
-                                        strokeWidth = 2.dp,
-                                        color = MaterialTheme.colorScheme.onPrimary,
-                                        modifier = Modifier.size(20.dp),
-                                    )
-                                } else {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Save,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(18.dp),
-                                    )
-                                    Spacer(modifier = Modifier.size(8.dp))
-                                    Text(localized("حفظ البيانات وربط الطلبات", "Save Profile & Sync Orders"))
-                                }
-                            }
-                        }
-                    }
-
-                    // 3. Synced Order History Card
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        border = BorderStroke(1.dp, brandColors.hairline),
-                        shape = MaterialTheme.shapes.medium,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Rounded.ReceiptLong,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                    )
-                                    Text(
-                                        text = localized("طلباتي المتزامنة", "Synced Order History"),
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold,
-                                    )
-                                }
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    IconButton(onClick = viewModel::loadAccountOrders) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.Refresh,
-                                            contentDescription = localized("تحديث", "Refresh"),
-                                        )
-                                    }
-                                    TextButton(onClick = onOpenOrders) {
-                                        Text(localized("عرض الكل", "View all"))
-                                    }
-                                }
-                            }
-
-                            when {
-                                state.isLoadingOrders -> {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(vertical = 16.dp),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                                    }
-                                }
-
-                                state.orders.isEmpty() -> {
-                                    Text(
-                                        text = localized(
-                                            "لا توجد طلبات مسجلة على حسابك بعد.",
-                                            "No synced orders on your account yet.",
-                                        ),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-
-                                else -> {
-                                    state.orders.take(10).forEachIndexed { idx, order ->
-                                        if (idx > 0) HorizontalDivider(color = brandColors.hairline)
-                                        SyncedAccountOrderRow(
-                                            order = order,
-                                            locale = state.storeSettings.locale,
-                                        )
-                                    }
-                                }
-                            }
-                        }
+                        Icon(
+                            imageVector = Icons.Rounded.CheckCircle,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Text(
+                            text = localized(
+                                "تم حفظ بيانات حسابك.",
+                                "Your profile has been saved.",
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold,
+                        )
                     }
                 }
             }
+
+            profileForm.saveError?.let { BannerFeedback(it) }
+
+            OutlinedTextField(
+                value = profileForm.fullName,
+                onValueChange = viewModel::onProfileNameChange,
+                label = { Text(localized("الاسم بالكامل", "Full Name")) },
+                leadingIcon = { Icon(Icons.Rounded.Person, contentDescription = null) },
+                singleLine = true,
+                shape = MaterialTheme.shapes.small,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            OutlinedTextField(
+                value = profileForm.phone,
+                onValueChange = viewModel::onProfilePhoneChange,
+                label = { Text(localized("رقم الموبايل المصري", "Egyptian Mobile Number")) },
+                placeholder = { Text("01012345678") },
+                leadingIcon = { Icon(Icons.Rounded.Phone, contentDescription = null) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                isError = profileForm.phoneError != null,
+                supportingText = profileForm.phoneError?.let { { Text(it) } },
+                singleLine = true,
+                shape = MaterialTheme.shapes.small,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            EgyptCascadingAddressFields(
+                governorate = profileForm.governorate,
+                city = profileForm.city,
+                streetAddress = profileForm.address,
+                onGovernorateSelected = viewModel::onProfileGovernorateChange,
+                onCitySelected = viewModel::onProfileCityChange,
+                onStreetAddressChange = viewModel::onProfileAddressChange,
+            )
+
+            Button(
+                onClick = viewModel::saveProfile,
+                enabled = !profileForm.isSaving,
+                shape = MaterialTheme.shapes.small,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp),
+            ) {
+                if (profileForm.isSaving) {
+                    CircularProgressIndicator(
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Rounded.Save,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(modifier = Modifier.size(8.dp))
+                    Text(localized("حفظ البيانات وربط الطلبات", "Save Profile & Sync Orders"))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HubTile(label: String, count: Int, modifier: Modifier, onClick: () -> Unit) {
+    Card(onClick = onClick, modifier = modifier) {
+        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(count.toString(), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+            Text(label, style = MaterialTheme.typography.labelLarge)
         }
     }
 }
@@ -960,51 +739,6 @@ private fun WalletAccountCard(
                         }
                     }
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SyncedAccountOrderRow(
-    order: Order,
-    locale: String,
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = localized("طلب #${order.id.take(8)}", "Order #${order.id.take(8)}"),
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-            )
-            OrderStatusBadge(status = order.status)
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = formatOrderDate(order.createdAt),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            order.total?.let { amount ->
-                Text(
-                    text = formatPrice(amount, order.currency, locale),
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold,
-                )
             }
         }
     }

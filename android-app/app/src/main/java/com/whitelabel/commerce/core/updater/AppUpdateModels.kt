@@ -31,6 +31,28 @@ internal data class ReleaseMetaDto(
     @SerialName("notes") val notes: String? = null,
 )
 
+@Serializable
+internal data class StoreBuild(
+    @SerialName("store_id") val storeId: String,
+    @SerialName("package_name") val packageName: String,
+    @SerialName("version_code") val versionCode: Int,
+    @SerialName("version_name") val versionName: String,
+    @SerialName("apk_url") val apkUrl: String?,
+    val sha256: String?,
+) {
+    fun updateFor(store: String, applicationId: String, installed: Int): AvailableUpdate? {
+        if (storeId != store || packageName != applicationId || versionCode <= installed) return null
+        val digest = ApkVerifier.normalizeSha256(sha256) ?: return null
+        val uri = runCatching { java.net.URI(apkUrl ?: return null) }.getOrNull() ?: return null
+        if (uri.scheme != "https" || uri.host != "github.com" || uri.userInfo != null ||
+            !uri.path.contains("/releases/download/") || !uri.path.endsWith(".apk")) return null
+        return AvailableUpdate(versionName, versionCode, versionName, "", uri.toString(), uri.path.substringAfterLast('/'), 0, digest)
+    }
+}
+
+internal fun allowOfficialFallback(store: String, applicationId: String): Boolean =
+    store == "00000000-0000-0000-0000-000000000001" && applicationId == "com.whitelabel.commerce"
+
 data class AvailableUpdate(
     val tagName: String,
     val versionCode: Int?,

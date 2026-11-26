@@ -32,12 +32,23 @@ import dagger.hilt.android.AndroidEntryPoint
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
+    private val recoveryToken = mutableStateOf<String?>(null)
+    private fun readRecovery(intent: Intent?) {
+        val url = intent?.data ?: return
+        if (url.scheme == BuildConfig.APPLICATION_ID && url.host == "auth" && url.path == "/reset-password") {
+            recoveryToken.value = url.getQueryParameter("token_hash")?.takeIf {
+                url.getQueryParameter("type") == "recovery" && it.matches(Regex("[A-Za-z0-9_-]{32,256}"))
+            }.orEmpty()
+        }
+    }
+
     private val pendingDeepLinkState = mutableStateOf<String?>(null)
     private val pendingNotificationIdState = mutableStateOf<String?>(null)
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        readRecovery(intent)
         extractDeepLink(intent)?.let { pendingDeepLinkState.value = it }
         extractNotificationId(intent)?.let { pendingNotificationIdState.value = it }
     }
@@ -57,6 +68,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        readRecovery(intent)
         extractDeepLink(intent)?.let { pendingDeepLinkState.value = it }
         extractNotificationId(intent)?.let { pendingNotificationIdState.value = it }
 
@@ -152,6 +164,15 @@ class MainActivity : ComponentActivity() {
                 storeSettings = settings,
                 darkTheme = useDarkTheme,
             ) {
+                recoveryToken.value?.let { token ->
+                    androidx.compose.material3.AlertDialog(
+                        onDismissRequest = { recoveryToken.value = null; intent.data = null },
+                        text = { com.whitelabel.commerce.feature.account.PasswordPanel(com.whitelabel.commerce.feature.account.PasswordMode.Recover, token) },
+                        confirmButton = { androidx.compose.material3.TextButton(onClick = { recoveryToken.value = null; intent.data = null }) {
+                            androidx.compose.material3.Text(if (settings.isRtl) "إغلاق" else "Close")
+                        } },
+                    )
+                }
                 WhiteLabelAppShell(
                     storeSettings = settings,
                     cartItemCount = uiState.cartItemCount,
@@ -167,19 +188,7 @@ class MainActivity : ComponentActivity() {
                     onRefreshStore = mainViewModel::refreshStoreSettings,
                 )
 
-                if (BuildConfig.IS_WHITE_LABEL_TENANT && updateState.tenantVersion != null && !updateState.isDismissed) {
-                    androidx.compose.material3.AlertDialog(
-                        onDismissRequest = updateViewModel::dismiss,
-                        title = { androidx.compose.material3.Text(if (settings.isRtl) "يتوفر تحديث للتطبيق" else "App update available") },
-                        text = { androidx.compose.material3.Text(settings.storeName + " " + updateState.tenantVersion) },
-                        confirmButton = {
-                            androidx.compose.material3.TextButton(onClick = updateViewModel::dismiss) {
-                                androidx.compose.material3.Text(if (settings.isRtl) "حسنًا" else "OK")
-                            }
-                        },
-                    )
-                }
-                if (BuildConfig.ENABLE_GITHUB_UPDATER && !BuildConfig.IS_WHITE_LABEL_TENANT) {
+                if (BuildConfig.ENABLE_GITHUB_UPDATER) {
                     AppUpdateDialog(
                         state = updateState,
                         onUpdateNow = {

@@ -1,5 +1,8 @@
 package com.whitelabel.commerce.feature.orders
 
+import com.whitelabel.commerce.core.domain.model.HistoryFilter
+import com.whitelabel.commerce.core.domain.model.OrderCardSummary
+import androidx.compose.material3.FilterChip
 import com.whitelabel.commerce.core.designsystem.components.BannerFeedback
 import android.content.Intent
 import android.net.Uri
@@ -73,7 +76,6 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.whitelabel.commerce.core.data.remote.PhoneNormalizer
 import com.whitelabel.commerce.core.designsystem.LocalBrandColors
-import com.whitelabel.commerce.core.designsystem.LocalStoreSettings
 import com.whitelabel.commerce.core.designsystem.components.BrandEmptyState
 import com.whitelabel.commerce.core.designsystem.components.CarrierLocalizer
 import com.whitelabel.commerce.core.designsystem.components.ColorSwatchMapper
@@ -84,7 +86,6 @@ import com.whitelabel.commerce.core.designsystem.localized
 import com.whitelabel.commerce.core.domain.model.Order
 import com.whitelabel.commerce.core.domain.model.OrderStatus
 import com.whitelabel.commerce.core.domain.model.PaymentMethod
-import com.whitelabel.commerce.core.domain.model.ReturnRequest
 import com.whitelabel.commerce.core.domain.model.SavedOrderReceipt
 import com.whitelabel.commerce.core.domain.model.StoreSettings
 import com.whitelabel.commerce.feature.checkout.PaymentFlow
@@ -94,7 +95,7 @@ import kotlinx.coroutines.delay
 
 private val RETRY_WALLET_REGEX = Regex("^01[0125][0-9]{8}$")
 
-private data class PendingRetrySelection(
+data class OrderRetrySelection(
     val orderId: String,
     val orderPhone: String,
     val currentMethod: String,
@@ -121,6 +122,8 @@ fun OrdersScreen(
     initialPhone: String?,
     initialPaymentOutcome: PaymentFlowOutcome?,
     onConsumePrefill: () -> Unit,
+    initialRetry: OrderRetrySelection? = null,
+    onConsumeRetry: () -> Unit = {},
     onOpenOrderDetail: (orderId: String) -> Unit = {},
     onOpenSupport: (orderId: String?) -> Unit,
     onOpenAccount: () -> Unit = {},
@@ -132,10 +135,17 @@ fun OrdersScreen(
     val state = viewModel.uiState.collectAsStateWithLifecycle().value
     val brandColors = LocalBrandColors.current
     val clipboard = LocalClipboardManager.current
-    var pendingRetryChooser by remember { mutableStateOf<PendingRetrySelection?>(null) }
+    var pendingRetryChooser by remember { mutableStateOf<OrderRetrySelection?>(null) }
     var activeRetrySession by remember { mutableStateOf<ActiveRetrySession?>(null) }
     var paymentBanner by remember { mutableStateOf<PaymentFlowOutcome?>(null) }
     var showGuestCodSignInPrompt by remember { mutableStateOf(false) }
+
+    LaunchedEffect(initialRetry) {
+        if (initialRetry != null) {
+            pendingRetryChooser = initialRetry
+            onConsumeRetry()
+        }
+    }
 
     val enabledOnlineMethods = remember(state.storeSettings) {
         state.storeSettings.paymentMethods.filter { it == PaymentMethod.CARD || it == PaymentMethod.WALLET }
@@ -187,6 +197,11 @@ fun OrdersScreen(
         }
     }
 
+    var showLookup by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    val visibleReceipts = remember(state.localReceipts, state.tracking.accountOrders, state.tracking.filter) {
+        val cloud = state.tracking.accountOrders.mapTo(hashSetOf()) { it.id.lowercase() }
+        state.localReceipts.filter { it.orderNumber.lowercase() !in cloud && state.tracking.filter.accepts(it.status) }
+    }
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -264,6 +279,27 @@ fun OrdersScreen(
             }
         }
 
+        item(key = "history-filters") {
+            androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                items(HistoryFilter.entries.size, key = { HistoryFilter.entries[it].param }) { i ->
+                    val filter = HistoryFilter.entries[i]
+                    FilterChip(selected = state.tracking.filter == filter, onClick = { viewModel.chooseFilter(filter) },
+                        label = { Text(localized(filter.ar, filter.en)) })
+                }
+            }
+        }
+        items(state.tracking.accountOrders, key = { accountListKey(it.id) }) { order ->
+            HistoryCard(order, state.storeSettings.locale) { onOpenOrderDetail(order.id) }
+        }
+        if (state.tracking.hasMore || state.tracking.pageError) item(key = "order-page") {
+            OutlinedButton(onClick = { viewModel.loadAccountOrders(append = state.tracking.hasMore) }, enabled = !state.tracking.isLoadingAccountOrders) {
+                Text(if (state.tracking.pageError) localized("إعادة المحاولة","Try again") else localized("الطلبات السابقة","Older orders"))
+            }
+        }
+        item(key = "guest-lookup-toggle") {
+            TextButton(onClick = { showLookup = !showLookup }) { Text(localized("تتبع طلب زائر","Track a guest order")) }
+        }
+        if (showLookup) {
         // 1. Order Tracking Lookup Card
         item {
             Card(
@@ -343,6 +379,7 @@ fun OrdersScreen(
             }
         }
 
+        }
         // 2. Live Tracked Order Result + Timeline
         state.tracking.trackedResult?.let { tracked ->
             item {
@@ -387,7 +424,7 @@ fun OrdersScreen(
                                 onShowMessage(localized("تم نسخ رقم الشحنة", "Tracking number copied"))
                             },
                             onRetryPayment = {
-                                pendingRetryChooser = PendingRetrySelection(
+                                pendingRetryChooser = OrderRetrySelection(
                                     orderId = tracked.id,
                                     orderPhone = state.tracking.phoneInput,
                                     currentMethod = tracked.method,
@@ -425,48 +462,8 @@ fun OrdersScreen(
             }
         }
 
-        // 3. Quick Support Banner
-        item {
-            Surface(
-                onClick = { onOpenSupport(null) },
-                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
-                contentColor = MaterialTheme.colorScheme.onSurface,
-                shape = MaterialTheme.shapes.medium,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Row(
-                    modifier = Modifier.padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.SupportAgent,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(28.dp),
-                    )
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = localized("الدعم الفني وخدمة العملاء", "Customer support"),
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        Text(
-                            text = localized(
-                                "أرسل تذكرة دعم أو تواصل معنا مباشرة عبر واتساب.",
-                                "Send a support ticket or contact us on WhatsApp.",
-                            ),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            }
-        }
-
         // 4. Local Saved Orders History (DataStore)
-        if (state.localReceipts.isNotEmpty()) {
+        if (visibleReceipts.isNotEmpty()) {
             item {
                 Text(
                     text = localized(
@@ -478,7 +475,7 @@ fun OrdersScreen(
                 )
             }
 
-            items(state.localReceipts, key = { receiptListKey(it.orderNumber) }) { receipt ->
+            items(visibleReceipts, key = { receiptListKey(it.orderNumber) }) { receipt ->
                 SavedReceiptCard(
                     receipt = receipt,
                     locale = state.storeSettings.locale,
@@ -494,7 +491,7 @@ fun OrdersScreen(
                         onShowMessage(localized("تم نسخ رقم الشحنة", "Tracking number copied"))
                     },
                     onRetryPayment = {
-                        pendingRetryChooser = PendingRetrySelection(
+                        pendingRetryChooser = OrderRetrySelection(
                             orderId = receipt.orderNumber,
                             orderPhone = receipt.phone,
                             currentMethod = receipt.method,
@@ -505,50 +502,15 @@ fun OrdersScreen(
             }
         }
 
-        // 5. Authenticated Account Orders (when signed in)
-        if (state.tracking.accountOrders.isNotEmpty()) {
-            item {
-                Text(
-                    text = localized(
-                        "طلبات حسابك (${state.tracking.accountOrders.size})",
-                        "Account orders (${state.tracking.accountOrders.size})",
-                    ),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
-            items(state.tracking.accountOrders, key = { accountListKey(it.id) }) { order ->
-                AccountOrderCard(
-                    order = order,
-                    returnRequest = state.tracking.returnsByOrderId[order.id],
-                    locale = state.storeSettings.locale,
-                    hasOnlinePaymentEnabled = enabledOnlineMethods.isNotEmpty(),
-                    onOpenDetail = { onOpenOrderDetail(order.id) },
-                    onCopyTracking = { code ->
-                        clipboard.setText(AnnotatedString(code))
-                        onShowMessage(localized("تم نسخ رقم الشحنة", "Tracking number copied"))
-                    },
-                    onRetryPayment = {
-                        pendingRetryChooser = PendingRetrySelection(
-                            orderId = order.id,
-                            orderPhone = order.phone.orEmpty(),
-                            currentMethod = order.paymentMethod?.rawValue ?: "paymob_card",
-                        )
-                    },
-                    onContactSupport = { onOpenSupport(order.id) },
-                )
-            }
-        }
-
         // 6. Empty State
-        if (state.localReceipts.isEmpty() && state.tracking.accountOrders.isEmpty() && state.tracking.trackedResult == null) {
+        if (!state.tracking.isLoadingAccountOrders && visibleReceipts.isEmpty() && state.tracking.accountOrders.isEmpty() && state.tracking.trackedResult == null) {
             item {
                 BrandEmptyState(
                     icon = Icons.AutoMirrored.Outlined.ReceiptLong,
-                    title = localized("لا توجد طلبات محفوظة بعد", "No saved orders yet"),
+                    title = localized("لا توجد طلبات في هذه القائمة", "No orders in this view"),
                     subtitle = localized(
-                        "ستظهر هنا جميع الطلبات التي تقوم بها من هذا الجهاز مع الفواتير التفصيلية وإمكانية تتبعها بضغطة واحدة.",
-                        "Orders placed on this device will appear here with itemized receipts and live tracking.",
+                        "ستجد هنا الطلبات المطابقة للحالة المحددة.",
+                        "Orders matching the selected status will appear here.",
                     ),
                 )
             }
@@ -880,7 +842,7 @@ private fun PaymentOutcomeBanner(
 }
 
 @Composable
-private fun PaymentAndShippingSummary(
+internal fun PaymentAndShippingSummary(
     paymentStatus: String,
     method: String,
     carrier: String?,
@@ -1054,6 +1016,19 @@ private fun SavedReceiptCard(
     onRetryPayment: () -> Unit,
     onContactSupport: () -> Unit,
 ) {
+    var expanded by androidx.compose.runtime.saveable.rememberSaveable(receipt.orderNumber) { mutableStateOf(false) }
+    if (!expanded) {
+        val row = remember(receipt) {
+            OrderCardSummary(
+                id = receipt.orderNumber, status = receipt.status.rawValue, createdAt = receipt.createdAt,
+                total = receipt.total, currency = receipt.currency, paymentStatus = receipt.paymentStatus,
+                itemCount = receipt.items.sumOf { it.quantity },
+                thumbnails = receipt.items.mapNotNull { it.imageUrl }.take(3),
+            )
+        }
+        HistoryCard(row, locale) { expanded = true }
+        return
+    }
     val brandColors = LocalBrandColors.current
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -1100,6 +1075,7 @@ private fun SavedReceiptCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
+            TextButton(onClick = { expanded = false }) { Text(localized("إخفاء التفاصيل", "Hide details")) }
             PaymentAndShippingSummary(
                 paymentStatus = receipt.paymentStatus,
                 method = receipt.method,
@@ -1202,141 +1178,38 @@ private fun ItemizedReceiptRows(
 }
 
 @Composable
-private fun AccountOrderCard(
-    order: Order,
-    returnRequest: ReturnRequest?,
-    locale: String,
-    hasOnlinePaymentEnabled: Boolean,
-    onOpenDetail: () -> Unit,
-    onCopyTracking: (String) -> Unit,
-    onRetryPayment: () -> Unit,
-    onContactSupport: () -> Unit,
-) {
-    val brandColors = LocalBrandColors.current
-    Card(
-        onClick = onOpenDetail,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, brandColors.hairline),
-        shape = MaterialTheme.shapes.medium,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column {
-                    Text(
-                        text = localized("طلب #${order.id.take(8)}", "Order #${order.id.take(8)}"),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Text(
-                        text = formatOrderDate(order.createdAt),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                OrderStatusBadge(status = order.status)
+private fun HistoryCard(row: OrderCardSummary, locale: String, open: () -> Unit) {
+    val status = OrderStatus.fromRaw(row.status)
+    val dateLocale = localized("ar-EG", "en-EG")
+    val day = remember(row.createdAt, dateLocale) {
+        val ms = com.whitelabel.commerce.core.domain.model.FlashSalePricing.parseIsoTimestampMillis(row.createdAt)
+        if (ms == null) row.createdAt.take(10) else java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM,
+            java.util.Locale.forLanguageTag(dateLocale)).format(java.util.Date(ms))
+    }
+    Card(onClick = open, modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, LocalBrandColors.current.hairline)) {
+        Column(Modifier.fillMaxWidth().padding(15.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column { Text("#" + row.id.take(8).uppercase(), fontWeight = FontWeight.Bold); Text(day, style = MaterialTheme.typography.bodySmall) }
+                OrderStatusBadge(status)
             }
-
-            PaymentAndShippingSummary(
-                paymentStatus = order.paymentStatus,
-                method = order.paymentMethod?.rawValue ?: "cod",
-                carrier = order.carrier,
-                trackingNumber = order.trackingNumber,
-                hasOnlinePaymentEnabled = hasOnlinePaymentEnabled,
-                onCopyTracking = onCopyTracking,
-                onRetryPayment = onRetryPayment,
-            )
-
-            OrderTimelineStepper(currentStatus = order.status)
-
-            if (order.items.isNotEmpty()) {
-                HorizontalDivider(color = brandColors.hairline)
-                order.items.forEach { line ->
-                    val variant = listOfNotNull(
-                        line.size,
-                        line.color?.let(ColorSwatchMapper::displayLabel),
-                    ).joinToString(" • ")
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Text(
-                            text = "${line.quantity} × ${line.productName}" +
-                                if (variant.isNotEmpty()) " ($variant)" else "",
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.weight(1f),
-                        )
-                        Text(
-                            text = formatPrice(line.lineTotal, order.currency, locale),
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    }
-                }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                row.thumbnails.forEach { path -> coil.compose.AsyncImage(
+                    com.whitelabel.commerce.core.data.remote.SupabaseStorageUrls.resolveProductImageUrl(path), null, Modifier.size(38.dp)) }
+                Text(if (row.itemCount == 1) localized("قطعة واحدة", "1 item") else localized("${row.itemCount} قطع", "${row.itemCount} items"))
             }
-
-            order.total?.let { totalAmount ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text(
-                        text = localized("الإجمالي", "Total"),
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Text(
-                        text = formatPrice(totalAmount, order.currency, locale),
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
-            }
-
-            returnRequest?.let { req ->
-                ReturnRequestStatusCard(
-                    returnRequest = req,
-                    currency = order.currency,
-                    locale = locale,
-                )
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (order.status == OrderStatus.DELIVERED && (returnRequest == null || !returnRequest.isActive)) {
-                    OutlinedButton(
-                        onClick = onOpenDetail,
-                        shape = MaterialTheme.shapes.small,
-                    ) {
-                        Text(localized("طلب إرجاع / استبدال", "Return / Exchange"))
-                    }
-                } else {
-                    TextButton(onClick = onOpenDetail) {
-                        Text(localized("تفاصيل الطلب", "Order details"))
-                    }
-                }
-                TextButton(onClick = onContactSupport) {
-                    Text(localized("تواصل بخصوص الطلب", "Contact support"))
-                }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(row.total?.let { formatPrice(it, row.currency, locale) } ?: localized("قيد التسعير", "Total pending"),
+                    fontWeight = FontWeight.Bold)
+                Text(localized("تفاصيل الطلب","View order"), color = MaterialTheme.colorScheme.primary)
             }
         }
     }
 }
 
 internal fun orderMethodLabel(method: String): String = when (method.lowercase()) {
-        "paymob_card" -> localized("بطاقة بنكية", "Card")
-        "wallet" -> localized("محفظة المتجر", "Store Wallet")
-        "paymob_wallet" -> localized("محفظة إلكترونية", "Wallet")
-        else -> localized("الدفع عند الاستلام", "COD")
+    "paymob_card" -> localized("بطاقة بنكية", "Card")
+    "wallet" -> localized("محفظة المتجر", "Store Wallet")
+    "paymob_wallet" -> localized("محفظة إلكترونية", "Wallet")
+    else -> localized("الدفع عند الاستلام", "COD")
     }

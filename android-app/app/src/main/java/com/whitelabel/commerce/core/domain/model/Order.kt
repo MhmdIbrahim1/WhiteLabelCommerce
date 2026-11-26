@@ -48,6 +48,8 @@ data class OrderItem(
 }
 
 data class Order(
+    val lat: Double? = null,
+    val lng: Double? = null,
     val paymentStatus: String = "unpaid",
     val trackingNumber: String? = null,
     val carrier: String? = null,

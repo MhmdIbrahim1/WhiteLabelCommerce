@@ -1,5 +1,7 @@
 package com.whitelabel.commerce.feature.orders
 
+import com.whitelabel.commerce.core.domain.model.OrderCardSummary
+import com.whitelabel.commerce.core.domain.model.HistoryFilter
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.whitelabel.commerce.core.designsystem.localized
@@ -38,7 +40,10 @@ data class OrderTrackingFormState(
     val isTracking: Boolean = false,
     val trackingError: String? = null,
     val refreshingOrderNumber: String? = null,
-    val accountOrders: List<Order> = emptyList(),
+    val accountOrders: List<OrderCardSummary> = emptyList(),
+    val filter: HistoryFilter = HistoryFilter.All,
+    val hasMore: Boolean = false,
+    val pageError: Boolean = false,
     val isLoadingAccountOrders: Boolean = false,
     val returnsByOrderId: Map<String, ReturnRequest> = emptyMap(),
     val detailOrderId: String? = null,
@@ -84,6 +89,7 @@ class OrdersViewModel @Inject constructor(
     storeRepository: StoreRepository,
 ) : ViewModel() {
 
+    private var pageJob: kotlinx.coroutines.Job? = null
     private val trackingState = MutableStateFlow(OrderTrackingFormState())
 
     val uiState: StateFlow<OrdersUiState> = combine(
@@ -226,28 +232,32 @@ class OrdersViewModel @Inject constructor(
     }
 
     suspend fun refreshPayments(receipts: List<SavedOrderReceipt>) {
-        val accounts = orderRepository.getMyOrders().getOrNull().orEmpty()
-        val returns = orderRepository.getMyReturnRequests().getOrNull().orEmpty()
-        trackingState.update { it.copy(accountOrders = accounts, returnsByOrderId = returns) }
-        for (receipt in receipts) {
-            if (accounts.none { it.id == receipt.orderNumber }) orderRepository.trackGuestOrder(receipt.orderNumber, receipt.phone)
-        }
+        // Reconcile only pending device receipts. A background payment refresh must
+        // never replace the user's active filter, cursor or already-loaded pages.
+        for (receipt in receipts) orderRepository.trackGuestOrder(receipt.orderNumber, receipt.phone)
     }
 
-    fun loadAccountOrders() {
-        viewModelScope.launch {
-            trackingState.update { it.copy(isLoadingAccountOrders = true) }
-            val orders = orderRepository.getMyOrders().getOrNull()
-            val returns = orderRepository.getMyReturnRequests().getOrNull()
-            trackingState.update { prev ->
-                prev.copy(
-                    accountOrders = orders ?: prev.accountOrders,
-                    returnsByOrderId = returns ?: prev.returnsByOrderId,
-                    isLoadingAccountOrders = false,
-                )
-            }
-            if (returns != null && returns.values.any { it.status == ReturnRequestStatus.REFUNDED || it.walletCredited }) {
-                refreshWalletBalance()
+    fun chooseFilter(filter: HistoryFilter) {
+        if (trackingState.value.filter == filter) return
+        trackingState.update { it.copy(filter = filter, accountOrders = emptyList(), hasMore = false) }
+        loadAccountOrders()
+    }
+
+    fun loadAccountOrders(append: Boolean = false) {
+        val current = trackingState.value
+        if (append && (current.isLoadingAccountOrders || !current.hasMore)) return
+        pageJob?.cancel()
+        val owner = (authRepository.sessionState.value as? AuthSessionState.SignedIn)?.userId ?: return
+        pageJob = viewModelScope.launch {
+            trackingState.update { it.copy(isLoadingAccountOrders = true, pageError = false) }
+            val result = orderRepository.getMyOrders(current.filter.param, if (append) current.accountOrders.lastOrNull() else null)
+            if ((authRepository.sessionState.value as? AuthSessionState.SignedIn)?.userId != owner) return@launch
+            trackingState.update { state ->
+                if (state.filter != current.filter) state else result.fold({ rows ->
+                    val page = rows.take(12)
+                    state.copy(accountOrders = ((if (append) state.accountOrders else emptyList()) + page).distinctOrders { it.id },
+                        hasMore = rows.size > 12, isLoadingAccountOrders = false)
+                }, { state.copy(isLoadingAccountOrders = false, pageError = true) })
             }
         }
     }
@@ -258,23 +268,22 @@ class OrdersViewModel @Inject constructor(
         viewModelScope.launch {
             trackingState.update {
                 it.copy(
-                    detailOrderId = cleanId,
+                    detailOrderId = cleanId, detailOrder = null, detailReturnRequest = null,
                     isLoadingDetail = true,
                     returnSubmitError = null,
                 )
             }
-            val orders = orderRepository.getMyOrders().getOrNull().orEmpty()
-            val matchedOrder = orders.firstOrNull { it.id.equals(cleanId, ignoreCase = true) }
+            val matchedOrder = orderRepository.getOrderDetail(cleanId).getOrNull()
             val returnReq = orderRepository.getReturnRequestForOrder(cleanId).getOrNull()
 
             trackingState.update { prev ->
+                if (prev.detailOrderId != cleanId) return@update prev
                 val updatedMap = if (returnReq != null) {
                     prev.returnsByOrderId + (cleanId to returnReq)
                 } else {
                     prev.returnsByOrderId
                 }
                 prev.copy(
-                    accountOrders = if (orders.isNotEmpty()) orders else prev.accountOrders,
                     returnsByOrderId = updatedMap,
                     detailOrder = matchedOrder,
                     detailReturnRequest = returnReq,

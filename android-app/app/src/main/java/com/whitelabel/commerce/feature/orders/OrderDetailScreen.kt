@@ -51,6 +51,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
 import com.whitelabel.commerce.core.designsystem.components.SearchAction
@@ -96,11 +97,14 @@ fun OrderDetailScreen(
     onSearch: () -> Unit,
     onOpenSupport: (orderId: String) -> Unit,
     onOpenAccount: () -> Unit,
+    onReviewProduct: (String) -> Unit,
+    onRetryPayment: (OrderRetrySelection) -> Unit,
     onShowMessage: (String) -> Unit,
     modifier: Modifier = Modifier,
     viewModel: OrdersViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     val brandColors = LocalBrandColors.current
     var showReturnSheet by remember { mutableStateOf(false) }
 
@@ -108,8 +112,8 @@ fun OrderDetailScreen(
         viewModel.loadOrderDetail(orderId)
     }
 
-    val order = state.tracking.detailOrder
-        ?: state.tracking.accountOrders.firstOrNull { it.id.equals(orderId, ignoreCase = true) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val order = state.tracking.detailOrder?.takeIf { it.id.equals(orderId, true) }
     val returnReq = state.tracking.detailReturnRequest
         ?: state.tracking.returnsByOrderId[orderId]
 
@@ -225,7 +229,25 @@ fun OrderDetailScreen(
 
                                 OrderTimelineStepper(currentStatus = order.status)
 
-                                if (order.shippingAddress.isNotBlank() || !order.phone.isNullOrBlank()) {
+                                PaymentAndShippingSummary(
+                                    paymentStatus = order.paymentStatus,
+                                    method = order.paymentMethod?.rawValue ?: "cod",
+                                    carrier = order.carrier,
+                                    trackingNumber = order.trackingNumber,
+                                    hasOnlinePaymentEnabled = state.storeSettings.paymentMethods.any {
+                                        it == com.whitelabel.commerce.core.domain.model.PaymentMethod.CARD ||
+                                            it == com.whitelabel.commerce.core.domain.model.PaymentMethod.WALLET
+                                    },
+                                    onCopyTracking = { value ->
+                                        clipboard.setText(androidx.compose.ui.text.AnnotatedString(value))
+                                        onShowMessage(localized("تم نسخ رقم التتبع", "Tracking number copied"))
+                                    },
+                                    onRetryPayment = {
+                                        onRetryPayment(OrderRetrySelection(order.id, order.phone.orEmpty(), order.paymentMethod?.rawValue.orEmpty()))
+                                    },
+                                )
+
+                                if (order.shippingAddress.isNotBlank() || !order.phone.isNullOrBlank() || order.lat != null) {
                                     HorizontalDivider(color = brandColors.hairline)
                                     order.phone?.takeIf { it.isNotBlank() }?.let { phone ->
                                         Row(
@@ -240,6 +262,16 @@ fun OrderDetailScreen(
                                             )
                                             Text(text = phone, style = MaterialTheme.typography.bodySmall)
                                         }
+                                    }
+                                    if (order.lat != null && order.lng != null) {
+                                        TextButton(onClick = {
+                                            val pin = android.net.Uri.parse("https://www.google.com/maps/search/?api=1&query=" + order.lat + "," + order.lng)
+                                            try {
+                                                context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, pin))
+                                            } catch (_: android.content.ActivityNotFoundException) {
+                                                onShowMessage(localized("تعذر فتح الخريطة", "Could not open the map"))
+                                            }
+                                        }) { Text(localized("موقع التوصيل","Delivery pin")) }
                                     }
                                     Row(
                                         verticalAlignment = Alignment.Top,
@@ -399,6 +431,15 @@ fun OrderDetailScreen(
                         }
                     }
 
+                    item {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick = { printOrderInvoice(context, order, locale) }) { Text(localized("طباعة الفاتورة","Print invoice")) }
+                            val product = order.items.firstOrNull { it.productId != null }?.productId
+                            if (product != null && order.status == OrderStatus.DELIVERED) {
+                                OutlinedButton(onClick = { onReviewProduct(product) }) { Text(localized("تقييم المنتج","Review product")) }
+                            }
+                        }
+                    }
                     // 4. Support Shortcut
                     item {
                         OutlinedButton(

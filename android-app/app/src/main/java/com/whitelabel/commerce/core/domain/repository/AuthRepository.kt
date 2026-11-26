@@ -25,5 +25,9 @@ interface AuthRepository {
 
     suspend fun saveProfile(profile: CustomerProfile): Result<CustomerProfile>
 
+    suspend fun changePassword(password: String): Result<Unit>
+    suspend fun requestPasswordRecovery(email: String): Result<Unit>
+    suspend fun completePasswordRecovery(token: String, password: String): Result<Unit>
+
     suspend fun signOut(): Result<Unit>
 }

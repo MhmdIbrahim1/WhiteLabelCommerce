@@ -16,7 +16,6 @@ import javax.inject.Inject
 
 data class AppUpdateUiState(
     val availableUpdate: AvailableUpdate? = null,
-    val tenantVersion: String? = null,
     val isDismissed: Boolean = false,
     val isDownloading: Boolean = false,
     val isVerifying: Boolean = false,
@@ -45,10 +44,7 @@ class AppUpdateViewModel @Inject constructor(
         viewModelScope.launch {
             // Always clean up leftover cached APKs from completed/abandoned updates
             updater.cleanupStaleUpdateFiles()
-            if (BuildConfig.IS_WHITE_LABEL_TENANT) {
-                val version = updater.checkTenantVersion()
-                if (version != null) _uiState.update { it.copy(tenantVersion = version) }
-            } else if (BuildConfig.ENABLE_GITHUB_UPDATER) {
+            if (BuildConfig.ENABLE_GITHUB_UPDATER) {
                 checkForUpdates()
             }
         }
@@ -95,7 +91,7 @@ class AppUpdateViewModel @Inject constructor(
     }
 
     fun checkForUpdates() {
-        if (!BuildConfig.ENABLE_GITHUB_UPDATER || BuildConfig.IS_WHITE_LABEL_TENANT) return
+        if (!BuildConfig.ENABLE_GITHUB_UPDATER) return
         viewModelScope.launch {
             val release = updater.checkForUpdate()
             if (release != null) {

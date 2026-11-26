@@ -89,6 +89,12 @@ fun AuthScreen(
     val brandColors = LocalBrandColors.current
     var showPassword by remember { mutableStateOf(false) }
 
+    var showRecovery by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    if (showRecovery && com.whitelabel.commerce.BuildConfig.EMAIL_PASSWORD_RESET_ENABLED) {
+        androidx.compose.material3.AlertDialog(onDismissRequest = { showRecovery = false },
+            text = { PasswordPanel(PasswordMode.Request) },
+            confirmButton = { TextButton(onClick = { showRecovery = false }) { Text(localized("إغلاق","Close")) } })
+    }
     Scaffold(
         modifier = modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
@@ -410,6 +416,9 @@ fun AuthScreen(
                             modifier = Modifier.fillMaxWidth(),
                         )
 
+                        if (com.whitelabel.commerce.BuildConfig.EMAIL_PASSWORD_RESET_ENABLED && form.passwordMode == PasswordAuthMode.SIGN_IN) {
+                            TextButton(onClick = { showRecovery = true }) { Text(localized("نسيت كلمة المرور؟","Forgot password?")) }
+                        }
                         Button(
                             onClick = onSubmitPasswordAuth,
                             enabled = !form.isSubmitting && form.passwordEmail.isNotBlank() && form.password.isNotBlank(),

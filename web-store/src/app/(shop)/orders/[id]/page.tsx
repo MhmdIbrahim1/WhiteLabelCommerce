@@ -4,9 +4,11 @@ import { ArrowLeft, ArrowRight, MapPin, Phone, Wallet, Sparkles, TicketPercent }
 import { serverDb, checked } from "@/lib/db";
 import { settings } from "@/lib/shop";
 import { storeHref } from "@/lib/tenant";
-import { money } from "@/lib/brand";
+import { date, money } from "@/lib/brand";
 import { getServerLang } from "@/lib/i18n-server";
 import { t, translateColor } from "@/lib/i18n";
+import { InvoiceButton } from "@/components/shop/invoice-button";
+import "../orders.css";
 import { Timeline } from "@/components/shop/tracking";
 import { OrderReturnPanel } from "@/components/shop/order-return-panel";
 import {
@@ -17,6 +19,8 @@ import type { OrderItemSummary, Summary } from "../actions";
 
 type DetailedOrderRow = Summary & {
   shipping_address: string;
+  lat: number | null;
+  lng: number | null;
   currency: string;
   subtotal: number | null;
   shipping_fee: number;
@@ -63,7 +67,7 @@ export default async function CustomerOrderDetailPage({
     db
       .from("orders")
       .select(
-        "id,status,created_at,shipping_address,phone,payment_method,payment_status,currency,subtotal,shipping_fee,coupon_code,discount_amount,wallet_discount,cashback_earned,total,shipping_carrier,tracking_number,tracking_url,courier_note,shipped_at,delivered_at,order_items(id,product_id,product_name,quantity,unit_price,size,color)",
+        "id,status,created_at,shipping_address,lat,lng,phone,payment_method,payment_status,currency,subtotal,shipping_fee,coupon_code,discount_amount,wallet_discount,cashback_earned,total,shipping_carrier,tracking_number,tracking_url,courier_note,shipped_at,delivered_at,order_items(id,product_id,product_name,quantity,unit_price,size,color)",
       )
       .eq("id", id)
       .eq("store_id", store.storeId)
@@ -111,6 +115,12 @@ export default async function CustomerOrderDetailPage({
 
   return (
     <div className="order-detail-page">
+      <nav className="order-actions" aria-label={isEn ? "Order actions" : "إجراءات الطلب"}>
+        <InvoiceButton />
+        <Link href={storeHref(store.basePath,"/contact?order="+order.id)}>{isEn ? "Support" : "الدعم"}</Link>
+        {order.status === "delivered" && <><a href="#order-returns">{isEn ? "Return" : "إرجاع"}</a>
+          {orderItems[0]?.product_id && <Link href={storeHref(store.basePath,"/products/"+orderItems[0].product_id+"#reviews")}>{isEn ? "Review" : "تقييم"}</Link>}</>}
+      </nav>
       <div className="order-detail-topbar">
         <Link
           href={storeHref(store.basePath, "/orders")}
@@ -153,6 +163,7 @@ export default async function CustomerOrderDetailPage({
               </small>
             </div>
 
+            <span id="order-returns" />
             {order.status === "delivered" || latestReturnRow ? (
               <OrderReturnPanel
                 orderId={order.id}
@@ -172,9 +183,15 @@ export default async function CustomerOrderDetailPage({
         </div>
 
         <section className="panel order-detail-summary-panel">
+          <div className="invoice-heading">
+            <h1>{isEn ? "Invoice" : "فاتورة"} <bdi>#{order.id.slice(0, 8).toUpperCase()}</bdi></h1>
+            <p>{store.name} · {date(order.created_at, lang)}</p>
+          </div>
           <h2>{isEn ? "Order Summary & Shipping" : "ملخص الطلب والتوصيل"}</h2>
 
           <div className="order-detail-address-box">
+            {order.lat != null && order.lng != null && <a href={"https://www.google.com/maps/search/?api=1&query="+order.lat+","+order.lng}
+              rel="noreferrer" target="_blank"><MapPin size={16}/> {isEn ? "Delivery pin" : "موقع التوصيل"}</a>}
             {order.phone && (
               <div className="order-detail-info-row">
                 <Phone size={15} />

@@ -34,6 +34,8 @@ data class OrderItemDto(
 
 @Serializable
 data class OrderDto(
+    val lat: Double? = null,
+    val lng: Double? = null,
     @SerialName("payment_status") val paymentStatus: String = "unpaid",
     @SerialName("tracking_number") val trackingNumber: String? = null,
     @SerialName("shipping_carrier") val carrier: String? = null,
@@ -55,6 +57,7 @@ data class OrderDto(
 ) {
     fun toDomainOrNull(): Order? = id?.trim()?.takeIf { it.isNotEmpty() }?.let { orderId ->
         Order(
+            lat = lat, lng = lng,
             paymentStatus = paymentStatus, trackingNumber = trackingNumber, carrier = carrier,
             id = orderId,
             userId = userId,
