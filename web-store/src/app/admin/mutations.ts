@@ -121,6 +121,13 @@ function productListDestination(form: FormData) {
   return params.size ? catalog + "?" + params : catalog;
 }
 
+function orderLimitField(form: FormData, name: string, destination: string) {
+  if (!form.has(name)) return {};
+  const raw = text(form, name);
+  if (raw && (!/^[1-9]\d*$/.test(raw) || Number(raw) > 2147483647)) finish(destination, false);
+  return { [name]: raw ? Number(raw) : null };
+}
+
 export async function saveProduct(f: FormData) {
   const destination = productListDestination(f);
   const { db, storeId, activeStore } = await requireAdmin(),
@@ -200,6 +207,7 @@ export async function saveProduct(f: FormData) {
     category_id: text(f, "category_id"),
     price,
     cost_price: costPrice ?? 0,
+    ...orderLimitField(f, "max_order_qty", destination),
     stock,
     old_price: oldPrice ? numberField(oldPrice) : null,
     flash_sale_price: flashSalePrice,
@@ -557,6 +565,7 @@ export async function saveSettings(f: FormData) {
   const payload: Record<string, unknown> = {
     store_name: text(f, "store_name"),
     shipping_fee: fee,
+    ...orderLimitField(f, "default_max_order_qty", "/admin/settings"),
     whatsapp_number: text(f, "whatsapp_number"),
     banners,
   };

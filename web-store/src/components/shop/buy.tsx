@@ -9,9 +9,9 @@ import { translateColor } from "@/lib/i18n";
 import { storeHref } from "@/lib/tenant-shared";
 import { useLanguage } from "@/components/language-provider";
 import { trackAddToCart } from "@/lib/analytics";
-import { change, useCartTenant } from "./cart-store";
+import { change, useCartTenant, useCart, useDefaultOrderLimit, remainingQuantity, readInventory, inventoryForLine } from "./cart-store";
 import { showToast } from "@/components/floating-toast";
-import { indexVariants, stockLabel, variantKey } from "@/lib/variant-stock";
+import { indexVariants, quantityLimitHint, stockLabel, variantKey } from "@/lib/variant-stock";
 import { photo } from "@/lib/product-photo";
 import { SizeGuideModal } from "./size-guide-modal";
 
@@ -28,6 +28,9 @@ export function Buy({
 }) {
   const { lang, t } = useLanguage();
   const tenantId = useCartTenant();
+  const defaultLimit = useDefaultOrderLimit();
+  const cart = useCart();
+  const [requested, setRequested] = useState(1);
   const [size, setSize] = useState(
       detail && p.sizes.length === 1 ? p.sizes[0] : "",
     ),
@@ -46,6 +49,11 @@ export function Buy({
   const selectedStock = !tracked ? p.stock : color || !p.colors.length
     ? size || !p.sizes.length ? pairStock(color, size) : inventory.colors.get(color) ?? 0
     : size ? inventory.sizes.get(size) ?? 0 : p.stock;
+  const selection = { id: p.id, color, size, stock: selectedStock, productStock: p.stock,
+    max_order_qty: p.max_order_qty, variantStock: tracked };
+  const remaining = remainingQuantity(cart, selection, defaultLimit);
+  const quantity = Math.max(1, Math.min(requested, remaining));
+  const optionsSelected = (!p.colors.length || !!color) && (!p.sizes.length || !!size);
   const thumbnail = p.color_images?.[color] || photo(p.image_path);
 
   async function handleRestockSubscribe() {
@@ -89,7 +97,7 @@ export function Buy({
     <>
       <form
         className={detail ? "detail-buy" : "card-buy"}
-        onSubmit={(e) => {
+        onSubmit={async (e) => {
           e.preventDefault();
           if (detail && p.sizes.length > 0 && !size) {
             showToast({ message: t("selectSizeFirst"), kind: "error" });
@@ -100,10 +108,20 @@ export function Buy({
             return;
           }
           const effectiveUnit = resolveEffectivePrice(p);
+          let inventory = selection;
+          if (p.max_order_qty === undefined) {
+            try {
+              const row = (await readInventory(tenantId, [p.id])).get(p.id);
+              inventory = { ...selection, ...inventoryForLine(row, color, size) };
+            } catch {
+              showToast({ message: lang === "en" ? "Could not check availability." : "تعذر التحقق من التوفر.", kind: "error" });
+              return;
+            }
+          }
           const added = change(
             tenantId,
             {
-              id: p.id,
+              ...inventory,
               name: p.name,
               name_en: p.name_en ?? null,
               size,
@@ -113,25 +131,23 @@ export function Buy({
               flash_sale_price: p.flash_sale_price ?? null,
               flash_sale_starts_at: p.flash_sale_starts_at ?? null,
               flash_sale_ends_at: p.flash_sale_ends_at ?? null,
-              stock: selectedStock,
-              variantStock: tracked,
-              quantity: 1,
+              quantity,
             },
-            1,
+            quantity, defaultLimit,
           );
           if (added) {
             trackAddToCart({
               id: p.id,
               name: p.name,
               price: effectiveUnit,
-              quantity: 1,
+              quantity,
               size,
               color,
             });
           }
           showToast(added ? { message: t("addedToCart"), kind: "cart", image: thumbnail,
             action: { label: lang === "en" ? "View Cart" : "عرض السلة", href: storeHref(basePath, "/cart") } }
-            : { message: t("stockLimitReached"), kind: "info" });
+            : { message: quantityLimitHint(lang), kind: "info" });
         }}
       >
         {detail && <span className="stock-tier" data-tier={selectedStock <= 0 ? "out" : selectedStock <= 5 ? "low" : "in"}>{stockLabel(selectedStock, lang)}</span>}
@@ -160,7 +176,7 @@ export function Buy({
                     className="variant-chip"
                     data-selected={active ? "true" : "false"}
                     disabled={tracked && (color || !p.colors.length ? pairStock(color, s) : inventory.sizes.get(s) ?? 0) <= 0}
-                    onClick={() => setSize(s)}
+                    onClick={() => { setSize(s); setRequested(1); }}
                   >
                     {active && <Check size={14} />}
                     {s}
@@ -187,6 +203,7 @@ export function Buy({
                     disabled={tracked && (inventory.colors.get(c) ?? 0) <= 0}
                     onClick={() => {
                       setColor(c);
+                      setRequested(1);
                       if (tracked && size && pairStock(c, size) === 0) setSize("");
                       onColorChange?.(c);
                     }}
@@ -199,10 +216,18 @@ export function Buy({
             </div>
           </div>
         )}
+        {detail && optionsSelected && selectedStock > 0 && <div className="purchase-quantity">
+          <button type="button" aria-label={lang === "en" ? "Decrease quantity" : "إنقاص الكمية"}
+            disabled={quantity <= 1} onClick={() => setRequested(quantity - 1)}>−</button>
+          <output aria-label={lang === "en" ? "Quantity" : "الكمية"}>{remaining <= 0 ? 0 : quantity}</output>
+          <button type="button" aria-label={lang === "en" ? "Increase quantity" : "زيادة الكمية"}
+            disabled={quantity >= remaining} onClick={() => setRequested(quantity + 1)}>+</button>
+          {quantity >= remaining && <small role="status">{quantityLimitHint(lang)}</small>}
+        </div>}
         <button
           type="submit"
           className={detail ? "detail-cta" : "atc-btn quick-add-pill"}
-          disabled={selectedStock <= 0}
+          disabled={selectedStock <= 0 || (optionsSelected && remaining <= 0 && p.max_order_qty !== undefined)}
         >
           <ShoppingBag size={detail ? 17 : 15} />
           <span>{selectedStock > 0 ? detail ? t("addToBag") : t("quickAdd") : t("outOfStock")}</span>

@@ -37,6 +37,7 @@ export type AdminProductItem = {
   flash_sale_starts_at?: string | null;
   flash_sale_ends_at?: string | null;
   stock: number;
+  max_order_qty: number | null;
   product_variants?: Variant[];
   color_images?: Record<string, string>;
   sizes: string[];
@@ -159,13 +160,24 @@ export function AdminProductForm({
 
   const selectedColors = parseList(colorsValue);
   const selectedSizes = parseList(sizesValue);
+  const [sharedStock, setSharedStock] = useState(String(p?.stock ?? 0));
   const [trackVariants, setTrackVariants] = useState(Boolean(p?.product_variants?.length));
   const [stockByKey, setStockByKey] = useState<Record<string, number>>(() =>
     Object.fromEntries((p?.product_variants ?? []).map(v => [variantKey(v.color, v.size), v.stock])));
   const [photos, setPhotos] = useState<Record<string, string>>(p?.color_images ?? {});
   const hasOptions = selectedSizes.length > 0 || selectedColors.length > 0;
-  const variants = trackVariants && hasOptions ? (selectedColors.length ? selectedColors : [""]).flatMap(color =>
-    (selectedSizes.length ? selectedSizes : [""]).map(size => ({ color, size, stock: stockByKey[variantKey(color, size)] ?? 0 }))) : [];
+  const options = hasOptions ? (selectedColors.length ? selectedColors : [""]).flatMap(color =>
+    (selectedSizes.length ? selectedSizes : [""]).map(size => ({ color, size }))) : [];
+  const variants = trackVariants ? options.map(({ color, size }) =>
+    ({ color, size, stock: stockByKey[variantKey(color, size)] ?? 0 })) : [];
+  function distributeStock() {
+    const total = Number(sharedStock);
+    const base = Math.floor(total / options.length);
+    const extra = total % options.length;
+    setStockByKey(Object.fromEntries(options.map(({ color, size }, i) =>
+      [variantKey(color, size), base + (i < extra ? 1 : 0)])));
+    setTrackVariants(true);
+  }
   const colorPhotos = Object.fromEntries(selectedColors.filter(color => photos[color]?.trim()).map(color => [color, photos[color].trim()]));
 
   const applyPreset = (preset: AdminCategoryPreset) => {
@@ -291,10 +303,16 @@ export function AdminProductForm({
           type="number"
           name="stock"
           min="0"
-          key={variants.length ? "matrix" : "simple"}
-          {...(variants.length ? { value: variants.reduce((sum, v) => sum + v.stock, 0), readOnly: true } : { defaultValue: p?.stock ?? 0 })}
+          value={variants.length ? variants.reduce((sum, v) => sum + v.stock, 0) : sharedStock}
+          readOnly={variants.length > 0}
+          onChange={e => setSharedStock(e.target.value)}
           required
         />
+      </label>
+      <label>
+        {isEn ? "Maximum per order" : "الحد الأقصى لكل طلب"}
+        <input type="number" name="max_order_qty" min={1} max={2147483647} step={1}
+          defaultValue={p?.max_order_qty ?? ""} placeholder={isEn ? "Use store default" : "استخدام حد المتجر"} />
       </label>
       <label>
         {isEn ? "Selling Price" : "السعر"}
@@ -486,6 +504,12 @@ export function AdminProductForm({
       <input type="hidden" name="color_images" value={JSON.stringify(colorPhotos)} />
       {hasOptions && <fieldset className="wide variant-editor">
         <legend>{isEn ? "Variant inventory" : "مخزون الخيارات"}</legend>
+        {p && !p.product_variants?.length && !trackVariants && <div>
+          <p>{isEn ? "These options share one stock total." : "تسحب هذه الخيارات من مخزون مشترك."}</p>
+          <button type="button" onClick={distributeStock} disabled={!/^\d+$/.test(sharedStock)}>
+            {isEn ? "Distribute stock evenly across variants" : "توزيع المخزون بالتساوي على الخيارات"}
+          </button>
+        </div>}
         <label><input type="checkbox" checked={trackVariants} onChange={e => setTrackVariants(e.target.checked)} />
           {isEn ? "Assign stock by color and size" : "تحديد المخزون حسب اللون والمقاس"}</label>
         {selectedColors.map(color => <label key={color}>{isEn ? "Image for " : "صورة اللون "}{color}

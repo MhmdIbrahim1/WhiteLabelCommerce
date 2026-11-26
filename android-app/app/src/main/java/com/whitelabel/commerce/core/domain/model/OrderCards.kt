@@ -30,3 +30,5 @@ enum class HistoryFilter(val param: String, val ar: String, val en: String) {
         Cancelled -> status == OrderStatus.CANCELLED
     }
 }
+
+fun formatOrderNumber(id: String): String = "\u2066#${id.take(8).uppercase(java.util.Locale.ROOT)}\u2069"

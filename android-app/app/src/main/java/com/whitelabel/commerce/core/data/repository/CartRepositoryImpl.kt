@@ -29,8 +29,22 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
+import com.whitelabel.commerce.core.data.remote.dto.VariantDto
+import com.whitelabel.commerce.core.data.remote.runSuspendCatching
+import com.whitelabel.commerce.core.domain.model.remainingQuantity
+import io.github.jan.supabase.postgrest.from
+import io.github.jan.supabase.postgrest.query.Columns
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import javax.inject.Inject
 import javax.inject.Singleton
+
+@Serializable
+private data class InventoryRow(val id: String, val stock: Int, @SerialName("max_order_qty") val limit: Int? = null,
+    @SerialName("product_variants") val variants: List<VariantDto> = emptyList()) {
+    fun stockFor(color: String?, size: String?): Int = if (variants.isEmpty()) stock
+        else variants.find { it.color == color.orEmpty() && it.size == size.orEmpty() }?.stock ?: 0
+}
 
 @Singleton
 class CartRepositoryImpl @Inject constructor(
@@ -63,10 +77,15 @@ class CartRepositoryImpl @Inject constructor(
         quantity: Int,
         selectedSize: String?,
         selectedColor: String?,
-    ) {
-        val available = product.inventory.stock(selectedColor, selectedSize, product.stock)
-        if (quantity <= 0 || available <= 0) return
-
+    ): Int {
+        if (quantity <= 0) return 0
+        val live = inventory(listOf(product.id)).getOrNull()
+        val row = live?.get(product.id)
+        if (live != null && row == null) return 0
+        val available = row?.stockFor(selectedColor, selectedSize) ?: product.inventory.stock(selectedColor, selectedSize, product.stock)
+        val totalStock = row?.stock ?: product.stock
+        val override = if (row == null) product.maxOrderQty else row.limit
+        var added = 0
         val normalizedSize = selectedSize?.trim()?.takeIf { it.isNotEmpty() }
         val normalizedColor = selectedColor?.trim()?.takeIf { it.isNotEmpty() }
 
@@ -74,10 +93,13 @@ class CartRepositoryImpl @Inject constructor(
             val targetKey = "${product.id}|${normalizedSize.orEmpty()}|${normalizedColor.orEmpty()}"
             val existingIndex = current.indexOfFirst { it.toDomain().lineKey == targetKey }
 
+            val room = current.map { it.toDomain() }.remainingQuantity(product.id, normalizedSize, normalizedColor,
+                available, totalStock, override, storeRepository.storeSettings.value.defaultMaxOrderQty)
+            added = minOf(quantity, room.coerceAtLeast(0))
+            if (added == 0) return@updateCart
             val effectiveUnit = product.effectivePrice()
             if (existingIndex >= 0) {
                 val existing = current[existingIndex]
-                val clampedQty = (existing.quantity + quantity).coerceIn(1, available)
                 current[existingIndex] = existing.copy(
                     productName = product.name,
                     productNameEn = product.nameEn,
@@ -88,8 +110,8 @@ class CartRepositoryImpl @Inject constructor(
                     flashSaleEndsAt = product.flashSaleEndsAt,
                     oldPrice = product.oldPrice,
                     imageUrl = product.imageFor(normalizedColor),
-                    quantity = clampedQty,
-                    maxStock = available,
+                    quantity = existing.quantity + added,
+                    maxStock = available, productStock = totalStock, maxOrderQty = override,
                 )
             } else {
                 current += CartItemEntity(
@@ -103,11 +125,33 @@ class CartRepositoryImpl @Inject constructor(
                     flashSaleEndsAt = product.flashSaleEndsAt,
                     oldPrice = product.oldPrice,
                     imageUrl = product.imageFor(normalizedColor),
-                    quantity = quantity.coerceIn(1, available),
-                    maxStock = available,
+                    quantity = added,
+                    maxStock = available, productStock = totalStock, maxOrderQty = override,
                     selectedSize = normalizedSize,
                     selectedColor = normalizedColor,
                 )
+            }
+        }
+        return added
+    }
+
+    private suspend fun inventory(ids: List<String>) = runSuspendCatching {
+        supabase.from("products").select(Columns.raw("id,stock,max_order_qty,product_variants(color,size,stock)")) {
+            filter { eq("store_id", BuildConfig.STORE_ID); eq("is_active", true); isIn("id", ids) }
+        }.decodeList<InventoryRow>().associateBy { it.id }
+    }
+
+    override suspend fun refreshInventory() {
+        val ids = cartItems.first().map { it.productId }.distinct()
+        if (ids.isEmpty()) return
+        val live = inventory(ids).getOrNull() ?: return
+        updateCart { lines ->
+            lines.replaceAll { line ->
+                if (line.productId !in ids) line else {
+                    val row = live[line.productId]
+                    line.copy(maxStock = row?.stockFor(line.selectedColor, line.selectedSize) ?: 0,
+                        productStock = row?.stock ?: 0, maxOrderQty = row?.limit)
+                }
             }
         }
     }
@@ -120,8 +164,10 @@ class CartRepositoryImpl @Inject constructor(
                 current.removeAt(index)
             } else {
                 val existing = current[index]
-                val maxAllowed = existing.maxStock.coerceAtLeast(1)
-                current[index] = existing.copy(quantity = quantity.coerceIn(1, maxAllowed))
+                val room = current.map { it.toDomain() }.remainingQuantity(existing.toDomain(), storeRepository.storeSettings.value.defaultMaxOrderQty)
+                if (quantity <= existing.quantity || quantity - existing.quantity <= room) {
+                    current[index] = existing.copy(quantity = quantity)
+                }
             }
         }
     }
@@ -217,16 +263,20 @@ class CartRepositoryImpl @Inject constructor(
     }
 
     private suspend fun updateCart(transform: (MutableList<CartItemEntity>) -> Unit) {
+        var changed = false
         dataStore.edit { prefs ->
-            val mutable = decodeItems(prefs[KEY_CART_ITEMS]).toMutableList()
+            val previous = decodeItems(prefs[KEY_CART_ITEMS])
+            val mutable = previous.toMutableList()
             transform(mutable)
+            changed = mutable != previous
+            if (!changed) return@edit
             if (mutable.isEmpty()) {
                 prefs.remove(KEY_CART_ITEMS)
             } else {
                 prefs[KEY_CART_ITEMS] = json.encodeToString(mutable)
             }
         }
-        syncAbandonedCartAsync(lastKnownCurrency ?: storeRepository.storeSettings.value.currency)
+        if (changed) syncAbandonedCartAsync(lastKnownCurrency ?: storeRepository.storeSettings.value.currency)
     }
 
     private fun decodeItems(raw: String?): List<CartItemEntity> {

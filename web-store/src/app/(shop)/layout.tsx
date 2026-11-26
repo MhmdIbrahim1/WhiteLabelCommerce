@@ -101,7 +101,7 @@ export default async function Layout({
   const dataAttrs = uiConfigDataAttrs(s.uiConfig);
   const href = (path: string) => storeHref(s.basePath, path);
   return (
-    <CartTenantProvider storeId={s.storeId}>
+    <CartTenantProvider storeId={s.storeId} defaultMaxOrderQty={s.defaultMaxOrderQty}>
       <WishlistProvider
         storeId={s.storeId}
         initialProductIds={initialWishlistIds}

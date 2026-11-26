@@ -28,7 +28,7 @@ begin
       perform public.store_checkout(gen_random_uuid(),'QA rollback address','01098765430','cod',line,null,'QA',false,tenant);
       raise exception 'oversold';
     exception when raise_exception then
-      if sqlerrm<>'stock_unavailable' then raise; end if;
+      if sqlerrm<>'max_order_qty_exceeded' then raise; end if;
     end;
     if (select stock from public.products where id=test_product)<>5 then raise exception 'parent stock mismatch'; end if;
     if (select v.stock from public.product_variants v where v.product_id=test_product and v.color='Red')<>5 then raise exception 'unrelated stock changed'; end if;

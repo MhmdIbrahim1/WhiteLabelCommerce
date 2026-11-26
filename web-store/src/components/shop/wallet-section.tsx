@@ -1,5 +1,6 @@
 "use client";
 
+import { formatOrderNumber } from "@/lib/order-number";
 import { Wallet, Sparkles, ArrowDownLeft, ArrowUpRight, History } from "lucide-react";
 import { date, money } from "@/lib/brand";
 import { useLanguage } from "@/components/language-provider";
@@ -30,7 +31,7 @@ export type WalletSummaryData = {
 };
 
 function txTitle(tx: WalletTransactionItem, isEn: boolean): string {
-  const shortOrder = tx.order_id ? `#${tx.order_id.slice(0, 8)}` : "";
+  const shortOrder = tx.order_id ? formatOrderNumber(tx.order_id) : "";
   if (isEn) {
     if (tx.note_en?.trim()) return tx.note_en.trim();
     switch (tx.type) {

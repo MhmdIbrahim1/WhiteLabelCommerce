@@ -31,6 +31,10 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import com.whitelabel.commerce.core.domain.model.CartItem
+import com.whitelabel.commerce.core.domain.model.remainingQuantity
+import com.whitelabel.commerce.core.domain.model.quantityLimitHint
+import com.whitelabel.commerce.core.domain.repository.StoreRepository
 import javax.inject.Inject
 
 data class ProductDetailUiState(
@@ -38,6 +42,8 @@ data class ProductDetailUiState(
     val selectedSize: String? = null,
     val selectedColor: String? = null,
     val quantity: Int = 1,
+    val cartLines: List<CartItem> = emptyList(),
+    val defaultLimit: Int? = 10,
     val isLoading: Boolean = true,
     val errorMessage: String? = null,
     val isSubscribingRestock: Boolean = false,
@@ -56,10 +62,13 @@ data class ProductDetailUiState(
     val relatedProducts: List<Product> = emptyList(),
 ) {
     val selectedStock: Int get() = product?.let { it.inventory.stock(selectedColor, selectedSize, it.stock) } ?: 0
+    val remaining: Int get() = product?.let {
+        cartLines.remainingQuantity(it.id, selectedSize, selectedColor, selectedStock, it.stock, it.maxOrderQty, defaultLimit).coerceAtLeast(0)
+    } ?: 0
     val canAddToCart: Boolean
         get() {
             val p = product ?: return false
-            if (!p.isInStock || quantity <= 0 || quantity > selectedStock) return false
+            if (!p.isInStock || quantity <= 0 || quantity > remaining) return false
             if (p.sizes.isNotEmpty() && selectedSize.isNullOrBlank()) return false
             if (p.colors.isNotEmpty() && selectedColor.isNullOrBlank()) return false
             return true
@@ -71,6 +80,7 @@ class ProductDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val catalogRepository: CatalogRepository,
     private val cartRepository: CartRepository,
+    storeRepository: StoreRepository,
     private val notificationRepository: NotificationRepository,
     private val fcmTokenManager: FcmTokenManager,
     private val reviewRepository: ReviewRepository,
@@ -85,13 +95,18 @@ class ProductDetailViewModel @Inject constructor(
         _uiState,
         wishlistRepository.wishlistedProductIds,
         authRepository.sessionState,
-    ) { state, wishIds, session ->
-        state.copy(
+        cartRepository.cartItems,
+        storeRepository.storeSettings,
+    ) { state, wishIds, session, cart, settings ->
+        val current = state.copy(
+            cartLines = cart,
+            defaultLimit = settings.defaultMaxOrderQty,
             isWishlisted = productId in wishIds,
             wishlistedProductIds = wishIds,
             isSignedIn = session is AuthSessionState.SignedIn,
             userId = (session as? AuthSessionState.SignedIn)?.userId,
         )
+        current.copy(quantity = current.quantity.coerceIn(1, current.remaining.coerceAtLeast(1)))
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
@@ -174,34 +189,31 @@ class ProductDetailViewModel @Inject constructor(
     }
 
     fun incrementQuantity() {
-        _uiState.update { state ->
-            val maxStock = state.selectedStock
-            if (state.quantity < maxStock) state.copy(quantity = state.quantity + 1) else state
-        }
+        val visible = uiState.value
+        if (visible.quantity < visible.remaining) _uiState.update { it.copy(quantity = visible.quantity + 1) }
     }
 
     fun decrementQuantity() {
-        _uiState.update { state ->
-            if (state.quantity > 1) state.copy(quantity = state.quantity - 1) else state
-        }
+        val quantity = uiState.value.quantity
+        if (quantity > 1) _uiState.update { it.copy(quantity = quantity - 1) }
     }
 
     fun addToCart(onAdded: (String) -> Unit) {
-        val state = _uiState.value
+        val state = uiState.value
         val product = state.product ?: return
         if (!state.canAddToCart) return
 
         viewModelScope.launch {
-            cartRepository.addProduct(
+            val added = cartRepository.addProduct(
                 product = product,
                 quantity = state.quantity,
                 selectedSize = state.selectedSize,
                 selectedColor = state.selectedColor,
             )
             onAdded(
-                localized(
-                    "تمت إضافة ${state.quantity} × \"${product.displayName}\" إلى السلة",
-                    "Added ${state.quantity} × ${product.displayName} to cart",
+                if (added == 0) quantityLimitHint() else localized(
+                    "تمت إضافة ${added} × \"${product.displayName}\" إلى السلة",
+                    "Added ${added} × ${product.displayName} to cart",
                 ),
             )
         }

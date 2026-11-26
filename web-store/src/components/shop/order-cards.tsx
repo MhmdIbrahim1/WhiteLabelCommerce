@@ -1,5 +1,6 @@
 "use client";
 
+import { formatOrderNumber } from "@/lib/order-number";
 import { useMemo } from "react";
 import Image from "next/image";
 import Link from "next/link";
@@ -24,7 +25,7 @@ export function OrderCards({ rows, filter, basePath, next }: { rows: OrderCardRo
     {orderFilters.map((key,i) => <Link key={key} aria-current={key === filter ? "page" : undefined}
       href={storeHref(basePath,"/orders?filter="+key)}>{labels[i]}</Link>)}</nav>
     {cards.length ? cards.map(row => <article className="history-card" key={row.id}>
-      <div className="history-heading"><div><strong dir="ltr">#{row.id.slice(0,8).toUpperCase()}</strong><small>{date(row.created_at,lang)}</small></div>
+      <div className="history-heading"><div><strong dir="ltr">{formatOrderNumber(row.id)}</strong><small>{date(row.created_at,lang)}</small></div>
         <span className="order-state" data-status={row.status}>{orderStatusLabel(row.status,lang)}</span></div>
       <div className="history-items">{row.thumbnails.length ? row.thumbnails.map((path,i) => <Image key={i} src={photo(path)!} unoptimized width={40} height={40} alt="" />) : <Package size={24} />}
         <span>{row.item_count.toLocaleString(lang)} {en ? (row.item_count === 1 ? "item" : "items") : "قطع"}</span></div>

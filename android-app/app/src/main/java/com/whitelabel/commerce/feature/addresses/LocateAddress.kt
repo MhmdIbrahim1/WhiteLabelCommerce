@@ -1,57 +1,80 @@
 package com.whitelabel.commerce.feature.addresses
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.pm.PackageManager
 import android.location.Address
 import android.location.Geocoder
 import android.location.Location
 import android.location.LocationManager
 import android.os.Build
-import androidx.core.location.LocationManagerCompat
-import androidx.core.content.ContextCompat
 import android.os.CancellationSignal
-import java.util.concurrent.Executors
+import android.os.SystemClock
+import androidx.core.content.ContextCompat
+import androidx.core.location.LocationManagerCompat
+import com.google.android.gms.common.ConnectionResult
+import com.google.android.gms.common.GoogleApiAvailability
+import com.google.android.gms.location.CurrentLocationRequest
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
+import com.google.android.gms.tasks.Task
 import com.whitelabel.commerce.BuildConfig
 import com.whitelabel.commerce.core.domain.model.CustomerAddress
 import com.whitelabel.commerce.core.domain.model.EgyptLocations
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.withTimeoutOrNull
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
 import java.util.Locale
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 
-@SuppressLint("MissingPermission")
-private suspend fun deviceLocation(context: Context): Location = withTimeout(12000) {
-    val manager = context.getSystemService(LocationManager::class.java)
-    val providers = listOf("fused", LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
-        .filter { it in manager.getProviders(true) }
-    require(providers.isNotEmpty())
+private suspend fun Task<Location>.awaitFix(cancel: () -> Unit = {}): Location? =
     suspendCancellableCoroutine { continuation ->
-        val signals = mutableListOf<CancellationSignal>()
-        var pending = providers.size
-        fun finish(location: Location?) {
-            pending--
-            if (continuation.isActive && (location != null || pending == 0)) {
-                signals.forEach { it.cancel() }
-                if (location != null) continuation.resume(location)
-                else continuation.resumeWith(Result.failure(IllegalStateException("location_unavailable")))
+        continuation.invokeOnCancellation { cancel() }
+        addOnCompleteListener { task ->
+            if (continuation.isActive) continuation.resume(if (task.isSuccessful) task.result else null)
+        }
+    }
+
+private fun Location.isFresh() = freshFix((SystemClock.elapsedRealtimeNanos() - elapsedRealtimeNanos) / 1_000_000)
+
+@SuppressLint("MissingPermission")
+internal suspend fun deviceLocation(context: Context,
+    hasPlay: Boolean = GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(context) == ConnectionResult.SUCCESS,
+): Location {
+    val manager = context.getSystemService(LocationManager::class.java)
+    val fused by lazy { LocationServices.getFusedLocationProviderClient(context) }
+    suspend fun current(priority: Int): Location? {
+        val token = CancellationTokenSource()
+        val request = CurrentLocationRequest.Builder().setPriority(priority).setMaxUpdateAgeMillis(FRESH_FIX_MS).build()
+        return fused.getCurrentLocation(request, token.token).awaitFix(token::cancel)?.takeIf { it.isFresh() }
+    }
+    suspend fun platform(provider: String): Location? {
+        if (!manager.isProviderEnabled(provider)) return null
+        manager.getLastKnownLocation(provider)?.takeIf { it.isFresh() }?.let { return it }
+        return suspendCancellableCoroutine<Location?> { continuation ->
+            val signal = CancellationSignal()
+            continuation.invokeOnCancellation { signal.cancel() }
+            LocationManagerCompat.getCurrentLocation(manager, provider, signal, ContextCompat.getMainExecutor(context)) {
+                if (continuation.isActive) continuation.resume(it?.takeIf { fix -> fix.isFresh() })
             }
         }
-        for (provider in providers) {
-            val signal = CancellationSignal()
-            signals.add(signal)
-            try {
-                LocationManagerCompat.getCurrentLocation(manager, provider, signal,
-                    ContextCompat.getMainExecutor(context), ::finish)
-            } catch (_: SecurityException) { finish(null) }
-        }
-        continuation.invokeOnCancellation { signals.forEach { it.cancel() } }
     }
+    return acquireFix(
+        hasPermission = { ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED },
+        enabled = { LocationManagerCompat.isLocationEnabled(manager) }, hasPlayServices = hasPlay,
+        balanced = { current(Priority.PRIORITY_BALANCED_POWER_ACCURACY) },
+        high = { current(Priority.PRIORITY_HIGH_ACCURACY) }, lastFused = { fused.lastLocation.awaitFix()?.takeIf { it.isFresh() } },
+        network = { platform(LocationManager.NETWORK_PROVIDER) }, gps = { platform(LocationManager.GPS_PROVIDER) },
+    )
 }
 
 // The pre-33 Geocoder can block a binder thread. Bound its concurrency and let the UI time out.
@@ -79,35 +102,56 @@ private suspend fun nativeAddress(context: Context, location: Location, lang: St
     }
 }
 
-suspend fun locateAddress(context: Context, lang: String, draft: CustomerAddress): CustomerAddress {
-    val location = deviceLocation(context)
-    val lat = location.latitude
-    val lng = location.longitude
-    val native = try {
-        withTimeoutOrNull(3500) { nativeAddress(context, location, lang) }
-    } catch (_: java.io.IOException) { null }
-    if (native?.countryCode.equals("EG", true)) {
-        val gov = EgyptLocations.findGovernorate(native?.adminArea)
-        val city = native?.subLocality ?: native?.locality ?: native?.subAdminArea
-        val street = native?.thoroughfare
-        if (gov != null && !city.isNullOrBlank() && !street.isNullOrBlank()) {
-            return draft.copy(governorate = gov.id, city = city, street = street, lat = lat, lng = lng)
+private val http = OkHttpClient.Builder().callTimeout(5, TimeUnit.SECONDS).build()
+private val addresses = AddressCache(SystemClock::elapsedRealtime)
+
+internal suspend fun lookupAddress(location: Location, lang: String): AddressParts? = withContext(Dispatchers.IO) {
+    val key = spatialKey(location.latitude, location.longitude, lang)
+    addresses.get(key)?.let { return@withContext it }
+    if (!addresses.canRequest()) return@withContext null
+    val (lat, lng) = key.split('/')
+    val body = JSONObject().put("lat", lat.toDouble()).put("lng", lng.toDouble()).put("lang", lang)
+    val request = Request.Builder().url(BuildConfig.SUPABASE_URL.trimEnd('/') + "/functions/v1/reverse-geocode")
+        .header("apikey", BuildConfig.SUPABASE_ANON_KEY)
+        .header("Authorization", "Bearer " + BuildConfig.SUPABASE_ANON_KEY)
+        .post(body.toString().toRequestBody("application/json".toMediaType())).build()
+    fun responseJson(request: Request): JSONObject? = http.newCall(request).execute().use { response ->
+        if (response.code == 429 || response.code == 503) {
+            val retry = response.header("Retry-After")
+            val seconds = retry?.toLongOrNull()?.coerceIn(1, 86400)
+            val waitMs = seconds?.times(1000) ?: response.headers.getDate("Retry-After")?.let { it.time - System.currentTimeMillis() } ?: 60_000
+            addresses.backOff(waitMs.coerceIn(1000, 86_400_000))
         }
+        if (response.isSuccessful) response.body?.string()?.let(::JSONObject) else null
     }
-    return withContext(Dispatchers.IO) {
-        val url = URL(BuildConfig.WEB_STORE_BASE_URL.trimEnd('/') + "/api/reverse-geocode")
-        val conn = url.openConnection() as HttpURLConnection
-        try {
-            conn.requestMethod = "POST"
-            conn.doOutput = true
-            conn.connectTimeout = 4500
-            conn.readTimeout = 9000
-            conn.setRequestProperty("Content-Type", "application/json")
-            conn.outputStream.use { it.write(JSONObject().put("lat",lat).put("lng",lng).put("lang",lang).toString().toByteArray()) }
-            check(conn.responseCode == 200)
-            val result = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
-            draft.copy(governorate = result.optString("governorate"), city = result.optString("city"),
-                street = result.optString("street"), lat = lat, lng = lng)
-        } finally { conn.disconnect() }
+    val slot = responseJson(request) ?: return@withContext null
+    val cached = slot.optJSONObject("cached")
+    val parts = if (cached != null) {
+        AddressParts(cached.optString("governorate"), cached.optString("city"), cached.optString("street"))
+    } else {
+        val endpoint = slot.optString("url")
+        if (!endpoint.startsWith("https://")) return@withContext null
+        val lookup = Request.Builder().url(endpoint)
+            .header("User-Agent", "WhiteLabelCommerce/" + BuildConfig.VERSION_NAME + " (https://github.com/MhmdIbrahim1/WhiteLabelCommerce)")
+            .header("Accept", "application/json").build()
+        val a = responseJson(lookup)?.optJSONObject("address") ?: return@withContext null
+        if (!a.optString("country_code").equals("eg", true)) return@withContext null
+        fun field(vararg names: String) = names.firstNotNullOfOrNull { a.optString(it).takeIf(String::isNotBlank) }.orEmpty()
+        AddressParts(sequenceOf("ISO3166-2-lvl4", "state", "province").firstNotNullOfOrNull {
+            EgyptLocations.findGovernorate(a.optString(it))?.id }.orEmpty(),
+            field("suburb", "city_district", "town", "village", "city", "county"), field("road", "pedestrian", "residential"))
     }
+    if (parts != AddressParts()) addresses.put(key, parts)
+    parts
+}
+
+internal suspend fun locateAddress(context: Context, lang: String, draft: CustomerAddress): LocatedAddress {
+    val location = deviceLocation(context)
+    return resolvePin(draft, location.latitude, location.longitude, native = {
+        nativeAddress(context, location, lang)?.takeIf { it.countryCode.equals("EG", true) }?.let {
+            AddressParts(EgyptLocations.findGovernorate(it.adminArea)?.id.orEmpty(),
+                listOf(it.subLocality, it.locality, it.subAdminArea).firstOrNull { city -> !city.isNullOrBlank() }.orEmpty(),
+                it.thoroughfare.orEmpty())
+        }
+    }, fallback = { lookupAddress(location, lang) })
 }

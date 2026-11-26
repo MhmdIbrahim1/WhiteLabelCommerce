@@ -1,5 +1,6 @@
 "use client";
 
+import { formatOrderNumber } from "@/lib/order-number";
 import { showToast, ToastFeedback } from "@/components/floating-toast";
 import { useActionState, useState } from "react";
 import Link from "next/link";
@@ -240,11 +241,11 @@ export function Timeline({
                 className="order-id order-id-link"
                 title={row.id}
               >
-                #{row.id.slice(0, 8)}
+                {formatOrderNumber(row.id)}
               </Link>
             ) : (
               <span dir="ltr" className="order-id" title={row.id}>
-                #{row.id.slice(0, 8)}
+                {formatOrderNumber(row.id)}
               </span>
             )}
             <button

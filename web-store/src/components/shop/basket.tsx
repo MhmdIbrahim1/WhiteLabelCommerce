@@ -19,7 +19,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import {
-  useCart,
+  useCart, useDefaultOrderLimit, remainingQuantity, refreshCartInventory,
   change,
   purchased,
   setPendingOnlineOrder,
@@ -35,6 +35,7 @@ import {
   previewCoupon,
   type CheckoutResult,
 } from "@/app/(shop)/checkout/action";
+import { quantityLimitHint } from "@/lib/variant-stock";
 import { money } from "@/lib/brand";
 import { localizedText, translateColor } from "@/lib/i18n";
 import type { StoreIncentives } from "@/lib/shop";
@@ -106,6 +107,14 @@ export function Basket({
   const tenantId = useCartTenant();
   const isEn = lang === "en";
   const lines = useCart();
+  const defaultLimit = useDefaultOrderLimit();
+  const productIds = [...new Set(lines.map(line => line.id))].sort().join(",");
+  useEffect(() => {
+    let active = true;
+    if (productIds) void refreshCartInventory(tenantId, productIds.split(","), () => active).catch(() => {});
+    return () => { active = false; };
+  }, [tenantId, productIds]);
+  const overLimit = lines.some(line => remainingQuantity(lines, line, defaultLimit) < 0);
 
   const availableMethods: SelectedPayment[] = [];
   if (paymentOptions.codEnabled) availableMethods.push("cod");
@@ -264,7 +273,7 @@ export function Basket({
         <p>{t("orderReceivedNote")}</p>
         <p dir="ltr">{result.id}</p>
         <p>{money(result.total ?? null, result.currency, lang)}</p>
-        <Link className="cta" href="/orders">
+        <Link className="cta" href={storeHref(basePath, "/orders")}>
           {t("trackOrderBtn")}
         </Link>
       </section>
@@ -318,6 +327,7 @@ export function Basket({
         <section className="panel">
           <h2>{t("cartItemsTitle")}</h2>
           {lines.map((l) => {
+            const remaining = remainingQuantity(lines, l, defaultLimit);
             const unitPrice = lineEffectivePrice(l);
             const regularPrice =
               typeof l.regular_price === "number" && l.regular_price > unitPrice
@@ -347,6 +357,7 @@ export function Basket({
                       )}
                     </div>
                   )}
+                  {remaining <= 0 && <small role="status">{quantityLimitHint(lang)}</small>}
                   <p className="basket-line-price">
                     <span>{money(unitPrice, currency, lang)}</span>
                     {regularPrice !== null && (
@@ -360,7 +371,7 @@ export function Basket({
                   {!order && (
                     <button
                       aria-label={isEn ? "Decrease quantity" : "إنقاص الكمية"}
-                      onClick={() => change(tenantId, l, -1)}
+                      onClick={() => change(tenantId, l, -1, defaultLimit)}
                     >
                       <Minus size={15} />
                     </button>
@@ -372,18 +383,14 @@ export function Basket({
                     <>
                       <button
                         aria-label={isEn ? "Increase quantity" : "زيادة الكمية"}
-                        disabled={
-                          lines
-                            .filter((x) => x.id === l.id && (!l.variantStock || (x.size === l.size && x.color === l.color)))
-                            .reduce((n, x) => n + x.quantity, 0) >= l.stock
-                        }
-                        onClick={() => change(tenantId, l, 1)}
+                        disabled={remaining <= 0}
+                        onClick={() => change(tenantId, l, 1, defaultLimit)}
                       >
                         <Plus size={15} />
                       </button>
                       <button
                         aria-label={isEn ? "Remove item" : "حذف المنتج"}
-                        onClick={() => change(tenantId, l, -l.quantity)}
+                        onClick={() => change(tenantId, l, -l.quantity, defaultLimit)}
                       >
                         <Trash2 size={15} />
                       </button>
@@ -488,7 +495,7 @@ export function Basket({
               onSubmit={async (e) => {
                 e.preventDefault();
                 if (
-                  lock.current ||
+                  overLimit || lock.current ||
                   (!fullyPaidByWallet && availableMethods.length === 0)
                 )
                   return;
@@ -844,7 +851,7 @@ export function Basket({
               <button
                 className="checkout-cta"
                 disabled={
-                  busy || (!fullyPaidByWallet && availableMethods.length === 0)
+                  overLimit || busy || (!fullyPaidByWallet && availableMethods.length === 0)
                 }
               >
                 {redirectingPayment
@@ -857,6 +864,7 @@ export function Basket({
                         : "إتمام الطلب برصيد المحفظة"
                       : t("confirmOrderBtn")}
               </button>
+              {overLimit && <Link href={storeHref(basePath, "/cart")}>{isEn ? "Reduce quantities in your cart" : "خفّض الكميات في السلة"}</Link>}
               {result.error && <ToastFeedback kind="error" message={result.error} />}
             </form>
           ) : (

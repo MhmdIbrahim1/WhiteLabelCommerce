@@ -1,5 +1,6 @@
 package com.whitelabel.commerce.feature.account
 
+import com.whitelabel.commerce.core.domain.model.formatOrderNumber
 import androidx.compose.runtime.setValue
 import com.whitelabel.commerce.core.designsystem.components.BannerFeedback
 import androidx.compose.foundation.BorderStroke
@@ -653,7 +654,7 @@ private fun WalletAccountCard(
                     transactions.take(12).forEachIndexed { idx, tx ->
                         if (idx > 0) HorizontalDivider(color = brandColors.hairline)
                         val isCredit = tx.amount > 0.0
-                        val shortOrder = tx.orderId?.take(8)?.let { "#$it" }.orEmpty()
+                        val shortOrder = tx.orderId?.let(::formatOrderNumber).orEmpty()
                         val title = localized(
                             arabic = tx.noteAr.ifBlank {
                                 when (tx.type) {

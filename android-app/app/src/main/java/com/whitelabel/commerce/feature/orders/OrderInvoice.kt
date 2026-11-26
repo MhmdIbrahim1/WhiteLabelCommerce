@@ -1,5 +1,6 @@
 package com.whitelabel.commerce.feature.orders
 
+import com.whitelabel.commerce.core.domain.model.formatOrderNumber
 import android.content.Context
 import android.print.PrintManager
 import android.text.TextUtils.htmlEncode
@@ -10,7 +11,7 @@ import com.whitelabel.commerce.core.designsystem.localized
 import com.whitelabel.commerce.core.domain.model.Order
 
 internal fun printOrderInvoice(context: Context, order: Order, locale: String) {
-    val title = localized("فاتورة", "Invoice") + " #" + order.id.take(8)
+    val title = localized("فاتورة", "Invoice") + " " + formatOrderNumber(order.id)
     val rows = order.items.joinToString("") {
         "<tr><td>${htmlEncode(it.productName)}</td><td>${it.quantity}</td><td>${htmlEncode(formatPrice(it.lineTotal, order.currency, locale))}</td></tr>"
     }

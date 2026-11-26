@@ -1,5 +1,6 @@
 package com.whitelabel.commerce.feature.orders
 
+import com.whitelabel.commerce.core.domain.model.formatOrderNumber
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -124,7 +125,7 @@ fun OrderDetailScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = localized("تفاصيل الطلب #${orderId.take(8)}", "Order #${orderId.take(8)}"),
+                        text = localized("تفاصيل الطلب ${formatOrderNumber(orderId)}", "Order ${formatOrderNumber(orderId)}"),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                     )
@@ -214,7 +215,7 @@ fun OrderDetailScreen(
                                 ) {
                                     Column {
                                         Text(
-                                            text = localized("طلب #${order.id.take(8)}", "Order #${order.id.take(8)}"),
+                                            text = localized("طلب ${formatOrderNumber(order.id)}", "Order ${formatOrderNumber(order.id)}"),
                                             style = MaterialTheme.typography.titleMedium,
                                             fontWeight = FontWeight.Bold,
                                         )
@@ -842,7 +843,7 @@ private fun ReturnRequestBottomSheet(
                             fontWeight = FontWeight.Bold,
                         )
                         Text(
-                            text = "#${order.id.take(8)}",
+                            text = formatOrderNumber(order.id),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

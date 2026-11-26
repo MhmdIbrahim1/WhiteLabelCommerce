@@ -192,6 +192,7 @@ data class Product(
     val variants: List<ProductVariant> = emptyList(),
     val colorImages: Map<String, String> = emptyMap(),
     val galleryUrls: List<String> = emptyList(),
+    val maxOrderQty: Int? = null,
 ) {
     val inventory = VariantInventory(variants)
     fun imageFor(color: String?) = colorImages[color] ?: imageUrl ?: galleryUrls.firstOrNull()

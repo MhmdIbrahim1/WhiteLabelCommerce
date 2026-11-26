@@ -8,6 +8,8 @@ import {
   useMemo,
   useSyncExternalStore,
 } from "react";
+import { browserDb } from "@/lib/supabase/browser";
+import type { Variant } from "@/lib/variant-stock";
 import { resolveEffectivePrice } from "@/lib/flash-sale";
 
 export type Line = {
@@ -24,6 +26,8 @@ export type Line = {
   quantity: number;
   stock: number;
   variantStock?: boolean;
+  productStock?: number;
+  max_order_qty?: number | null;
 };
 
 type CartContact = {
@@ -33,7 +37,7 @@ type CartContact = {
   currency?: string;
 };
 
-const CartTenantContext = createContext<string | null>(null);
+const CartTenantContext = createContext<{ id: string; defaultLimit: number | null } | null>(null);
 const emptySnapshot = "[]";
 const legacyIsolationMarker = "wlc.cart.tenant-scope.v1";
 const legacyExactKeys = [
@@ -90,15 +94,17 @@ function randomSessionId(prefix: string): string {
 }
 
 export function CartTenantProvider({
-  storeId,
+  storeId, defaultMaxOrderQty,
   children,
 }: {
   storeId: string;
+  defaultMaxOrderQty: number | null;
   children: React.ReactNode;
 }) {
+  const value = useMemo(() => ({ id: requireTenantId(storeId), defaultLimit: defaultMaxOrderQty }), [storeId, defaultMaxOrderQty]);
   return createElement(
     CartTenantContext.Provider,
-    { value: requireTenantId(storeId) },
+    { value },
     children,
   );
 }
@@ -106,7 +112,13 @@ export function CartTenantProvider({
 export function useCartTenant(): string {
   const tenantId = useContext(CartTenantContext);
   if (!tenantId) throw new Error("CartTenantProvider is missing.");
-  return tenantId;
+  return tenantId.id;
+}
+
+export function useDefaultOrderLimit() {
+  const tenant = useContext(CartTenantContext);
+  if (!tenant) throw new Error("CartTenantProvider is missing.");
+  return tenant.defaultLimit;
 }
 
 export function lineEffectivePrice(
@@ -350,13 +362,49 @@ function save(tenantId: string, rows: Line[]) {
   scheduleCartHeartbeat(cleanTenant, rows);
 }
 
-export function change(tenantId: string, line: Line, delta: number) {
+type InventoryLine = Pick<Line, "id" | "size" | "color" | "stock" | "variantStock" | "productStock" | "max_order_qty">;
+
+export function remainingQuantity(rows: Line[], line: InventoryLine, defaultLimit: number | null) {
+  const productLimit = Math.min(line.productStock ?? (line.variantStock ? Infinity : line.stock),
+    line.max_order_qty ?? defaultLimit ?? Infinity);
+  let total = 0, selected = 0;
+  for (const row of rows) {
+    if (row.id !== line.id) continue;
+    total += row.quantity;
+    if (row.size === line.size && row.color === line.color) selected += row.quantity;
+  }
+  return Math.min(productLimit - total, line.stock - (line.variantStock ? selected : total));
+}
+
+type Inventory = { id: string; stock: number; max_order_qty: number | null; product_variants: Variant[] };
+export async function readInventory(tenant: string, ids: string[]) {
+  const { data, error } = await browserDb().from("products")
+    .select("id,stock,max_order_qty,product_variants(color,size,stock)")
+    .eq("store_id", tenant).eq("is_active", true).in("id", ids).returns<Inventory[]>();
+  if (error) throw error;
+  return new Map(data.map(p => [p.id, p]));
+}
+
+export function inventoryForLine(p: Inventory | undefined, color: string, size: string) {
+  const tracked = Boolean(p?.product_variants.length);
+  const stock = tracked ? p?.product_variants.find(v => v.color === color && v.size === size)?.stock : p?.stock;
+  return { stock: stock ?? 0, productStock: p?.stock ?? 0, variantStock: tracked, max_order_qty: p?.max_order_qty ?? null };
+}
+
+export async function refreshCartInventory(tenant: string, ids: string[], isCurrent: () => boolean) {
+  const inventory = await readInventory(tenant, ids);
+  if (!isCurrent()) return;
+  const rows = decode(snapshot(tenant));
+  const requested = new Set(ids);
+  const updated = rows.map(row => requested.has(row.id)
+    ? { ...row, ...inventoryForLine(inventory.get(row.id), row.color, row.size) } : row);
+  if (JSON.stringify(updated) !== JSON.stringify(rows)) save(tenant, updated);
+}
+
+export function change(tenantId: string, line: Line, delta: number, defaultLimit: number | null) {
   const rows = decode(snapshot(tenantId));
-  const i = rows.findIndex((l) => same(l, line));
-  const total = rows
-    .filter((l) => line.variantStock ? same(l, line) : l.id === line.id)
-    .reduce((sum, l) => sum + l.quantity, 0);
-  if (delta > 0 && total + delta > line.stock) return false;
+  const i = rows.findIndex(l => same(l, line));
+  if (delta > 0 && delta > remainingQuantity(rows, line, defaultLimit)) return false;
   const quantity = (rows[i]?.quantity ?? 0) + delta;
   if (i >= 0) rows.splice(i, 1);
   if (quantity > 0) rows.push({ ...line, quantity });

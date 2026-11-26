@@ -17,6 +17,7 @@ type StoreSettingsRow = {
   store_name: string;
   currency: string;
   shipping_fee: number;
+  default_max_order_qty: number | null;
   whatsapp_number: string;
   theme_template: string;
   banners: string[];
@@ -52,7 +53,7 @@ export default async function Settings({
     await db
       .from("store_settings")
       .select(
-        "store_id,store_name,shipping_fee,currency,whatsapp_number,banners,theme_template,cod_enabled,paymob_enabled,paymob_card_enabled,paymob_wallet_enabled,cart_incentive_enabled,free_shipping_threshold,cashback_enabled,cashback_percentage,return_window_days",
+        "store_id,store_name,shipping_fee,default_max_order_qty,currency,whatsapp_number,banners,theme_template,cod_enabled,paymob_enabled,paymob_card_enabled,paymob_wallet_enabled,cart_incentive_enabled,free_shipping_threshold,cashback_enabled,cashback_percentage,return_window_days",
       )
       .eq("store_id", storeId)
       .single<StoreSettingsRow>(),
@@ -405,6 +406,12 @@ export default async function Settings({
               defaultValue={s.shipping_fee}
               required
             />
+          </label>
+          <label>
+            {isEn ? "Default quantity limit per product per order" : "الحد الافتراضي لكمية المنتج في الطلب"}
+            <input type="number" name="default_max_order_qty" min={1} max={2147483647} step={1}
+              defaultValue={s.default_max_order_qty ?? ""} />
+            <small>{isEn ? "Leave blank to use available stock." : "اتركه فارغاً لاستخدام المخزون المتاح."}</small>
           </label>
           <label>
             {isEn ? "WhatsApp Number" : "رقم واتساب"}

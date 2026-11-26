@@ -20,3 +20,13 @@ export function stockLabel(stock: number, lang: Lang) {
   if (stock <= 5) return lang === "en" ? "Almost gone" : "على وشك النفاد";
   return lang === "en" ? "In Stock" : "متوفر";
 }
+
+export function quantityLimitHint(lang: Lang) {
+  return lang === "en" ? "Quantity limit reached for this order." : "بلغت الحد المتاح لهذا المنتج في الطلب.";
+}
+
+export function orderLimitError(lang: Lang, allowed?: number) {
+  if (allowed === undefined) return quantityLimitHint(lang);
+  return lang === "en" ? `Reduce the quantity in your cart to ${allowed} or fewer.`
+    : `خفّض الكمية في سلتك إلى ${allowed} أو أقل.`;
+}

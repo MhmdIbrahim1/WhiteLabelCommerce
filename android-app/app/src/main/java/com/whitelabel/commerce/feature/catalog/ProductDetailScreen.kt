@@ -729,13 +729,13 @@ fun ProductDetailScreen(
                                         )
                                     }
                                     Text(
-                                        text = state.quantity.toString(),
+                                        text = minOf(state.remaining, state.quantity).toString(),
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.Bold,
                                     )
                                     Surface(
                                         onClick = viewModel::incrementQuantity,
-                                        enabled = state.quantity < state.selectedStock,
+                                        enabled = state.quantity < state.remaining,
                                         shape = MaterialTheme.shapes.small,
                                         color = MaterialTheme.colorScheme.primaryContainer,
                                         contentColor = MaterialTheme.colorScheme.primary,
@@ -749,6 +749,10 @@ fun ProductDetailScreen(
                                 }
                             }
                         }
+                    }
+
+                    if (product.isInStock && state.quantity >= state.remaining) {
+                        Text(com.whitelabel.commerce.core.domain.model.quantityLimitHint(), style = MaterialTheme.typography.bodySmall)
                     }
 
                     // 6. Product Description

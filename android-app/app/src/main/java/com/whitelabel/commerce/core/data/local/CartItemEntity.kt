@@ -17,6 +17,8 @@ data class CartItemEntity(
     val imageUrl: String? = null,
     val quantity: Int,
     val maxStock: Int,
+    val productStock: Int? = null,
+    val maxOrderQty: Int? = null,
     val selectedSize: String? = null,
     val selectedColor: String? = null,
 ) {
@@ -32,7 +34,7 @@ data class CartItemEntity(
         oldPrice = oldPrice,
         imageUrl = imageUrl,
         quantity = quantity,
-        maxStock = maxStock,
+        maxStock = maxStock, productStock = productStock, maxOrderQty = maxOrderQty,
         selectedSize = selectedSize,
         selectedColor = selectedColor,
     )
@@ -50,7 +52,7 @@ data class CartItemEntity(
             oldPrice = item.oldPrice,
             imageUrl = item.imageUrl,
             quantity = item.quantity,
-            maxStock = item.maxStock,
+            maxStock = item.maxStock, productStock = item.productStock, maxOrderQty = item.maxOrderQty,
             selectedSize = item.selectedSize,
             selectedColor = item.selectedColor,
         )

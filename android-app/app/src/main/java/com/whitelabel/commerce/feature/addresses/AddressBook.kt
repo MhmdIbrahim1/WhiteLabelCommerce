@@ -10,6 +10,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
@@ -23,7 +26,6 @@ import com.whitelabel.commerce.core.designsystem.localized
 import com.whitelabel.commerce.core.domain.model.CustomerAddress
 import com.whitelabel.commerce.core.domain.model.EgyptLocations
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -40,10 +42,12 @@ fun AddressBook(
     var rows by remember { mutableStateOf(emptyList<CustomerAddress>()) }
     var draft by rememberSaveable { mutableStateOf(initial) }
     var touched by rememberSaveable { mutableStateOf(false) }
+    var keepPin by rememberSaveable { mutableStateOf(false) }
     var editing by rememberSaveable { mutableStateOf(false) }
     var editor by rememberSaveable { mutableStateOf(checkout) }
     var busy by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf("") }
+    var locationNotice by rememberSaveable { mutableStateOf("") }
     var reload by remember { mutableIntStateOf(0) }
     var failedLoad by remember { mutableStateOf(false) }
     var confirm by remember { mutableStateOf<CustomerAddress?>(null) }
@@ -92,22 +96,35 @@ fun AddressBook(
         if (busy) return
         busy = true
         scope.launch {
-            notice = localized("جارٍ تحديد عنوانك…", "Finding your address…")
+            locationNotice = localized("جارٍ تحديد عنوانك…", "Finding your address…")
             try {
-                applyDraft(locateAddress(ctx, if (en) "en" else "ar", draft))
-                notice = localized("راجع العنوان وأضف تفاصيل المبنى.", "Check your address and add building details.")
-            } catch (_: TimeoutCancellationException) {
-                notice = localized("انتهت المهلة. أدخل العنوان أو حاول مجدداً.", "Location timed out. Enter your address or try again.")
+                val result = locateAddress(ctx, if (en) "en" else "ar", draft)
+                keepPin = true
+                applyDraft(result.address)
+                locationNotice = if (result.complete) localized("راجع العنوان وأضف تفاصيل المبنى.", "Check your address and add building details.")
+                    else localized("تم حفظ موقعك. تعذر إكمال العنوان تلقائياً، فأدخل التفاصيل الناقصة.",
+                        "Location pin saved. Address lookup was unavailable or incomplete. Fill in the missing details.")
             } catch (e: CancellationException) { throw e }
-            catch (_: Exception) { notice = localized("تعذر تحديد الموقع. أدخل العنوان يدوياً.", "Location unavailable. Enter your address manually.") }
-            finally { busy = false }
+            catch (e: LocationFailure) {
+                locationNotice = when (e.issue) {
+                    LocationIssue.Permission -> localized("اسمح بالوصول إلى الموقع من إعدادات التطبيق.", "Allow location access in app settings.")
+                    LocationIssue.Disabled -> localized("فعّل خدمة الموقع من إعدادات الهاتف ثم حاول مجدداً.", "Turn on Location in your device settings and try again.")
+                    LocationIssue.Timeout -> localized("انتهت مهلة تحديد الموقع. جرّب قرب نافذة أو أدخل العنوان.", "Location timed out. Try near a window or enter your address.")
+                }
+            } catch (_: SecurityException) {
+                locationNotice = localized("اسمح بالوصول إلى الموقع من إعدادات التطبيق.", "Allow location access in app settings.")
+            } catch (_: Exception) {
+                locationNotice = localized("تعذر قراءة الموقع. تحقق من إعدادات الموقع وحاول مجدداً.", "Could not read your location. Check your location settings and try again.")
+            } finally { busy = false }
         }
     }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
         if (grants.values.any { it }) locate()
-        else notice = localized("تم رفض إذن الموقع. أدخل العنوان يدوياً.", "Location permission denied. Enter your address manually.")
+        else locationNotice = localized("تم رفض إذن الموقع. اسمح بالوصول من إعدادات التطبيق.", "Location permission denied. Allow location access in app settings.")
     }
     fun start(row: CustomerAddress?) {
+        keepPin = false
+        locationNotice = ""
         editing = row != null
         applyDraft(row ?: CustomerAddress(id = UUID.randomUUID().toString(), recipientName = initial.recipientName, phone = initial.phone))
         editor = true
@@ -144,6 +161,15 @@ fun AddressBook(
                 if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED) locate()
                 else permission.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
             }, enabled = !busy) { Text(localized("حدد موقعي","Locate my location")) }
+            if (locationNotice.isNotBlank()) {
+                Text(locationNotice, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                    style = MaterialTheme.typography.bodySmall)
+            }
+            if (keepPin && draft.lat != null) TextButton({
+                keepPin = false
+                locationNotice = ""
+                applyDraft(draft.copy(lat = null, lng = null))
+            }, enabled = !busy) { Text(localized("إزالة دبوس الموقع", "Remove location pin")) }
             TextButton({ links.openUri("https://www.openstreetmap.org/copyright") }) { Text("© OpenStreetMap") }
             if (account != null) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf("home","work","other").forEach { key ->
@@ -159,13 +185,13 @@ fun AddressBook(
                 DropdownMenu(menu, { menu = false }) {
                     EgyptLocations.governorates.forEach { governorate ->
                         DropdownMenuItem({ Text(governorate.displayName(!en)) }, {
-                            applyDraft(draft.copy(governorate = governorate.id, city = "", lat = null, lng = null)); menu = false
+                            applyDraft(draft.copy(governorate = governorate.id, city = "", lat = draft.lat.takeIf { keepPin }, lng = draft.lng.takeIf { keepPin })); menu = false
                         })
                     }
                 }
             }
-            AddressField(localized("المدينة / المنطقة","City / area"),draft.city,busy,100) { applyDraft(draft.copy(city=it,lat=null,lng=null)) }
-            AddressField(localized("الشارع","Street"),draft.street,busy,240) { applyDraft(draft.copy(street=it,lat=null,lng=null)) }
+            AddressField(localized("المدينة / المنطقة","City / area"),draft.city,busy,100) { applyDraft(draft.copy(city=it,lat=draft.lat.takeIf { keepPin },lng=draft.lng.takeIf { keepPin })) }
+            AddressField(localized("الشارع","Street"),draft.street,busy,240) { applyDraft(draft.copy(street=it,lat=draft.lat.takeIf { keepPin },lng=draft.lng.takeIf { keepPin })) }
             AddressField(localized("العمارة","Building"),draft.building,busy,40) { applyDraft(draft.copy(building=it)) }
             AddressField(localized("الدور","Floor"),draft.floor,busy,20) { applyDraft(draft.copy(floor=it)) }
             AddressField(localized("الشقة","Apartment"),draft.apartment,busy,20) { applyDraft(draft.copy(apartment=it)) }

@@ -28,6 +28,7 @@ export type Product = {
   flash_sale_starts_at?: string | null;
   flash_sale_ends_at?: string | null;
   stock: number;
+  max_order_qty?: number | null;
   product_variants?: import("./variant-stock").Variant[];
   color_images?: Record<string, string>;
   sizes: string[];
@@ -40,7 +41,7 @@ export type Product = {
 };
 
 export const productFields =
-  "id,name,name_en,category_id,description,description_en,price,old_price,flash_sale_price,flash_sale_starts_at,flash_sale_ends_at,stock,sizes,colors,image_path,specifications,avg_rating,review_count";
+  "id,name,name_en,category_id,description,description_en,price,old_price,flash_sale_price,flash_sale_starts_at,flash_sale_ends_at,stock,max_order_qty,sizes,colors,image_path,specifications,avg_rating,review_count";
 
 type SettingsRow = {
   store_id?: string | null;
@@ -59,6 +60,7 @@ type SettingsRow = {
   paymob_enabled?: boolean | null;
   paymob_card_enabled?: boolean | null;
   paymob_wallet_enabled?: boolean | null;
+  default_max_order_qty?: number | null;
   cart_incentive_enabled?: boolean | null;
   free_shipping_threshold?: number | null;
   cashback_enabled?: boolean | null;
@@ -82,7 +84,7 @@ export const settings = cache(async () => {
   const primary = await db
     .from("store_settings")
     .select(
-      "store_id,store_name,primary_color,secondary_color,surface_color,border_radius,currency,shipping_fee,whatsapp_number,banners,theme_template,ui_config,cod_enabled,paymob_enabled,paymob_card_enabled,paymob_wallet_enabled,cart_incentive_enabled,free_shipping_threshold,cashback_enabled,cashback_percentage,meta_pixel_id,tiktok_pixel_id,ga4_measurement_id",
+      "store_id,store_name,primary_color,secondary_color,surface_color,border_radius,currency,shipping_fee,whatsapp_number,banners,theme_template,ui_config,cod_enabled,paymob_enabled,paymob_card_enabled,paymob_wallet_enabled,default_max_order_qty,cart_incentive_enabled,free_shipping_threshold,cashback_enabled,cashback_percentage,meta_pixel_id,tiktok_pixel_id,ga4_measurement_id",
     )
     .eq("store_id", resolved.id)
     .single<SettingsRow>();
@@ -118,6 +120,7 @@ export const settings = cache(async () => {
     plan: resolved.plan as StorePlan,
     status: resolved.status as StoreStatus,
     maxProducts: resolved.max_products,
+    defaultMaxOrderQty: data.default_max_order_qty === undefined ? 10 : data.default_max_order_qty,
     nameAr: data.store_name || resolved.name_ar || brand.storeName,
     nameEn: resolved.name_en || data.store_name || brand.storeName,
     template: uiConfig.baseTemplate,

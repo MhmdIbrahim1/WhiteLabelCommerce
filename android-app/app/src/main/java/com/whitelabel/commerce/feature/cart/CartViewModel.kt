@@ -22,6 +22,7 @@ import javax.inject.Inject
 
 data class CartUiState(
     val items: List<CartItem> = emptyList(),
+    val defaultLimit: Int? = 10,
     val upsellProducts: List<Product> = emptyList(),
     val subtotal: Double = 0.0,
     val baseShippingFee: Double = 0.0,
@@ -64,7 +65,7 @@ class CartViewModel @Inject constructor(
         upsellsState,
     ) { items, subtotal, settings: StoreSettings, upsells ->
         CartUiState(
-            items = items,
+            items = items, defaultLimit = settings.defaultMaxOrderQty,
             upsellProducts = upsells,
             subtotal = subtotal,
             baseShippingFee = settings.shippingFee,
@@ -81,6 +82,7 @@ class CartViewModel @Inject constructor(
     )
 
     init {
+        viewModelScope.launch { cartRepository.refreshInventory() }
         viewModelScope.launch {
             combine(
                 cartRepository.cartItems,

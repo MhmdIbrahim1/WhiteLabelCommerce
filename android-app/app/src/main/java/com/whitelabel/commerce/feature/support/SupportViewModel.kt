@@ -1,5 +1,6 @@
 package com.whitelabel.commerce.feature.support
 
+import com.whitelabel.commerce.core.domain.model.formatOrderNumber
 import com.whitelabel.commerce.core.designsystem.localized
 
 import androidx.lifecycle.SavedStateHandle
@@ -68,7 +69,7 @@ class SupportViewModel @Inject constructor(
     private val formState = MutableStateFlow(
         SupportFormState(
             linkedOrderId = initialOrderId,
-            subject = if (initialOrderId.isNotBlank()) localized("استفسار بخصوص طلب #${initialOrderId.take(8)}", "Question about order #${initialOrderId.take(8)}") else "",
+            subject = if (initialOrderId.isNotBlank()) localized("استفسار بخصوص طلب ${formatOrderNumber(initialOrderId)}", "Question about order ${formatOrderNumber(initialOrderId)}") else "",
         ),
     )
 

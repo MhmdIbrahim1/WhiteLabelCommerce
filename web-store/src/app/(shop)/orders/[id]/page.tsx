@@ -1,3 +1,4 @@
+import { formatOrderNumber } from "@/lib/order-number";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ArrowLeft, ArrowRight, MapPin, Phone, Wallet, Sparkles, TicketPercent } from "lucide-react";
@@ -138,7 +139,7 @@ export default async function CustomerOrderDetailPage({
           </span>
           <h1>
             {isEn ? "Order" : "طلب"}{" "}
-            <span dir="ltr">#{order.id.slice(0, 8)}</span>
+            <span dir="ltr">{formatOrderNumber(order.id)}</span>
           </h1>
         </div>
       </div>
@@ -184,7 +185,7 @@ export default async function CustomerOrderDetailPage({
 
         <section className="panel order-detail-summary-panel">
           <div className="invoice-heading">
-            <h1>{isEn ? "Invoice" : "فاتورة"} <bdi>#{order.id.slice(0, 8).toUpperCase()}</bdi></h1>
+            <h1>{isEn ? "Invoice" : "فاتورة"} <bdi>{formatOrderNumber(order.id)}</bdi></h1>
             <p>{store.name} · {date(order.created_at, lang)}</p>
           </div>
           <h2>{isEn ? "Order Summary & Shipping" : "ملخص الطلب والتوصيل"}</h2>

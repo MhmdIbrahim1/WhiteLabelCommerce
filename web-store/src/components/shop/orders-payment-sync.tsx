@@ -1,5 +1,6 @@
 "use client";
 
+import { formatOrderNumber } from "@/lib/order-number";
 import { useEffect } from "react";
 import { CheckCircle2, Clock3, AlertCircle } from "lucide-react";
 import {
@@ -62,7 +63,7 @@ export function OrdersPaymentSync({
               : "تم تأكيد طلبك وسداده بالكامل عبر رصيد محفظة المتجر!"}
           </strong>
         </span>
-        {callbackOrder && <code dir="ltr">#{callbackOrder.slice(0, 8)}</code>}
+        {callbackOrder && <code dir="ltr">{formatOrderNumber(callbackOrder)}</code>}
       </div>
     );
   }
@@ -74,7 +75,7 @@ export function OrdersPaymentSync({
           <CheckCircle2 size={18} aria-hidden="true" />
           <strong>{t("paymentBannerCodSuccess")}</strong>
         </span>
-        {callbackOrder && <code dir="ltr">#{callbackOrder.slice(0, 8)}</code>}
+        {callbackOrder && <code dir="ltr">{formatOrderNumber(callbackOrder)}</code>}
       </div>
     );
   }
@@ -109,7 +110,7 @@ export function OrdersPaymentSync({
               : t("paymentBannerFailed")}
         </strong>
       </span>
-      {callbackOrder && <code dir="ltr">#{callbackOrder.slice(0, 8)}</code>}
+      {callbackOrder && <code dir="ltr">{formatOrderNumber(callbackOrder)}</code>}
     </div>
   );
 }

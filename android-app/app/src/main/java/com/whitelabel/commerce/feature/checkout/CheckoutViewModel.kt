@@ -1,5 +1,11 @@
 package com.whitelabel.commerce.feature.checkout
 
+import com.whitelabel.commerce.core.domain.model.remainingQuantity
+import io.github.jan.supabase.exceptions.RestException
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import com.whitelabel.commerce.core.domain.model.CustomerAddress
 import com.whitelabel.commerce.core.domain.model.DeliveryPin
 import com.whitelabel.commerce.core.domain.model.EgyptLocations
@@ -113,6 +119,7 @@ class CheckoutViewModel @Inject constructor(
     private var idempotencyKey: String = UUID.randomUUID().toString()
 
     init {
+        viewModelScope.launch { cartRepository.refreshInventory() }
         loadShippingRates()
         // Automatically pre-fill Checkout fields from the signed-in customer's saved profile
         // without overwriting anything the user has already typed.
@@ -320,6 +327,10 @@ class CheckoutViewModel @Inject constructor(
 
         val cleanAddress = form.delivery.addressLine()
 
+        if (current.cartItems.any { current.cartItems.remainingQuantity(it, current.storeSettings.defaultMaxOrderQty) < 0 }) {
+            formState.update { it.copy(submitError = localized("خفّض كمية المنتج في السلة ثم حاول مجدداً.", "Reduce the quantity in your cart and try again.")) }
+            return
+        }
         if (current.cartItems.isEmpty()) {
             formState.update {
                 it.copy(submitError = localized("السلة فارغة ولا يمكن إتمام الطلب.", "Your cart is empty."))
@@ -399,13 +410,19 @@ class CheckoutViewModel @Inject constructor(
                 }
             }.onFailure { error ->
                 val rawMessage = error.message.orEmpty()
+                val limitError = (error as? RestException)?.takeIf { it.error == "max_order_qty_exceeded" }
+                val allowed = limitError?.description?.let { detail ->
+                    runCatching { Json.parseToJsonElement(detail).jsonObject["allowed"]?.jsonPrimitive?.intOrNull }.getOrNull()
+                }
+                if (limitError != null) cartRepository.refreshInventory()
                 if ("checkout_key_conflict" in rawMessage) {
                     idempotencyKey = UUID.randomUUID().toString()
                 }
                 formState.update {
                     it.copy(
                         isSubmitting = false,
-                        submitError = mapCheckoutError(rawMessage),
+                        submitError = if (allowed != null) localized("خفّض الكمية في سلتك إلى $allowed أو أقل.",
+                            "Reduce the quantity in your cart to $allowed or fewer.") else mapCheckoutError(rawMessage),
                     )
                 }
             }
@@ -417,6 +434,7 @@ class CheckoutViewModel @Inject constructor(
             "رصيد المحفظة لم يعد كافياً لتغطية كامل قيمة الطلب.",
             "Your wallet balance is no longer sufficient to cover the full order.",
         )
+        "max_order_qty_exceeded" in raw -> localized("خفّض كمية المنتج في السلة ثم حاول مجدداً.", "Reduce the quantity in your cart and try again.")
         "stock_unavailable" in raw -> localized(
             "بعض المنتجات غير متوفرة حالياً بالكمية المطلوبة. يرجى مراجعة السلة.",
             "Some items are no longer available in this quantity.",

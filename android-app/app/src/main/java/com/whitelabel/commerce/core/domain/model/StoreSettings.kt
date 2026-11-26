@@ -20,6 +20,7 @@ data class BrandPresets(
  * and the singleton `public.store_settings` table (`id = true`) in Supabase.
  */
 data class StoreSettings(
+    val defaultMaxOrderQty: Int? = 10,
     val hero: HeroConfig = HeroConfig(),
     val heroSectionVisible: Boolean = true,
     val codEnabled: Boolean = true,

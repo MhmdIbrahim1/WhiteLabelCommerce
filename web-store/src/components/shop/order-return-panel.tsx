@@ -1,5 +1,6 @@
 "use client";
 
+import { formatOrderNumber } from "@/lib/order-number";
 import { ToastFeedback } from "@/components/floating-toast";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
@@ -375,7 +376,7 @@ export function OrderReturnPanel({
                       ? "Request Return or Exchange"
                       : "طلب إرجاع أو استبدال"}
                   </h3>
-                  <small dir="ltr">#{orderId.slice(0, 8)}</small>
+                  <small dir="ltr">{formatOrderNumber(orderId)}</small>
                 </div>
                 <button
                   type="button"

@@ -13,6 +13,8 @@ data class CartItem(
     val imageUrl: String? = null,
     val quantity: Int,
     val maxStock: Int,
+    val productStock: Int? = null,
+    val maxOrderQty: Int? = null,
     val selectedSize: String? = null,
     val selectedColor: String? = null,
 ) {
@@ -46,3 +48,22 @@ data class CartItem(
     val lineTotal: Double
         get() = effectiveUnitPrice() * quantity
 }
+
+internal fun List<CartItem>.remainingQuantity(productId: String, size: String?, color: String?, skuStock: Int,
+    productStock: Int, override: Int?, defaultLimit: Int?): Int {
+    val productLimit = minOf(productStock, override ?: defaultLimit ?: productStock)
+    var total = 0L
+    var selected = 0L
+    for (line in this) {
+        if (line.productId != productId) continue
+        total += line.quantity
+        if (line.selectedSize.orEmpty() == size.orEmpty() && line.selectedColor.orEmpty() == color.orEmpty()) selected += line.quantity
+    }
+    return minOf(productLimit - total, skuStock - selected).coerceAtLeast(Int.MIN_VALUE.toLong()).toInt()
+}
+
+internal fun List<CartItem>.remainingQuantity(line: CartItem, defaultLimit: Int?) = remainingQuantity(
+    line.productId, line.selectedSize, line.selectedColor, line.maxStock, line.productStock ?: line.maxStock, line.maxOrderQty, defaultLimit)
+
+internal fun quantityLimitHint() = com.whitelabel.commerce.core.designsystem.localized(
+    "بلغت الحد المتاح لهذا المنتج في الطلب.", "Quantity limit reached for this order.")

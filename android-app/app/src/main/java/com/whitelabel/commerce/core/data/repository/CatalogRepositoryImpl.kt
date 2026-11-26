@@ -48,6 +48,7 @@ class CatalogRepositoryImpl @Inject constructor(
             .from("categories")
             .select(Columns.raw(CATEGORY_COLUMNS)) {
                 filter {
+                    eq("store_id", BuildConfig.STORE_ID)
                     eq("products.store_id", BuildConfig.STORE_ID)
                     eq("products.is_active", true)
                 }

@@ -1,5 +1,7 @@
 package com.whitelabel.commerce.feature.cart
 
+import com.whitelabel.commerce.core.domain.model.remainingQuantity
+import com.whitelabel.commerce.core.domain.model.quantityLimitHint
 import com.whitelabel.commerce.core.designsystem.components.ColorSwatchMapper
 
 import com.whitelabel.commerce.core.designsystem.localized
@@ -148,6 +150,7 @@ fun CartScreen(
             items(state.items, key = { it.lineKey }) { item ->
                 CartItemCard(
                     item = item,
+                    remaining = state.items.remainingQuantity(item, state.defaultLimit),
                     currency = state.currency,
                     locale = state.locale,
                     onClick = { onProductClick(item.productId) },
@@ -264,6 +267,7 @@ fun CartScreen(
 @Composable
 private fun CartItemCard(
     item: CartItem,
+    remaining: Int,
     currency: String,
     locale: String,
     onClick: () -> Unit,
@@ -345,6 +349,8 @@ private fun CartItemCard(
                     }
                 }
 
+                if (remaining <= 0) Text(quantityLimitHint(), style = MaterialTheme.typography.bodySmall)
+
                 // Variant pills (Size & Color)
                 if (!item.selectedSize.isNullOrBlank() || !item.selectedColor.isNullOrBlank()) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -395,7 +401,7 @@ private fun CartItemCard(
                         )
                         Surface(
                             onClick = onIncrement,
-                            enabled = item.quantity < item.maxStock.coerceAtLeast(1),
+                            enabled = remaining > 0,
                             shape = MaterialTheme.shapes.extraSmall,
                             color = MaterialTheme.colorScheme.primaryContainer,
                             contentColor = MaterialTheme.colorScheme.primary,

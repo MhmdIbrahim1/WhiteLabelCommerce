@@ -1,5 +1,6 @@
 package com.whitelabel.commerce.feature.support
 
+import com.whitelabel.commerce.core.domain.model.formatOrderNumber
 import com.whitelabel.commerce.core.designsystem.components.BannerFeedback
 import com.whitelabel.commerce.core.designsystem.localized
 
@@ -258,7 +259,7 @@ fun SupportScreen(
                                                     if (isPicked) "" else receipt.orderNumber,
                                                 )
                                             },
-                                            label = { Text("#${receipt.orderNumber.take(8)}") },
+                                            label = { Text(formatOrderNumber(receipt.orderNumber)) },
                                             shape = MaterialTheme.shapes.small,
                                         )
                                     }

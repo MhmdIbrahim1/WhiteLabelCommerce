@@ -10,7 +10,7 @@ import { localizedText } from "@/lib/i18n";
 import { storeHref } from "@/lib/tenant-shared";
 import { isFlashSaleActive, resolveEffectivePrice } from "@/lib/flash-sale";
 import { useLanguage } from "@/components/language-provider";
-import { change, type Line, useCartTenant } from "./cart-store";
+import { change, type Line, useCartTenant, useDefaultOrderLimit, readInventory, inventoryForLine } from "./cart-store";
 
 type UpsellProduct = {
   id: string;
@@ -44,6 +44,7 @@ export function CartUpsellStrip({
 }) {
   const { lang } = useLanguage();
   const tenantId = useCartTenant();
+  const defaultLimit = useDefaultOrderLimit();
   const isEn = lang === "en";
 
   const remaining = Math.max(0, threshold - subtotal);
@@ -104,7 +105,14 @@ export function CartUpsellStrip({
     return null;
   }
 
-  function handleQuickAdd(item: UpsellProduct) {
+  async function handleQuickAdd(item: UpsellProduct) {
+    let inventory;
+    try {
+      inventory = (await readInventory(tenantId, [item.id])).get(item.id);
+    } catch {
+      showToast({ kind: "error", message: isEn ? "Could not check availability." : "تعذر التحقق من التوفر." });
+      return;
+    }
     const effective = resolveEffectivePrice(item);
     const ok = change(
       tenantId,
@@ -119,10 +127,10 @@ export function CartUpsellStrip({
         flash_sale_price: item.flash_sale_price ?? null,
         flash_sale_starts_at: item.flash_sale_starts_at ?? null,
         flash_sale_ends_at: item.flash_sale_ends_at ?? null,
-        stock: item.stock,
+        ...inventoryForLine(inventory, "", ""),
         quantity: 1,
       },
-      1,
+      1, defaultLimit,
     );
     showToast({ kind: ok ? "cart" : "info", image: item.image_url, message: ok
       ? (isEn ? "Added to cart" : "تمت الإضافة إلى السلة") : (isEn ? "Stock limit reached" : "بلغت الحد المتاح") });

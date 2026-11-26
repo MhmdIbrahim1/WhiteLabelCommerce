@@ -14,7 +14,9 @@ interface CartRepository {
         quantity: Int = 1,
         selectedSize: String? = null,
         selectedColor: String? = null,
-    )
+    ): Int
+
+    suspend fun refreshInventory()
 
     suspend fun updateQuantity(lineKey: String, quantity: Int)
 

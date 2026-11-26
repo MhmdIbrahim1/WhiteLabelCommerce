@@ -2,6 +2,7 @@
 import { serverDb } from "@/lib/db";
 import { getServerLang } from "@/lib/i18n-server";
 import { notifyOrderCreated } from "@/lib/notifications/events";
+import { orderLimitError } from "@/lib/variant-stock";
 import { normalizePhone } from "@/lib/phone";
 import { resolveActiveStoreOrDefault } from "@/lib/tenant";
 
@@ -195,6 +196,14 @@ export async function checkout(
             ? "Selected payment method is currently unavailable."
             : "طريقة الدفع المختارة غير متاحة حالياً.",
         };
+      case "max_order_qty_exceeded": {
+        let allowed: number | undefined;
+        try {
+          const detail = JSON.parse(error?.details ?? "{}");
+          if (Number.isInteger(detail.allowed) && detail.allowed >= 0) allowed = detail.allowed;
+        } catch {}
+        return { error: orderLimitError(isEn ? "en" : "ar", allowed) };
+      }
       case "stock_unavailable":
         return {
           error: isEn

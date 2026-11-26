@@ -38,6 +38,7 @@ data class PublishedGlobal(
 
 @Serializable
 data class StoreSettingsDto(
+    @SerialName("default_max_order_qty") val defaultMaxOrderQty: Int? = 10,
     @SerialName("ui_config") val uiConfig: PublishedUi? = null,
     @SerialName("cod_enabled") val codEnabled: Boolean = true,
     @SerialName("paymob_enabled") val paymobEnabled: Boolean = false,
@@ -75,6 +76,7 @@ data class StoreSettingsDto(
         val heroSectionEntry = uiConfig?.homeSections?.firstOrNull { it.type == "hero_banner" }
 
         return StoreSettings(
+            defaultMaxOrderQty = defaultMaxOrderQty,
             storeName = storeName,
             currency = currency,
             locale = uiConfig?.defaultLanguage?.takeIf { it in setOf("ar", "en") } ?: locale,

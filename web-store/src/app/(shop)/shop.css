@@ -5359,3 +5359,8 @@
 .stock-tier[data-tier=low] { color: #895019; background: #fbefda; }
 .stock-tier[data-tier=out] { color: #605b60; background: #efedef; }
 .variant-chip:disabled { opacity: .45; text-decoration: line-through; cursor: not-allowed; }
+
+.purchase-quantity { display: flex; align-items: center; flex-wrap: wrap; gap: .65rem; }
+.purchase-quantity button { min-width: 2.5rem; min-height: 2.5rem; border: 1px solid currentColor; border-radius: .5rem; }
+.purchase-quantity button:disabled { opacity: .45; }
+.purchase-quantity output { font-variant-numeric: tabular-nums; }

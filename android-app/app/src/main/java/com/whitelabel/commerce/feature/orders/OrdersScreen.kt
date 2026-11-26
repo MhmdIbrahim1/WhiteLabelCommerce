@@ -1,5 +1,6 @@
 package com.whitelabel.commerce.feature.orders
 
+import com.whitelabel.commerce.core.domain.model.formatOrderNumber
 import com.whitelabel.commerce.core.domain.model.HistoryFilter
 import com.whitelabel.commerce.core.domain.model.OrderCardSummary
 import androidx.compose.material3.FilterChip
@@ -405,7 +406,7 @@ fun OrdersScreen(
                                     fontWeight = FontWeight.Bold,
                                 )
                                 Text(
-                                    text = "#${tracked.id.take(8)} • ${formatOrderDate(tracked.createdAt)}",
+                                    text = "${formatOrderNumber(tracked.id)} • ${formatOrderDate(tracked.createdAt)}",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -1050,7 +1051,7 @@ private fun SavedReceiptCard(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Text(
-                        text = localized("طلب #${receipt.orderNumber.take(8)}", "Order #${receipt.orderNumber.take(8)}"),
+                        text = localized("طلب ${formatOrderNumber(receipt.orderNumber)}", "Order ${formatOrderNumber(receipt.orderNumber)}"),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                     )
@@ -1190,7 +1191,7 @@ private fun HistoryCard(row: OrderCardSummary, locale: String, open: () -> Unit)
         border = BorderStroke(1.dp, LocalBrandColors.current.hairline)) {
         Column(Modifier.fillMaxWidth().padding(15.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Column { Text("#" + row.id.take(8).uppercase(), fontWeight = FontWeight.Bold); Text(day, style = MaterialTheme.typography.bodySmall) }
+                Column { Text(formatOrderNumber(row.id), fontWeight = FontWeight.Bold); Text(day, style = MaterialTheme.typography.bodySmall) }
                 OrderStatusBadge(status)
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
