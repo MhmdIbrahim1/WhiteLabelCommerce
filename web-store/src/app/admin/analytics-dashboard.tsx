@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -55,6 +55,29 @@ export type AnalyticsProduct = {
   stock: number;
   image_url: string | null;
   is_active: boolean;
+};
+
+export type AnalyticsDashboardMetrics = {
+  orderCount: number;
+  grossRevenue: number;
+  netProfit: number;
+  pendingCodValue: number;
+  pendingCodCount: number;
+  averageOrderValue: number;
+  deliveryRate: number;
+  revenueTrend: number;
+  series: { label: string; revenue: number; profit: number; count: number }[];
+  statusBreakdown: { key: string; count: number }[];
+  topProducts: {
+    id: string;
+    name: string;
+    name_en?: string | null;
+    units: number;
+    revenue: number;
+    profit: number;
+    image_url: string | null;
+  }[];
+  lowStock: AnalyticsProduct[];
 };
 
 export function calculateRealNetProfit(
@@ -136,7 +159,7 @@ export function calculateRealNetProfit(
   return baseProfit - refundedRevenue + reversedCogs;
 }
 
-type DateRangeKey = "today" | "7d" | "30d" | "month" | "all";
+export type DateRangeKey = "today" | "7d" | "30d" | "month" | "all";
 
 const RANGE_OPTIONS: { key: DateRangeKey; label_ar: string; label_en: string }[] = [
   { key: "today", label_ar: "اليوم", label_en: "Today" },
@@ -193,231 +216,41 @@ function Sparkline({
 }
 
 export function AnalyticsDashboard({
-  orders,
-  products,
+  metrics,
+  range,
   currency,
   openTickets,
-  referenceNowIso,
 }: {
-  orders: AnalyticsOrder[];
-  products: AnalyticsProduct[];
+  metrics: AnalyticsDashboardMetrics;
+  range: DateRangeKey;
   currency: string;
   openTickets: number;
-  referenceNowIso: string;
 }) {
   const { lang } = useLanguage();
   const isEn = lang === "en";
   const ArrowIcon = isEn ? ArrowRight : ArrowLeft;
-  const [range, setRange] = useState<DateRangeKey>("30d");
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
-
-  const productMap = useMemo(() => {
-    const m = new Map<string, AnalyticsProduct>();
-    for (const p of products) m.set(p.id, p);
-    return m;
-  }, [products]);
-
-  const {
-    filtered,
-    grossRevenue,
-    netProfit,
-    profitMargin,
-    pendingCodValue,
-    pendingCodCount,
-    aov,
-    deliveryRate,
-    revenueTrend,
-    series,
-    statusBreakdown,
-    topProducts,
-    lowStock,
-  } = useMemo(() => {
-    const now = new Date(referenceNowIso);
-    const startOfToday = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-    );
-
-    let startMs = 0;
-    let prevStartMs = 0;
-    let prevEndMs = 0;
-
-    if (range === "today") {
-      startMs = startOfToday.getTime();
-      prevStartMs = startMs - 86400000;
-      prevEndMs = startMs;
-    } else if (range === "7d") {
-      startMs = now.getTime() - 7 * 86400000;
-      prevStartMs = startMs - 7 * 86400000;
-      prevEndMs = startMs;
-    } else if (range === "30d") {
-      startMs = now.getTime() - 30 * 86400000;
-      prevStartMs = startMs - 30 * 86400000;
-      prevEndMs = startMs;
-    } else if (range === "month") {
-      startMs = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-      prevStartMs = new Date(now.getFullYear(), now.getMonth() - 1, 1).getTime();
-      prevEndMs = startMs;
-    }
-
-    const inRange =
-      range === "all"
-        ? orders
-        : orders.filter((o) => new Date(o.created_at).getTime() >= startMs);
-
-    const prevOrders =
-      range === "all"
-        ? []
-        : orders.filter((o) => {
-            const t = new Date(o.created_at).getTime();
-            return t >= prevStartMs && t < prevEndMs;
-          });
-
-    const delivered = inRange.filter((o) => o.status === "delivered");
-    const shipped = inRange.filter((o) => o.status === "shipped");
-    const cancelled = inRange.filter((o) => o.status === "cancelled");
-
-    const calcOrderProfit = (o: AnalyticsOrder) =>
-      calculateRealNetProfit(o, productMap);
-
-    const gross = delivered.reduce((s, o) => s + o.total, 0);
-    const profit = delivered.reduce((s, o) => s + calcOrderProfit(o), 0);
-    const margin = gross > 0 ? (profit / gross) * 100 : 0;
-
-    const prevGross = prevOrders
-      .filter((o) => o.status === "delivered")
-      .reduce((s, o) => s + o.total, 0);
-    const trend =
-      prevGross > 0
-        ? Math.round(((gross - prevGross) / prevGross) * 100)
-        : gross > 0
-          ? 100
-          : 0;
-
-    const codVal = shipped.reduce((s, o) => s + o.total, 0);
-    const nonCancelled = inRange.filter((o) => o.status !== "cancelled");
-    const avgOrder =
-      nonCancelled.length > 0
-        ? nonCancelled.reduce((s, o) => s + o.total, 0) / nonCancelled.length
-        : 0;
-    const finalized = delivered.length + cancelled.length;
-    const rate =
-      finalized > 0 ? Math.round((delivered.length / finalized) * 100) : 0;
-
-    // Build daily time series (7 or 14 buckets)
-    const daysCount =
-      range === "today" ? 1 : range === "7d" ? 7 : range === "30d" ? 14 : 10;
-    const bucketMap = new Map<
-      string,
-      { label: string; revenue: number; profit: number; count: number }
-    >();
-
-    for (let i = daysCount - 1; i >= 0; i--) {
-      const d = new Date(now.getTime() - i * 86400000);
-      const key = d.toISOString().slice(0, 10);
-      const label = `${d.getDate()}/${d.getMonth() + 1}`;
-      bucketMap.set(key, { label, revenue: 0, profit: 0, count: 0 });
-    }
-
-    for (const o of inRange) {
-      const key = o.created_at.slice(0, 10);
-      if (!bucketMap.has(key)) {
-        const d = new Date(o.created_at);
-        bucketMap.set(key, {
-          label: `${d.getDate()}/${d.getMonth() + 1}`,
-          revenue: 0,
-          profit: 0,
-          count: 0,
-        });
-      }
-      const b = bucketMap.get(key)!;
-      b.count += 1;
-      if (o.status === "delivered") {
-        b.revenue += o.total;
-        b.profit += calcOrderProfit(o);
-      }
-    }
-
-    const sortedSeries = Array.from(bucketMap.entries())
-      .sort(([a], [b]) => a.localeCompare(b))
-      .slice(-14)
-      .map(([, v]) => v);
-
-    // Order status breakdown
-    const statuses = ["pending", "confirmed", "shipped", "delivered", "cancelled"];
-    const breakdown = statuses.map((st) => {
-      const count = inRange.filter((o) => o.status === st).length;
-      const pct = inRange.length > 0 ? (count / inRange.length) * 100 : 0;
-      return {
-        key: st,
-        label: orderStatusLabel(st, lang),
-        count,
-        pct,
-        color: STATUS_COLORS[st],
-      };
-    });
-
-    // Top 5 products (non-cancelled orders)
-    const prodAgg = new Map<
-      string,
-      {
-        id: string;
-        name: string;
-        units: number;
-        revenue: number;
-        profit: number;
-        imageUrl: string | null;
-      }
-    >();
-
-    for (const o of nonCancelled) {
-      for (const it of o.items) {
-        const key = it.product_id || it.product_name;
-        const pInfo = it.product_id ? productMap.get(it.product_id) : undefined;
-        const cost = it.unit_cost > 0 ? it.unit_cost : (pInfo?.cost_price ?? 0);
-        const cur = prodAgg.get(key) ?? {
-          id: it.product_id ?? key,
-          name: pInfo
-            ? localizedText(lang, pInfo.name, pInfo.name_en)
-            : it.product_name,
-          units: 0,
-          revenue: 0,
-          profit: 0,
-          imageUrl: pInfo?.image_url ?? null,
-        };
-        cur.units += it.quantity;
-        cur.revenue += it.unit_price * it.quantity;
-        cur.profit += (it.unit_price - cost) * it.quantity;
-        prodAgg.set(key, cur);
-      }
-    }
-
-    const top5 = Array.from(prodAgg.values())
-      .sort((a, b) => b.revenue - a.revenue)
-      .slice(0, 5);
-
-    const low = products
-      .filter((p) => p.stock <= 5)
-      .sort((a, b) => a.stock - b.stock)
-      .slice(0, 6);
-
-    return {
-      filtered: inRange,
-      grossRevenue: gross,
-      netProfit: profit,
-      profitMargin: margin,
-      pendingCodValue: codVal,
-      pendingCodCount: shipped.length,
-      aov: avgOrder,
-      deliveryRate: rate,
-      revenueTrend: trend,
-      series: sortedSeries,
-      statusBreakdown: breakdown,
-      topProducts: top5,
-      lowStock: low,
-    };
-  }, [orders, products, productMap, range, referenceNowIso, lang]);
+  const grossRevenue = metrics.grossRevenue;
+  const netProfit = metrics.netProfit;
+  const profitMargin = grossRevenue > 0 ? (netProfit / grossRevenue) * 100 : 0;
+  const pendingCodValue = metrics.pendingCodValue;
+  const pendingCodCount = metrics.pendingCodCount;
+  const aov = metrics.averageOrderValue;
+  const deliveryRate = metrics.deliveryRate;
+  const revenueTrend = metrics.revenueTrend;
+  const series = metrics.series;
+  const statusBreakdown = metrics.statusBreakdown.map((item) => ({
+    ...item,
+    label: orderStatusLabel(item.key, lang),
+    pct: metrics.orderCount > 0 ? (item.count / metrics.orderCount) * 100 : 0,
+    color: STATUS_COLORS[item.key] ?? "#64748b",
+  }));
+  const topProducts = metrics.topProducts.map((product) => ({
+    ...product,
+    name: localizedText(lang, product.name, product.name_en),
+    imageUrl: product.image_url,
+  }));
+  const lowStock = metrics.lowStock;
 
   // SVG Area/Line chart geometry
   const chartW = 640;
@@ -484,19 +317,15 @@ export function AnalyticsDashboard({
         >
           <Calendar size={15} />
           {RANGE_OPTIONS.map((opt) => (
-            <button
+            <Link
               key={opt.key}
-              type="button"
+              href={opt.key === "30d" ? "/admin" : `/admin?range=${opt.key}`}
               role="tab"
               aria-selected={range === opt.key}
               className={`exec-range-btn ${range === opt.key ? "is-active" : ""}`}
-              onClick={() => {
-                setRange(opt.key);
-                setHoverIdx(null);
-              }}
             >
               {isEn ? opt.label_en : opt.label_ar}
-            </button>
+            </Link>
           ))}
         </div>
       </div>
@@ -583,8 +412,8 @@ export function AnalyticsDashboard({
           <strong>{money(aov, currency, lang)}</strong>
           <small>
             {isEn
-              ? `Orders in period: ${filtered.length}`
-              : `إجمالي طلبات الفترة: ${filtered.length}`}
+              ? `Orders in period: ${metrics.orderCount}`
+              : `إجمالي طلبات الفترة: ${metrics.orderCount}`}
           </small>
         </article>
       </div>
@@ -735,7 +564,7 @@ export function AnalyticsDashboard({
                 stroke="#e2e8f0"
                 strokeWidth="16"
               />
-              {filtered.length > 0 &&
+              {metrics.orderCount > 0 &&
                 donutSegments.map((seg) => (
                   <circle
                     key={seg.key}
@@ -758,7 +587,7 @@ export function AnalyticsDashboard({
                 fontWeight="700"
                 fill="currentColor"
               >
-                {filtered.length}
+                {metrics.orderCount}
               </text>
               <text
                 x="70"

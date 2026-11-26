@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { checked, requireAdmin } from "@/lib/db";
-import { adminDb } from "@/lib/supabase/admin";
 import brand from "@/lib/brand";
 import { photo } from "@/lib/shop";
 import { getServerLang } from "@/lib/i18n-server";
@@ -9,168 +8,197 @@ import { OrderTable } from "./ui";
 import { StoreLaunchChecklist } from "./launch-checklist";
 import {
   AnalyticsDashboard,
-  type AnalyticsOrder,
-  type AnalyticsProduct,
+  type AnalyticsDashboardMetrics,
+  type DateRangeKey,
 } from "./analytics-dashboard";
 
-type RawAnalyticsOrder = {
+type RecentOrder = {
   id: string;
   status: string;
-  subtotal: number | null;
-  shipping_fee: number | null;
-  discount_amount: number | null;
   total: number | null;
   currency: string;
   created_at: string;
-  order_items: {
-    id: string;
-    product_id: string | null;
-    product_name: string;
-    quantity: number;
-    unit_price: number;
-    unit_cost: number | null;
+};
+
+type DashboardRpcResult = {
+  product_count?: number | string;
+  order_count?: number | string;
+  gross_revenue?: number | string;
+  net_profit?: number | string;
+  pending_cod_value?: number | string;
+  pending_cod_count?: number | string;
+  average_order_value?: number | string;
+  delivery_rate?: number | string;
+  revenue_trend?: number | string;
+  series?: {
+    label?: string;
+    revenue?: number | string;
+    profit?: number | string;
+    count?: number | string;
+  }[];
+  status_breakdown?: { key?: string; count?: number | string }[];
+  top_products?: {
+    id?: string;
+    name?: string;
+    name_en?: string | null;
+    image_path?: string | null;
+    units?: number | string;
+    revenue?: number | string;
+    profit?: number | string;
+  }[];
+  low_stock?: {
+    id?: string;
+    name?: string;
+    name_en?: string | null;
+    price?: number | string;
+    cost_price?: number | string;
+    stock?: number | string;
+    image_path?: string | null;
+    is_active?: boolean;
   }[];
 };
 
-type RawAnalyticsReturn = {
-  order_id: string;
-  status: string;
-  refund_amount: number | null;
-  restocked: boolean | null;
-  items: unknown;
-};
+const VALID_RANGES: DateRangeKey[] = ["today", "7d", "30d", "month", "all"];
+const DAY_MS = 86_400_000;
 
-type RawAnalyticsProduct = {
-  id: string;
-  name: string;
-  name_en?: string | null;
-  price: number;
-  cost_price: number | null;
-  stock: number;
-  image_path: string | null;
-  is_active: boolean;
-};
+function dashboardWindow(range: DateRangeKey, now: Date) {
+  const end = new Date(now.getTime() + 1_000);
+  let start: Date;
+  let previousStart: Date;
+  let previousEnd: Date;
 
-export default async function Overview() {
+  if (range === "today") {
+    start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    previousStart = new Date(start.getTime() - DAY_MS);
+    previousEnd = start;
+  } else if (range === "7d" || range === "30d") {
+    const duration = range === "7d" ? 7 * DAY_MS : 30 * DAY_MS;
+    start = new Date(now.getTime() - duration);
+    previousStart = new Date(start.getTime() - duration);
+    previousEnd = start;
+  } else if (range === "month") {
+    start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    previousStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+    previousEnd = start;
+  } else {
+    start = new Date("2000-01-01T00:00:00.000Z");
+    previousStart = start;
+    previousEnd = start;
+  }
+
+  return { start, end, previousStart, previousEnd };
+}
+
+function toNumber(value: number | string | null | undefined): number {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function normalizeMetrics(raw: DashboardRpcResult): AnalyticsDashboardMetrics {
+  return {
+    orderCount: toNumber(raw.order_count),
+    grossRevenue: toNumber(raw.gross_revenue),
+    netProfit: toNumber(raw.net_profit),
+    pendingCodValue: toNumber(raw.pending_cod_value),
+    pendingCodCount: toNumber(raw.pending_cod_count),
+    averageOrderValue: toNumber(raw.average_order_value),
+    deliveryRate: toNumber(raw.delivery_rate),
+    revenueTrend: toNumber(raw.revenue_trend),
+    series: (raw.series ?? []).map((row) => ({
+      label: String(row.label ?? ""),
+      revenue: toNumber(row.revenue),
+      profit: toNumber(row.profit),
+      count: toNumber(row.count),
+    })),
+    statusBreakdown: (raw.status_breakdown ?? []).map((row) => ({
+      key: String(row.key ?? ""),
+      count: toNumber(row.count),
+    })),
+    topProducts: (raw.top_products ?? []).map((row) => ({
+      id: String(row.id ?? ""),
+      name: String(row.name ?? ""),
+      name_en: row.name_en ?? null,
+      units: toNumber(row.units),
+      revenue: toNumber(row.revenue),
+      profit: toNumber(row.profit),
+      image_url: photo(row.image_path ?? null),
+    })),
+    lowStock: (raw.low_stock ?? []).map((row) => ({
+      id: String(row.id ?? ""),
+      name: String(row.name ?? ""),
+      name_en: row.name_en ?? null,
+      price: toNumber(row.price),
+      cost_price: toNumber(row.cost_price),
+      stock: toNumber(row.stock),
+      image_url: photo(row.image_path ?? null),
+      is_active: Boolean(row.is_active),
+    })),
+  };
+}
+
+export default async function Overview({
+  searchParams,
+}: PageProps<"/admin">) {
+  const params = await searchParams;
+  const rangeParam = typeof params.range === "string" ? params.range : "30d";
+  const range: DateRangeKey = VALID_RANGES.includes(rangeParam as DateRangeKey)
+    ? (rangeParam as DateRangeKey)
+    : "30d";
+  const now = new Date();
+  const dateWindow = dashboardWindow(range, now);
   const { db, storeId, activeStore } = await requireAdmin();
-  const secureDb = adminDb();
+
   const [
     settingsRes,
-    ordersRes,
-    productsRes,
+    metricsRes,
+    recentOrdersRes,
     ticketsRes,
     couponsRes,
-    returnsRes,
-  ] =
-    await Promise.all([
-      db
-        .from("store_settings")
-        .select("currency,store_name")
-        .eq("store_id", storeId)
-        .single<{ currency: string; store_name: string }>(),
-      secureDb
-        .from("orders")
-        .select(
-          "id,status,subtotal,shipping_fee,discount_amount,total,currency,created_at,order_items(id,product_id,product_name,quantity,unit_price,unit_cost)",
-        )
-        .eq("store_id", storeId)
-        .order("created_at", { ascending: false })
-        .limit(1000),
-      secureDb
-        .from("products")
-        .select("id,name,name_en,price,cost_price,stock,image_path,is_active")
-        .eq("store_id", storeId)
-        .order("name")
-        .limit(500),
-      db
-        .from("support_tickets")
-        .select("id", { count: "exact", head: true })
-        .eq("store_id", storeId)
-        .eq("status", "open"),
-      db
-        .from("coupons")
-        .select("id", { count: "exact", head: true })
-        .eq("store_id", storeId),
-      secureDb
-        .from("return_requests")
-        .select("order_id,status,refund_amount,restocked,items")
-        .eq("store_id", storeId)
-        .in("status", ["refunded", "completed"])
-        .limit(1000),
-    ]);
+    lang,
+  ] = await Promise.all([
+    db
+      .from("store_settings")
+      .select("currency,store_name")
+      .eq("store_id", storeId)
+      .single<{ currency: string; store_name: string }>(),
+    db.rpc("admin_dashboard_metrics", {
+      p_store_id: storeId,
+      p_start_at: dateWindow.start.toISOString(),
+      p_end_at: dateWindow.end.toISOString(),
+      p_previous_start_at: dateWindow.previousStart.toISOString(),
+      p_previous_end_at: dateWindow.previousEnd.toISOString(),
+    }),
+    db
+      .from("orders")
+      .select("id,status,total,currency,created_at")
+      .eq("store_id", storeId)
+      .order("created_at", { ascending: false })
+      .limit(8),
+    db
+      .from("support_tickets")
+      .select("id", { count: "exact", head: true })
+      .eq("store_id", storeId)
+      .eq("status", "open"),
+    db
+      .from("coupons")
+      .select("id", { count: "exact", head: true })
+      .eq("store_id", storeId),
+    getServerLang(),
+  ]);
 
   if (
-    ordersRes.error ||
-    productsRes.error ||
-    ticketsRes.error ||
-    returnsRes.error
+    settingsRes.error ||
+    metricsRes.error ||
+    recentOrdersRes.error ||
+    ticketsRes.error
   ) {
-    throw new Error("تعذر تحميل الإحصاءات.");
+    throw new Error("Could not load store analytics.");
   }
 
   const currency = settingsRes.data?.currency || brand.currency;
-  const rawOrders = (checked(ordersRes) as RawAnalyticsOrder[]) ?? [];
-  const rawProducts = (checked(productsRes) as RawAnalyticsProduct[]) ?? [];
-  const rawReturns = (checked(returnsRes) as RawAnalyticsReturn[]) ?? [];
-  const returnsByOrder = new Map<string, RawAnalyticsReturn[]>();
-  for (const row of rawReturns) {
-    const current = returnsByOrder.get(row.order_id) ?? [];
-    current.push(row);
-    returnsByOrder.set(row.order_id, current);
-  }
-
-  const analyticsOrders: AnalyticsOrder[] = rawOrders.map((o) => ({
-    id: o.id,
-    status: o.status,
-    subtotal: Number(o.subtotal ?? 0),
-    shipping_fee: Number(o.shipping_fee ?? 0),
-    discount_amount: Number(o.discount_amount ?? 0),
-    total: Number(o.total ?? 0),
-    currency: o.currency,
-    created_at: o.created_at,
-    items: (o.order_items ?? []).map((it) => ({
-      id: it.id,
-      product_id: it.product_id,
-      product_name: it.product_name,
-      quantity: Number(it.quantity),
-      unit_price: Number(it.unit_price),
-      unit_cost: Number(it.unit_cost ?? 0),
-    })),
-    returns: (returnsByOrder.get(o.id) ?? []).map((ret) => ({
-      status: ret.status,
-      refund_amount: Number(ret.refund_amount ?? 0),
-      restocked: Boolean(ret.restocked),
-      items: Array.isArray(ret.items)
-        ? ret.items
-            .filter(
-              (item): item is Record<string, unknown> =>
-                Boolean(item) && typeof item === "object",
-            )
-            .map((item) => ({
-              order_item_id:
-                typeof item.order_item_id === "string"
-                  ? item.order_item_id
-                  : null,
-              product_id:
-                typeof item.product_id === "string" ? item.product_id : null,
-              quantity: Math.max(0, Number(item.quantity ?? 0)),
-            }))
-        : [],
-    })),
-  }));
-
-  const analyticsProducts: AnalyticsProduct[] = rawProducts.map((p) => ({
-    id: p.id,
-    name: p.name,
-    name_en: p.name_en ?? "",
-    price: Number(p.price),
-    cost_price: Number(p.cost_price ?? 0),
-    stock: Number(p.stock),
-    image_url: photo(p.image_path),
-    is_active: p.is_active,
-  }));
-
-  const lang = await getServerLang();
+  const rawMetrics = (checked(metricsRes) ?? {}) as DashboardRpcResult;
+  const metrics = normalizeMetrics(rawMetrics);
+  const recentOrders = (checked(recentOrdersRes) ?? []) as RecentOrder[];
   const isEn = lang === "en";
   const ArrowIcon = isEn ? ArrowRight : ArrowLeft;
 
@@ -181,15 +209,14 @@ export default async function Overview() {
         storeSlug={activeStore.slug}
         storeNameAr={settingsRes.data?.store_name || activeStore.name_ar}
         storeNameEn={activeStore.name_en || activeStore.name_ar}
-        productsCount={rawProducts.length}
+        productsCount={toNumber(rawMetrics.product_count)}
         couponsCount={couponsRes.count ?? 0}
       />
       <AnalyticsDashboard
-        orders={analyticsOrders}
-        products={analyticsProducts}
+        metrics={metrics}
+        range={range}
         currency={currency}
         openTickets={ticketsRes.count ?? 0}
-        referenceNowIso={new Date().toISOString()}
       />
       <section className="card">
         <div className="row">
@@ -198,15 +225,7 @@ export default async function Overview() {
             {isEn ? "All Orders" : "كل الطلبات"} <ArrowIcon size={15} />
           </Link>
         </div>
-        <OrderTable
-          rows={rawOrders.slice(0, 8).map((o) => ({
-            id: o.id,
-            status: o.status,
-            created_at: o.created_at,
-            total: o.total,
-            currency: o.currency,
-          }))}
-        />
+        <OrderTable rows={recentOrders} />
       </section>
     </>
   );

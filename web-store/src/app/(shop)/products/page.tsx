@@ -3,7 +3,6 @@ import { Check, Sparkles, X, Zap } from "lucide-react";
 import { serverDb, checked } from "@/lib/db";
 import {
   categories,
-  productFields,
   settings,
   type Product,
 } from "@/lib/shop";
@@ -11,16 +10,17 @@ import { storeHref } from "@/lib/tenant";
 import { localizedText, t } from "@/lib/i18n";
 import { getServerLang } from "@/lib/i18n-server";
 import { pagination } from "@/lib/workflow";
-import {
-  filterAndSortCatalogProducts,
-  type CatalogSortKey,
-} from "@/lib/flash-sale";
+import { type CatalogSortKey } from "@/lib/flash-sale";
 import { Grid } from "@/components/shop/cards";
 
 type SearchProductRow = Product & {
   rank?: number;
   match_type?: string | null;
   created_at?: string | null;
+};
+
+type CatalogProductPageRow = SearchProductRow & {
+  total_count: number | string;
 };
 
 const VALID_SORTS: CatalogSortKey[] = [
@@ -53,13 +53,6 @@ export default async function Catalog({
 
   const minNum = min && Number.isFinite(+min) ? +min : null;
   const maxNum = max && Number.isFinite(+max) ? +max : null;
-  const needsClientPass =
-    flashOnly ||
-    inStockOnly ||
-    minNum !== null ||
-    maxNum !== null ||
-    sort !== "relevance";
-
   const { from, to, page } = pagination(params.page);
   const db = await serverDb();
   const [cats, s] = await Promise.all([categories(), settings()]);
@@ -72,123 +65,30 @@ export default async function Catalog({
   let totalCount = 0;
   let searchBannerKind: "closest" | "spec" | null = null;
 
-  const enrichProducts = async (list: SearchProductRow[]) => {
-    if (list.length === 0) return list;
-    const { data: extraRows } = await db
-      .from("products")
-      .select(
-        "id,avg_rating,review_count,flash_sale_price,flash_sale_starts_at,flash_sale_ends_at,created_at",
-      )
-      .eq("store_id", s.storeId)
-      .in(
-        "id",
-        list.map((r) => r.id),
-      );
-    if (!extraRows?.length) return list;
-    const map = new Map(
-      (
-        extraRows as {
-          id: string;
-          avg_rating: number | null;
-          review_count: number | null;
-          flash_sale_price: number | null;
-          flash_sale_starts_at: string | null;
-          flash_sale_ends_at: string | null;
-          created_at: string | null;
-        }[]
-      ).map((r) => [r.id, r]),
-    );
-    return list.map((r) => {
-      const extra = map.get(r.id);
-      return extra
-        ? {
-            ...r,
-            avg_rating: extra.avg_rating,
-            review_count: extra.review_count,
-            flash_sale_price: extra.flash_sale_price,
-            flash_sale_starts_at: extra.flash_sale_starts_at,
-            flash_sale_ends_at: extra.flash_sale_ends_at,
-            created_at: extra.created_at,
-          }
-        : r;
-    });
-  };
+  const result = await db.rpc("catalog_products_page", {
+    p_store_id: s.storeId,
+    p_query: q.slice(0, 100),
+    p_category_id: validCategory,
+    p_min_price: minNum,
+    p_max_price: maxNum,
+    p_in_stock: inStockOnly,
+    p_flash_only: flashOnly,
+    p_sort: sort,
+    p_limit: to - from + 1,
+    p_offset: from,
+  });
+  const pageRows = checked(result) as CatalogProductPageRow[];
+  totalCount = pageRows.length > 0 ? Number(pageRows[0].total_count) : 0;
+  rows = pageRows;
 
-  if (q) {
-    const pageSize = to - from + 1;
-    if (needsClientPass) {
-      const fast = await db.rpc("search_products_fast", {
-        p_store_id: s.storeId,
-        p_query: q.slice(0, 100),
-        p_limit: 80,
-        p_category_id: validCategory,
-        p_offset: 0,
-      });
-      const enriched = await enrichProducts(checked(fast) as SearchProductRow[]);
-      const matched = filterAndSortCatalogProducts(enriched, {
-        flashOnly,
-        inStockOnly,
-        minPrice: minNum,
-        maxPrice: maxNum,
-        sort,
-      });
-      totalCount = matched.length;
-      rows = matched.slice(from, to + 1);
-    } else {
-      const fast = await db.rpc("search_products_fast", {
-        p_store_id: s.storeId,
-        p_query: q.slice(0, 100),
-        p_limit: pageSize + 1,
-        p_category_id: validCategory,
-        p_offset: from,
-      });
-      const fetched = checked(fast) as SearchProductRow[];
-      const hasMore = fetched.length > pageSize;
-      rows = await enrichProducts(hasMore ? fetched.slice(0, pageSize) : fetched);
-      totalCount = from + rows.length + (hasMore ? 1 : 0);
-    }
-
-    if (rows.length > 0) {
-      const hasDirect = rows.some(
-        (p) => p.match_type === "exact" || p.match_type === "synonym",
-      );
-      const hasSpec = rows.some((p) => p.match_type === "spec");
-      if (!hasDirect) {
-        searchBannerKind = hasSpec ? "spec" : "closest";
-      }
-    }
-  } else if (needsClientPass) {
-    let query = db
-      .from("products")
-      .select(`${productFields},created_at`)
-      .eq("store_id", s.storeId)
-      .eq("is_active", true);
-    if (validCategory) query = query.eq("category_id", validCategory);
-    if (inStockOnly) query = query.gt("stock", 0);
-    if (flashOnly) query = query.not("flash_sale_price", "is", null);
-    const result = await query.order("name").order("id").limit(250);
-    const allMatching = filterAndSortCatalogProducts(
-      checked(result) as SearchProductRow[],
-      {
-        flashOnly,
-        inStockOnly,
-        minPrice: minNum,
-        maxPrice: maxNum,
-        sort,
-      },
+  if (q && rows.length > 0) {
+    const hasDirect = rows.some(
+      (p) => p.match_type === "exact" || p.match_type === "synonym",
     );
-    totalCount = allMatching.length;
-    rows = allMatching.slice(from, to + 1);
-  } else {
-    let query = db
-      .from("products")
-      .select(productFields, { count: "exact" })
-      .eq("store_id", s.storeId)
-      .eq("is_active", true);
-    if (validCategory) query = query.eq("category_id", validCategory);
-    const result = await query.order("name").order("id").range(from, to);
-    rows = checked(result) as SearchProductRow[];
-    totalCount = result.count ?? rows.length;
+    const hasSpec = rows.some((p) => p.match_type === "spec");
+    if (!hasDirect) {
+      searchBannerKind = hasSpec ? "spec" : "closest";
+    }
   }
 
   const buildFilterHref = (

@@ -142,6 +142,8 @@ export function NotificationBell({
   >("idle");
   const [pushNotice, setPushNotice] = useState("");
   const drawerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const hasOpenedRef = useRef(false);
 
   const localReadKey = `nova.notif.read.${storeId}.${scope}`;
   const localDismissedKey = `nova.notif.dismissed.${storeId}.${scope}`;
@@ -338,6 +340,20 @@ export function NotificationBell({
       document.body.style.overflow = prevOverflow;
       document.removeEventListener("keydown", onKey);
     };
+  }, [open]);
+
+  useEffect(() => {
+    if (open) {
+      hasOpenedRef.current = true;
+      const frame = window.requestAnimationFrame(() => {
+        drawerRef.current?.querySelector<HTMLElement>("button")?.focus();
+      });
+      return () => window.cancelAnimationFrame(frame);
+    }
+    if (hasOpenedRef.current) {
+      hasOpenedRef.current = false;
+      triggerRef.current?.focus();
+    }
   }, [open]);
 
   const unreadCount = useMemo(
@@ -578,6 +594,7 @@ export function NotificationBell({
   return (
     <>
       <button
+        ref={triggerRef}
         type="button"
         className={`notif-bell-btn ${scope === "admin" ? "is-admin" : ""}`}
         aria-label={`${t("notifTitle")}${unreadCount > 0 ? ` (${unreadCount})` : ""}`}

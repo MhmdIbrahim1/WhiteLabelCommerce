@@ -66,6 +66,11 @@ export function Navigation({
   const { lang, t } = useLanguage();
   const isEn = lang === "en";
   const href = (path: string) => storeHref(basePath, path);
+  const tenantReturnPath =
+    pathname.startsWith("/") && !pathname.startsWith("//")
+      ? pathname
+      : href("/");
+  const loginHref = `/login?next=${encodeURIComponent(tenantReturnPath)}`;
   const ArrowIcon = lang === "en" ? ArrowRight : ArrowLeft;
   const count = useCart().reduce((a, l) => a + l.quantity, 0);
   const { count: wishlistCount, isSignedIn: wishlistSignedIn } = useWishlist();
@@ -575,7 +580,7 @@ export function Navigation({
                 </div>
               ) : (
                 <Link
-                  href="/login"
+                  href={loginHref}
                   className="login-nav-pill"
                   aria-label={t("navLogin")}
                 >
@@ -593,13 +598,6 @@ export function Navigation({
                 <Sun className="light-icon" size={17} />
                 <Moon className="dark-icon" size={17} />
               </button>
-
-              <NotificationBell
-                storeId={storeId}
-                userId={user?.id ?? null}
-                scope="customer"
-                basePath={basePath}
-              />
 
               <Link
                 href={href("/wishlist")}
@@ -621,6 +619,15 @@ export function Navigation({
                 )}
               </Link>
             </div>
+
+            <span className="header-notification-bell">
+              <NotificationBell
+                storeId={storeId}
+                userId={user?.id ?? null}
+                scope="customer"
+                basePath={basePath}
+              />
+            </span>
 
             <Link
               href={href("/cart")}
@@ -683,7 +690,7 @@ export function Navigation({
               </div>
             ) : (
               <Link
-                href="/login"
+                href={loginHref}
                 className="mobile-drawer-login-cta"
                 onClick={() => setMobileMenuOpen(false)}
               >

@@ -32,7 +32,7 @@ export async function generateMetadata(): Promise<Metadata> {
       )?.trim() || t(lang, "footerTagline");
     return {
       title: {
-        default: displayName,
+        absolute: displayName,
         template: `%s · ${displayName}`,
       },
       description: tagline,
@@ -40,7 +40,7 @@ export async function generateMetadata(): Promise<Metadata> {
   } catch {
     return {
       title: {
-        default: brand.storeName,
+        absolute: brand.storeName,
         template: `%s · ${brand.storeName}`,
       },
     };

@@ -4475,6 +4475,13 @@
   gap: 0.45rem;
 }
 
+.shop .header-notification-bell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
 .shop .mobile-menu-btn {
   display: none;
 }
@@ -4486,6 +4493,13 @@
 
   .shop .mobile-menu-btn {
     display: inline-grid;
+  }
+
+  .shop .header-notification-bell .notif-bell-btn {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
   }
 
   .shop .search-trigger-label {

@@ -669,7 +669,11 @@ export function Basket({
                         ? "Have an account? Sign in to auto-fill shipping details or continue as guest."
                         : "لديك حساب؟ سجّل الدخول لملء بيانات الشحن تلقائياً أو أكمل كزائر."}
                     </span>
-                    <Link href="/login?next=/checkout">
+                    <Link
+                      href={`/login?next=${encodeURIComponent(
+                        storeHref(basePath, "/checkout"),
+                      )}`}
+                    >
                       {isEn ? "Sign in" : "تسجيل الدخول"}
                     </Link>
                   </>

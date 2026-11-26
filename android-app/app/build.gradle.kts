@@ -1,6 +1,7 @@
 import org.gradle.api.GradleException
 import java.io.File
 import java.util.Properties
+import javax.xml.parsers.DocumentBuilderFactory
 
 plugins {
     alias(libs.plugins.android.application)
@@ -291,4 +292,52 @@ dependencies {
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
+}
+
+// End-to-end contract check for the workflow inputs consumed by the Android
+// manifest merger. Invoke with the same -PstoreName/-PVERSION_* arguments used
+// by build-store-apk.yml; special characters must round-trip as raw text.
+tasks.register("verifyGithubDebugManifestContract") {
+    dependsOn("processGithubDebugMainManifest")
+    doLast {
+        val candidates = fileTree(layout.buildDirectory.dir("intermediates")) {
+            include("**/githubDebug/**/AndroidManifest.xml")
+        }.files.filter { manifest ->
+            val normalized = manifest.invariantSeparatorsPath
+            normalized.contains("merged_manifest") || normalized.contains("merged_manifests")
+        }
+        val manifestFile = candidates.maxByOrNull { it.lastModified() }
+            ?: throw GradleException("Merged githubDebug AndroidManifest.xml was not produced.")
+
+        val document = DocumentBuilderFactory.newInstance().apply {
+            isNamespaceAware = true
+        }.newDocumentBuilder().parse(manifestFile)
+        val androidNamespace = "http://schemas.android.com/apk/res/android"
+        val manifest = document.documentElement
+        val application = document.getElementsByTagName("application").item(0)
+            ?: throw GradleException("Merged manifest has no <application> element.")
+        val actualLabel = application.attributes
+            .getNamedItemNS(androidNamespace, "label")?.nodeValue.orEmpty()
+        val actualVersionCode = manifest.getAttributeNS(androidNamespace, "versionCode")
+        val actualVersionName = manifest.getAttributeNS(androidNamespace, "versionName")
+
+        if (actualLabel != resolvedStoreName) {
+            throw GradleException(
+                "Merged app label mismatch: expected '$resolvedStoreName', found '$actualLabel'.",
+            )
+        }
+        if (actualVersionCode != resolvedVersionCode.toString()) {
+            throw GradleException(
+                "Merged versionCode mismatch: expected '$resolvedVersionCode', found '$actualVersionCode'.",
+            )
+        }
+        if (actualVersionName != resolvedVersionName) {
+            throw GradleException(
+                "Merged versionName mismatch: expected '$resolvedVersionName', found '$actualVersionName'.",
+            )
+        }
+        logger.lifecycle(
+            "Verified merged manifest label='$actualLabel', versionCode=$actualVersionCode, versionName=$actualVersionName",
+        )
+    }
 }

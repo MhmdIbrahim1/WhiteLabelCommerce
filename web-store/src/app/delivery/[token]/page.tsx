@@ -67,10 +67,12 @@ export async function generateMetadata({
   const names = await resolveOrderStoreNames(data.order_id);
   const storeName = localizedText(lang, names.nameAr, names.nameEn);
   return {
-    title:
-      lang === "en"
-        ? `Delivery Confirmation · ${storeName}`
-        : `تأكيد التسليم · ${storeName}`,
+    title: {
+      absolute:
+        lang === "en"
+          ? `Delivery Confirmation · ${storeName}`
+          : `تأكيد التسليم · ${storeName}`,
+    },
   };
 }
 

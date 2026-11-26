@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ShoppingCart,
   MessageCircle,
@@ -35,7 +36,15 @@ export type ActiveCouponOption = {
   discount_value: number;
 };
 
-type FilterTab = "all" | "open" | "reminded" | "recovered";
+export type AbandonedCartFilter = "all" | "open" | "reminded" | "recovered";
+
+export type AbandonedCartSummary = {
+  all: number;
+  open: number;
+  reminded: number;
+  recovered: number;
+  recoverable_value: number;
+};
 
 export function AdminAbandonedCartsClient({
   initialCarts,
@@ -44,6 +53,11 @@ export function AdminAbandonedCartsClient({
   currency,
   cartBasePath,
   initialLang,
+  status,
+  page,
+  pageSize,
+  totalCount,
+  summary,
 }: {
   initialCarts: AbandonedCartRecord[];
   coupons: ActiveCouponOption[];
@@ -51,13 +65,18 @@ export function AdminAbandonedCartsClient({
   currency: string;
   cartBasePath: string;
   initialLang: Lang;
+  status: AbandonedCartFilter;
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  summary: AbandonedCartSummary;
 }) {
+  const router = useRouter();
   const { lang: ctxLang } = useLanguage();
   const lang = ctxLang ?? initialLang;
   const isEn = lang === "en";
 
   const [carts, setCarts] = useState<AbandonedCartRecord[]>(initialCarts);
-  const [filter, setFilter] = useState<FilterTab>("all");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [couponById, setCouponById] = useState<Record<string, string>>(() => {
@@ -71,26 +90,23 @@ export function AdminAbandonedCartsClient({
     null,
   );
 
-  const kpis = useMemo(() => {
-    const open = carts.filter((c) => c.status === "open").length;
-    const reminded = carts.filter((c) => c.status === "reminded").length;
-    const recovered = carts.filter((c) => c.status === "recovered").length;
-    const recoverableValue = carts
-      .filter((c) => c.status === "open" || c.status === "reminded")
-      .reduce((sum, c) => sum + Number(c.subtotal ?? 0), 0);
-    return {
-      total: carts.length,
-      open,
-      reminded,
-      recovered,
-      recoverableValue,
-    };
-  }, [carts]);
-
-  const visibleCarts = useMemo(() => {
-    if (filter === "all") return carts.filter((c) => c.status !== "dismissed");
-    return carts.filter((c) => c.status === filter);
-  }, [carts, filter]);
+  const kpis = {
+    open: summary.open,
+    reminded: summary.reminded,
+    recovered: summary.recovered,
+    recoverableValue: summary.recoverable_value,
+  };
+  const visibleCarts = carts.filter((cart) =>
+    status === "all" ? cart.status !== "dismissed" : cart.status === status,
+  );
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const pageHref = (nextStatus: AbandonedCartFilter, nextPage = 1) => {
+    const query = new URLSearchParams();
+    if (nextStatus !== "all") query.set("status", nextStatus);
+    if (nextPage > 1) query.set("page", String(nextPage));
+    const suffix = query.toString();
+    return suffix ? `/admin/abandoned-carts?${suffix}` : "/admin/abandoned-carts";
+  };
 
   function getAbsoluteCartUrl(couponCode?: string): string {
     const origin =
@@ -174,6 +190,7 @@ export function AdminAbandonedCartsClient({
           ? "WhatsApp recovery message prepared and cart marked as Reminded."
           : "تم تجهيز رسالة التذكير عبر واتساب وتحديث حالة السلة إلى تم التذكير.",
       });
+      router.refresh();
     } finally {
       setBusyId(null);
     }
@@ -203,6 +220,7 @@ export function AdminAbandonedCartsClient({
         kind: "ok",
         text: isEn ? "Abandoned cart dismissed." : "تم تجاهل السلة المتروكة.",
       });
+      router.refresh();
     } finally {
       setBusyId(null);
     }
@@ -304,8 +322,8 @@ export function AdminAbandonedCartsClient({
               {
                 key: "all" as const,
                 label: isEn
-                  ? `All (${carts.filter((c) => c.status !== "dismissed").length})`
-                  : `الكل (${carts.filter((c) => c.status !== "dismissed").length})`,
+                  ? `All (${summary.all})`
+                  : `الكل (${summary.all})`,
               },
               {
                 key: "open" as const,
@@ -325,14 +343,13 @@ export function AdminAbandonedCartsClient({
               },
             ] as const
           ).map((tab) => {
-            const active = filter === tab.key;
+            const active = status === tab.key;
             return (
-              <button
+              <Link
                 key={tab.key}
-                type="button"
+                href={pageHref(tab.key)}
                 role="tab"
                 aria-selected={active}
-                onClick={() => setFilter(tab.key)}
                 style={{
                   background: active ? "var(--primary)" : "var(--surface)",
                   color: active ? "#ffffff" : "var(--ink)",
@@ -346,7 +363,7 @@ export function AdminAbandonedCartsClient({
                 }}
               >
                 {tab.label}
-              </button>
+              </Link>
             );
           })}
         </div>
@@ -384,7 +401,7 @@ export function AdminAbandonedCartsClient({
         >
           <ShoppingCart size={28} style={{ opacity: 0.45 }} />
           <p style={{ margin: 0, fontWeight: 650 }}>
-            {filter === "all"
+            {status === "all"
               ? isEn
                 ? "No abandoned carts captured yet. Carts from Web & Android shoppers will appear here automatically."
                 : "لا توجد سلات متروكة مسجّلة حتى الآن. ستظهر هنا تلقائياً سلات متسوقي الموقع وتطبيق أندرويد."
@@ -823,6 +840,34 @@ export function AdminAbandonedCartsClient({
             );
           })}
         </div>
+      )}
+      {totalPages > 1 && (
+        <nav
+          aria-label={isEn ? "Abandoned carts pagination" : "صفحات السلات المتروكة"}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "0.75rem",
+            flexWrap: "wrap",
+          }}
+        >
+          {page > 1 && (
+            <Link className="btn-outline-admin" href={pageHref(status, page - 1)}>
+              {isEn ? "Previous" : "السابق"}
+            </Link>
+          )}
+          <span style={{ color: "var(--muted)", fontSize: "0.85rem" }}>
+            {isEn
+              ? `Page ${page} of ${totalPages} · ${totalCount} carts`
+              : `صفحة ${page} من ${totalPages} · ${totalCount} سلة`}
+          </span>
+          {page < totalPages && (
+            <Link className="btn-outline-admin" href={pageHref(status, page + 1)}>
+              {isEn ? "Next" : "التالي"}
+            </Link>
+          )}
+        </nav>
       )}
     </div>
   );

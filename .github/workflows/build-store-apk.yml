@@ -63,7 +63,7 @@ jobs:
           VERSION_NAME: ${{ inputs.version_name }}
         run: |
           python3 - << 'PY'
-          import os, re, sys, xml.sax.saxutils as saxutils
+          import os, re, sys
 
           uuid_re = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
           slug_re = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$")
@@ -92,17 +92,18 @@ jobs:
           if not vname_re.match(version_name):
               sys.exit("::error::Invalid version_name.")
 
-          # Strip control characters/newlines and XML-escape app_name for safe AndroidManifest placeholder injection
+          # Strip controls/newlines, but keep the raw Unicode label. Android's
+          # manifest merger performs XML escaping exactly once when it writes
+          # the placeholder into AndroidManifest.xml.
           clean_name = re.sub(r"[\x00-\x1f\x7f]+", " ", app_name).strip()[:60]
           if len(clean_name) < 2:
               sys.exit("::error::Invalid app_name.")
-          escaped_name = saxutils.escape(clean_name, {'"': "&quot;", "'": "\\'"})
 
           with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as fh:
               fh.write(f"SAFE_BUILD_ID={build_id}\n")
               fh.write(f"SAFE_STORE_ID={store_id}\n")
               fh.write(f"SAFE_STORE_SLUG={store_slug}\n")
-              fh.write(f"SAFE_APP_NAME={escaped_name}\n")
+              fh.write(f"SAFE_APP_NAME={clean_name}\n")
               fh.write(f"SAFE_APP_ID_SUFFIX={app_suffix}\n")
               fh.write(f"SAFE_VERSION_CODE={version_code}\n")
               fh.write(f"SAFE_VERSION_NAME={version_name}\n")
