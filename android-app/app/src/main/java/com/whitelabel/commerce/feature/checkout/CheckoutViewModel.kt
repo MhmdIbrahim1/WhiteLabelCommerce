@@ -1,5 +1,13 @@
 package com.whitelabel.commerce.feature.checkout
 
+import com.whitelabel.commerce.core.domain.model.CustomerAddress
+import com.whitelabel.commerce.core.domain.model.DeliveryPin
+import com.whitelabel.commerce.core.domain.model.EgyptLocations
+import com.whitelabel.commerce.BuildConfig
+import io.github.jan.supabase.SupabaseClient
+import io.github.jan.supabase.postgrest.from
+import io.github.jan.supabase.postgrest.query.Columns
+import kotlinx.serialization.Serializable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.whitelabel.commerce.core.data.remote.PhoneNormalizer
@@ -32,6 +40,9 @@ import javax.inject.Inject
 
 private val WALLET_REGEX = Regex("^01[0125][0-9]{8}$")
 
+@Serializable
+private data class ShippingRate(val governorate: String, val fee: Double)
+
 data class CheckoutFormState(
     val coupon: String = "",
     val discount: Double = 0.0,
@@ -40,17 +51,10 @@ data class CheckoutFormState(
     val couponError: String? = null,
     val wallet: String = "",
     val useStoreWallet: Boolean = false,
-    val customerName: String = "",
-    val phone: String = "",
-    val governorate: String = "",
-    val city: String = "",
-    val address: String = "",
+    val delivery: CustomerAddress = CustomerAddress(),
+    val shippingRates: Map<String, Double>? = null,
+    val rateLoadFailed: Boolean = false,
     val paymentMethod: PaymentMethod = PaymentMethod.COD,
-    val nameError: String? = null,
-    val phoneError: String? = null,
-    val governorateError: String? = null,
-    val cityError: String? = null,
-    val addressError: String? = null,
     val isSubmitting: Boolean = false,
     val submitError: String? = null,
     val confirmedReceipt: SavedOrderReceipt? = null,
@@ -65,7 +69,8 @@ data class CheckoutUiState(
     val walletBalance: Double = 0.0,
 ) {
     val shippingFee: Double
-        get() = if (cartItems.isEmpty()) 0.0 else storeSettings.effectiveShippingFee(subtotal)
+        get() = if (cartItems.isEmpty() || storeSettings.isFreeShippingUnlocked(subtotal)) 0.0
+            else form.shippingRates?.get(form.delivery.governorate) ?: storeSettings.shippingFee
 
     val appliedDiscount: Double
         get() = if (form.couponSubtotal == subtotal) form.discount else 0.0
@@ -98,6 +103,7 @@ class CheckoutViewModel @Inject constructor(
     private val authRepository: AuthRepository,
     private val walletRepository: WalletRepository,
     storeRepository: StoreRepository,
+    private val db: SupabaseClient,
 ) : ViewModel() {
 
     private val formState = MutableStateFlow(CheckoutFormState())
@@ -107,6 +113,7 @@ class CheckoutViewModel @Inject constructor(
     private var idempotencyKey: String = UUID.randomUUID().toString()
 
     init {
+        loadShippingRates()
         // Automatically pre-fill Checkout fields from the signed-in customer's saved profile
         // without overwriting anything the user has already typed.
         viewModelScope.launch {
@@ -116,22 +123,32 @@ class CheckoutViewModel @Inject constructor(
                     val normalizedPhone = PhoneNormalizer.normalize(profile.phone)
                     formState.update { current ->
                         current.copy(
-                            customerName = current.customerName.ifBlank { profile.fullName },
-                            phone = current.phone.ifBlank { normalizedPhone },
-                            wallet = current.wallet.ifBlank {
-                                if (WALLET_REGEX.matches(normalizedPhone)) normalizedPhone else ""
-                            },
-                            governorate = current.governorate.ifBlank { profile.governorate },
-                            city = current.city.ifBlank { profile.city },
-                            address = current.address.ifBlank { profile.address },
+                            delivery = if (current.delivery == CustomerAddress()) CustomerAddress(
+                                recipientName = profile.fullName, phone = normalizedPhone,
+                                governorate = EgyptLocations.findGovernorate(profile.governorate)?.id.orEmpty(),
+                                city = profile.city, street = profile.address,
+                            ) else current.delivery,
+                            wallet = current.wallet.ifBlank { normalizedPhone.takeIf(WALLET_REGEX::matches).orEmpty() },
                         )
                     }
                     refreshWalletBalance()
                 } else if (session is AuthSessionState.SignedOut) {
                     walletBalanceState.value = 0.0
-                    formState.update { it.copy(useStoreWallet = false) }
+                    formState.update { it.copy(useStoreWallet = false, delivery = CustomerAddress()) }
                 }
             }
+        }
+    }
+
+    fun loadShippingRates() {
+        formState.update { it.copy(rateLoadFailed = false) }
+        viewModelScope.launch {
+            runCatching {
+                db.from("governorate_shipping_rates").select(Columns.list("governorate","fee")) {
+                    filter { eq("store_id", BuildConfig.STORE_ID) }
+                }.decodeList<ShippingRate>().associate { it.governorate to it.fee }
+            }.onSuccess { rates -> formState.update { it.copy(shippingRates = rates) } }
+                .onFailure { formState.update { it.copy(rateLoadFailed = true) } }
         }
     }
 
@@ -217,30 +234,14 @@ class CheckoutViewModel @Inject constructor(
         }
     }
 
-    fun onNameChange(value: String) {
-        formState.update { it.copy(customerName = value, nameError = null, submitError = null) }
-    }
-
-    fun onPhoneChange(value: String) {
-        formState.update { it.copy(phone = value, phoneError = null, submitError = null) }
-    }
-
-    fun onGovernorateChange(value: String) {
-        formState.update { it.copy(governorate = value, governorateError = null, submitError = null) }
-    }
-
-    fun onCityChange(value: String) {
-        formState.update { it.copy(city = value, cityError = null, submitError = null) }
-    }
-
-    fun onAddressChange(value: String) {
-        formState.update { it.copy(address = value, addressError = null, submitError = null) }
+    fun setDelivery(value: CustomerAddress) {
+        formState.update { it.copy(delivery = value, submitError = null) }
     }
 
     fun submitOrder() {
         val current = uiState.value
         val form = formState.value
-        if (form.isSubmitting || form.confirmedReceipt != null) return
+        if (form.isSubmitting || form.shippingRates == null || form.confirmedReceipt != null) return
 
         val effectiveMethod = if (current.fullyPaidByWallet) {
             PaymentMethod.STORE_WALLET
@@ -270,18 +271,18 @@ class CheckoutViewModel @Inject constructor(
             return
         }
 
-        val cleanName = form.customerName.trim()
-        val cleanGov = form.governorate.trim()
-        val cleanCity = form.city.trim()
-        val cleanStreet = form.address.trim()
-        val rawPhone = form.phone.trim()
+        val cleanName = form.delivery.recipientName.trim()
+        val cleanGov = form.delivery.governorate.trim()
+        val cleanCity = form.delivery.city.trim()
+        val cleanStreet = form.delivery.street.trim()
+        val rawPhone = form.delivery.phone.trim()
 
         val nameError = if (cleanName.length < 2) {
             localized("يرجى إدخال الاسم بالكامل", "Enter your full name.")
         } else {
             null
         }
-        val phoneError = if (!PhoneNormalizer.isValidEgyptianPhone(rawPhone)) {
+        val phoneError = if (!PhoneNormalizer.isValid(PhoneNormalizer.normalizeForEgyptCheckout(rawPhone))) {
             localized(
                 "يرجى إدخال رقم موبايل مصري صحيح (مثال: 010xxxxxxxx أو +2010xxxxxxxx)",
                 "Enter a valid Egyptian mobile number.",
@@ -299,10 +300,10 @@ class CheckoutViewModel @Inject constructor(
         } else {
             null
         }
-        val addressError = if (cleanStreet.length < 5) {
+        val addressError = if (cleanStreet.isBlank()) {
             localized(
-                "يرجى إدخال عنوان الشارع بالتفصيل (5 أحرف على الأقل)",
-                "Enter the detailed street address (at least 5 characters).",
+                "يرجى إدخال اسم الشارع",
+                "Enter your street.",
             )
         } else {
             null
@@ -311,21 +312,13 @@ class CheckoutViewModel @Inject constructor(
         if (nameError != null || phoneError != null || govError != null || cityError != null || addressError != null) {
             formState.update {
                 it.copy(
-                    nameError = nameError,
-                    phoneError = phoneError,
-                    governorateError = govError,
-                    cityError = cityError,
-                    addressError = addressError,
+                    submitError = nameError ?: phoneError ?: govError ?: cityError ?: addressError,
                 )
             }
             return
         }
 
-        val cleanAddress = com.whitelabel.commerce.core.domain.model.CustomerProfile(
-            governorate = cleanGov,
-            city = cleanCity,
-            address = cleanStreet,
-        ).combinedShippingAddress()
+        val cleanAddress = form.delivery.addressLine()
 
         if (current.cartItems.isEmpty()) {
             formState.update {
@@ -353,6 +346,7 @@ class CheckoutViewModel @Inject constructor(
                 items = cartSnapshot,
                 requestKey = idempotencyKey,
                 useWallet = useWalletFlag,
+                delivery = DeliveryPin(cleanGov, form.delivery.lat, form.delivery.lng),
             ).onSuccess { result ->
                 val isPaidViaWallet = effectiveMethod == PaymentMethod.STORE_WALLET || result.amount <= 0.0
                 val receiptMethod = if (isPaidViaWallet) PaymentMethod.STORE_WALLET.rawValue else effectiveMethod.rawValue

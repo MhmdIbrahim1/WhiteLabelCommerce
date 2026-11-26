@@ -1,3 +1,4 @@
+import { AddressBook } from "@/components/shop/address-book";
 import Link from "next/link";
 import {
   UserRound,
@@ -95,7 +96,8 @@ export default async function AccountPage({
     );
   }
 
-  const [profileRes, ordersRes, walletRes] = await Promise.all([
+  const [addresses, profileRes, ordersRes, walletRes] = await Promise.all([
+    db.rpc("my_addresses", { p_store_id: store.storeId }),
     db
       .from("store_customers")
       .select("full_name,phone,email,governorate,city,address")
@@ -233,6 +235,7 @@ export default async function AccountPage({
         </article>
       </div>
 
+      <AddressBook key={store.storeId + user.id} storeId={store.storeId} initial={checked(addresses)} profile={{recipient_name: profile?.full_name || "", phone: profile?.phone || ""}} />
       <WalletSection summary={walletSummary} />
 
       <div className="details-grid" style={{ marginTop: "1.75rem" }}>

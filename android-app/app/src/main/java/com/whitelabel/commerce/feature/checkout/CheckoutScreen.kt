@@ -44,6 +44,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import com.whitelabel.commerce.core.designsystem.components.SearchAction
@@ -65,7 +66,6 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.whitelabel.commerce.core.designsystem.LocalBrandColors
 import com.whitelabel.commerce.core.designsystem.components.ColorSwatchMapper
-import com.whitelabel.commerce.core.designsystem.components.EgyptCascadingAddressFields
 import com.whitelabel.commerce.core.designsystem.components.FreeShippingProgressBar
 import com.whitelabel.commerce.core.designsystem.formatPrice
 import com.whitelabel.commerce.core.designsystem.localized
@@ -89,6 +89,7 @@ fun CheckoutScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val brandColors = LocalBrandColors.current
     val online by viewModel.network.online.collectAsStateWithLifecycle(initialValue = true)
+    var addressBusy by remember { mutableStateOf(false) }
     val confirmedReceipt = state.form.confirmedReceipt
 
     // Online payment flow (Paymob Card / Wallet): opens in-app WebView while preserving local cart
@@ -187,7 +188,7 @@ fun CheckoutScreen(
 
                         Button(
                             onClick = viewModel::submitOrder,
-                            enabled = online && !state.form.isSubmitting &&
+                            enabled = online && !addressBusy && state.form.shippingRates != null && !state.form.isSubmitting &&
                                 state.cartItems.isNotEmpty() &&
                                 state.storeSettings.isSyncedFromRemote &&
                                 (state.fullyPaidByWallet || state.form.paymentMethod in state.storeSettings.paymentMethods) &&
@@ -236,6 +237,11 @@ fun CheckoutScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            if (state.form.rateLoadFailed) {
+                TextButton(onClick = viewModel::loadShippingRates) {
+                    Text(localized("تعذر تحميل رسوم الشحن. إعادة المحاولة", "Could not load shipping fees. Retry"))
+                }
+            }
             if (!online || !state.storeSettings.isSyncedFromRemote) {
                 Text(localized("تعذر تحميل إعدادات الدفع. تحقق من اتصالك بالإنترنت.", "Checkout settings are unavailable. Check your connection."), color = MaterialTheme.colorScheme.error)
             }
@@ -348,42 +354,13 @@ fun CheckoutScreen(
                         )
                     }
 
-                    OutlinedTextField(
-                        value = state.form.customerName,
-                        onValueChange = viewModel::onNameChange,
-                        label = { Text(localized("الاسم بالكامل", "Full name")) },
-                        placeholder = { Text(localized("مثال: محمد أحمد", "E.g. Alex Morgan")) },
-                        isError = state.form.nameError != null,
-                        supportingText = state.form.nameError?.let { { Text(it) } },
-                        singleLine = true,
-                        shape = MaterialTheme.shapes.small,
-                        modifier = Modifier.fillMaxWidth(),
+                    com.whitelabel.commerce.feature.addresses.AddressBook(
+                        account = state.signedInEmail,
+                        initial = state.form.delivery,
+                        onDelivery = viewModel::setDelivery,
+                        onBusy = { addressBusy = it },
                     )
 
-                    OutlinedTextField(
-                        value = state.form.phone,
-                        onValueChange = viewModel::onPhoneChange,
-                        label = { Text(localized("رقم الموبايل (مصر)", "Egyptian mobile number")) },
-                        placeholder = { Text(localized("010xxxxxxxx أو +2010xxxxxxxx", "010xxxxxxxx or +2010xxxxxxxx")) },
-                        isError = state.form.phoneError != null,
-                        supportingText = state.form.phoneError?.let { { Text(it) } },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                        shape = MaterialTheme.shapes.small,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-
-                    EgyptCascadingAddressFields(
-                        governorate = state.form.governorate,
-                        city = state.form.city,
-                        streetAddress = state.form.address,
-                        onGovernorateSelected = viewModel::onGovernorateChange,
-                        onCitySelected = viewModel::onCityChange,
-                        onStreetAddressChange = viewModel::onAddressChange,
-                        governorateError = state.form.governorateError,
-                        cityError = state.form.cityError,
-                        streetError = state.form.addressError,
-                    )
                 }
             }
 

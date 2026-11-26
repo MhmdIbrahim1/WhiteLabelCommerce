@@ -21,6 +21,14 @@ class EgyptLocationsTest {
     }
 
     @Test
+    fun `matches reverse geocoder governorate codes and localized spellings`() {
+        assertEquals("cairo", EgyptLocations.findGovernorate("EG-C")?.id)
+        assertEquals("assiut", EgyptLocations.findGovernorate("Asyut Governorate")?.id)
+        assertEquals("alexandria", EgyptLocations.findGovernorate("محافظة الاسكندرية")?.id)
+        assertEquals(null, EgyptLocations.findGovernorate("Unknown region"))
+    }
+
+    @Test
     fun `allows LAN HTTP only on github flavor and requires HTTPS on playstore flavor`() {
         assertTrue(isLocalOrLanHost("192.168.1.25"))
         assertTrue(isLocalOrLanHost("10.0.2.2"))

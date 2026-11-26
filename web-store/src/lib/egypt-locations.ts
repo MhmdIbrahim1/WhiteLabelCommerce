@@ -479,15 +479,45 @@ export const EGYPT_GOVERNORATES: EgyptGovernorate[] = [
   },
 ];
 
+const aliases: Record<string, string[]> = {"cairo":["EG-C","Al Qahirah","Al Qāhirah"],
+  "giza":["EG-GZ","Al Jizah"],
+  "alexandria":["EG-ALX","Al Iskandariyah"],
+  "sharqia":["EG-SHR","Al Sharqia","Ash Sharqiyah"],
+  "dakahlia":["EG-DK","Ad Daqahliyah","Dakahlia"],
+  "beheira":["EG-BH","El Beheira","Al Buhayrah"],
+  "qalyubia":["EG-KB","Al Qalyubia","Qalyubiyya","Al Qalyubiyah"],
+  "monufia":["EG-MNF","Menofia","Al Minufiyah"],
+  "gharbia":["EG-GH","Al Gharbiyah"],
+  "kafr_el_sheikh":["EG-KFS","Kafr Ash Shaykh","Kafr El Sheikh"],
+  "damietta":["EG-DT","Dumyat"],
+  "port_said":["EG-PTS","Bur Said"],
+  "ismailia":["EG-IS","Al Ismailiyah"],
+  "suez":["EG-SUZ","As Suways"],
+  "north_sinai":["EG-SIN","Shamal Sina"],
+  "south_sinai":["EG-JS","Janub Sina"],
+  "red_sea":["EG-BA","Al Bahr Al Ahmar"],
+  "matrouh":["EG-MT","Matruh","Marsa Matruh"],
+  "new_valley":["EG-WAD","Al Wadi Al Jadid"],
+  "fayoum":["EG-FYM","Faiyum","Fayum","Al Fayyum"],
+  "beni_suef":["EG-BNS","Bani Suwayf","Beni Sueif"],
+  "minya":["EG-MN","Al Minya","Minia"],
+  "assiut":["EG-AST","Asyut","Assiout"],
+  "sohag":["EG-SHG","Suhaj"],
+  "qena":["EG-KN","Qina"],
+  "luxor":["EG-LX","Al Uqsur"],
+  "aswan":["EG-ASN","Aswan"]};
+
+function normalizeGovernorate(value: string) {
+  return value.toLowerCase().normalize("NFKD").replace(/\p{M}/gu, "")
+    .replace(/governorate|محافظة|محافظه/g, "").replace(/[أإآ]/g, "ا")
+    .replace(/ى/g, "ي").replace(/ة/g, "ه").replace(/[^\p{L}\p{N}]/gu, "");
+}
+
 export function findEgyptGovernorate(raw: string | null | undefined): EgyptGovernorate | undefined {
-  const clean = (raw ?? "").trim().toLowerCase();
+  const clean = normalizeGovernorate(raw ?? "");
   if (!clean) return undefined;
-  return EGYPT_GOVERNORATES.find(
-    (g) =>
-      g.id === clean ||
-      g.name_ar.toLowerCase() === clean ||
-      g.name_en.toLowerCase() === clean,
-  );
+  return EGYPT_GOVERNORATES.find(g =>
+    [g.id, g.name_ar, g.name_en, ...(aliases[g.id] ?? [])].some(name => normalizeGovernorate(name) === clean));
 }
 
 export function findEgyptCity(

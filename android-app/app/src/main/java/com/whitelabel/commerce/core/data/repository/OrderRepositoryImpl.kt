@@ -78,6 +78,7 @@ class OrderRepositoryImpl @Inject constructor(
         name: String,
         requestKey: String,
         useWallet: Boolean,
+        delivery: com.whitelabel.commerce.core.domain.model.DeliveryPin,
     ): Result<CheckoutResult> = runSuspendCatching {
         val cleanAddress = shippingAddress.trim()
         require(cleanAddress.length in 3..500) { localized("يرجى إدخال عنوان توصيل صحيح (3 أحرف على الأقل).", "Enter a delivery address of at least three characters.") }
@@ -88,6 +89,7 @@ class OrderRepositoryImpl @Inject constructor(
         require(items.isNotEmpty() && items.size <= 100) { localized("السلة فارغة.", "Your cart is empty.") }
 
         val params = CheckoutRpcParamsDto(
+            delivery = delivery,
             store = com.whitelabel.commerce.BuildConfig.STORE_ID,
             requestKey = requestKey,
             address = cleanAddress,
@@ -108,7 +110,7 @@ class OrderRepositoryImpl @Inject constructor(
 
         val result = supabase.postgrest
             .rpc(
-                function = "mobile_checkout",
+                function = "checkout_delivery",
                 parameters = json.encodeToJsonElement(params).jsonObject,
             )
             .decodeList<CheckoutResultDto>()

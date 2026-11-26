@@ -21,6 +21,9 @@ export type DeliveryInfo = {
   order_id: string;
   status: string;
   shipping_address: string;
+  lat?: number | null;
+  lng?: number | null;
+  recipient_name?: string | null;
   phone: string | null;
   shipping_carrier: string | null;
   tracking_number: string | null;
@@ -136,7 +139,8 @@ export function DeliveryCard({
               <MapPin size={18} />
               <div>
                 <small>{t("deliveryAddress")}</small>
-                <p>{info.shipping_address}</p>
+                <strong>{info.recipient_name}</strong><p>{info.shipping_address}</p>
+                {info.lat != null && info.lng != null && <a href={`https://www.google.com/maps/search/?api=1&query=${info.lat},${info.lng}`} target="_blank" rel="noreferrer">{isEn ? "Open delivery pin" : "فتح موقع التوصيل"}</a>}
               </div>
             </div>
           )}

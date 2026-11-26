@@ -92,14 +92,17 @@ export default async function DriverDeliveryPage({
 
   if (deliveryRes.error || !deliveryRes.data) notFound();
 
-  const storeNames = await resolveOrderStoreNames(deliveryRes.data.order_id);
+  const [storeNames, pin] = await Promise.all([
+    resolveOrderStoreNames(deliveryRes.data.order_id),
+    db.rpc("get_delivery_pin", { p_token: clean }).maybeSingle<Pick<DeliveryInfo, "lat" | "lng" | "recipient_name">>(),
+  ]);
 
   return (
     <DeliveryCard
       token={clean}
       storeName={storeNames.nameAr}
       storeNameEn={storeNames.nameEn}
-      info={deliveryRes.data}
+      info={{ ...deliveryRes.data, ...pin.data }}
     />
   );
 }

@@ -35,6 +35,7 @@ interface OrderRepository {
         name: String,
         requestKey: String = UUID.randomUUID().toString(),
         useWallet: Boolean = false,
+        delivery: com.whitelabel.commerce.core.domain.model.DeliveryPin = com.whitelabel.commerce.core.domain.model.DeliveryPin("", null, null),
     ): Result<CheckoutResult>
 
     /**

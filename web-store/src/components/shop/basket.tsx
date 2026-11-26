@@ -39,7 +39,9 @@ import { localizedText, translateColor } from "@/lib/i18n";
 import type { StoreIncentives } from "@/lib/shop";
 import { storeHref } from "@/lib/tenant-shared";
 import { useLanguage } from "@/components/language-provider";
-import { EgyptAddressFields } from "./egypt-address-fields";
+import { AddressBook } from "./address-book";
+import type { SavedAddress, ShippingRates } from "@/lib/customer-address";
+import { findEgyptGovernorate } from "@/lib/egypt-locations";
 import { CartIncentiveBar } from "./cart-incentive-bar";
 import { CartUpsellStrip } from "./cart-upsell-strip";
 
@@ -56,6 +58,7 @@ type SelectedPayment = "cod" | "paymob_card" | "paymob_wallet";
 
 export function Basket({
   order = false,
+  storeId = "", addresses = [], rates = {}, signedIn = false,
   fee,
   currency,
   defaultName = "",
@@ -80,6 +83,10 @@ export function Basket({
   basePath = "",
 }: {
   order?: boolean;
+  storeId?: string;
+  addresses?: SavedAddress[];
+  rates?: ShippingRates;
+  signedIn?: boolean;
   fee: number;
   currency: string;
   defaultName?: string;
@@ -153,7 +160,9 @@ export function Basket({
     incentives.cartIncentiveEnabled &&
     incentives.freeShippingThreshold > 0 &&
     subtotal >= incentives.freeShippingThreshold;
-  const effectiveFee = freeShippingUnlocked ? 0 : fee;
+  const [governorate, setGovernorate] = useState(addresses.find(a => a.is_default)?.governorate ?? findEgyptGovernorate(defaultGovernorate)?.id ?? "");
+  const deliveryFee = rates[governorate] ?? fee;
+  const effectiveFee = freeShippingUnlocked ? 0 : deliveryFee;
   const preWalletTotal = Math.max(0, subtotal - discount) + effectiveFee;
   const canUseWallet = Boolean(order && signedInEmail && walletBalance > 0);
   const walletApplied =
@@ -402,7 +411,7 @@ export function Basket({
                 {isEn ? "Free" : "مجاني"}
                 {fee > 0 && (
                   <del className="free-shipping-old">
-                    {money(fee, currency, lang)}
+                    {money(deliveryFee, currency, lang)}
                   </del>
                 )}
               </span>
@@ -500,6 +509,9 @@ export function Basket({
                 lock.current = true;
                 setBusy(true);
                 const f = new FormData(e.currentTarget);
+                if (e.currentTarget.querySelector(".address-book fieldset:disabled")) { lock.current = false; setBusy(false); return; }
+                const delivery = JSON.parse(String(f.get("delivery")));
+                const recipient = String(f.get("recipient_name") || "").trim();
                 const address = String(f.get("address")).trim(),
                   phone = String(f.get("phone")),
                   items = lines.map(({ id, quantity, size, color }) => ({
@@ -513,7 +525,7 @@ export function Basket({
                   const useWalletFlag = canUseWallet && useWallet;
                   const payload = JSON.stringify([
                     address,
-                    phone,
+                    phone, delivery, recipient,
                     items,
                     couponCode,
                     effectivePaymentMethod,
@@ -541,8 +553,9 @@ export function Basket({
                     effectivePaymentMethod,
                     items,
                     couponCode || undefined,
-                    defaultName || undefined,
+                    recipient || undefined,
                     useWalletFlag,
+                    delivery,
                   );
 
                   if (!receipt.id) {
@@ -682,33 +695,11 @@ export function Basket({
                   </>
                 )}
               </div>
-              <EgyptAddressFields
-                initialGovernorate={defaultGovernorate}
-                initialCity={defaultCity}
-                initialStreet={defaultAddress}
-                required
-                emitCombinedAddressName="address"
-              />
-              <label>
-                {t("trackingPhoneLabel")}
-                <input
-                  name="phone"
-                  dir="ltr"
-                  type="tel"
-                  defaultValue={defaultPhone}
-                  onChange={(e) => {
-                    syncAbandonedCartContact(tenantId, {
-                      phone: e.target.value,
-                      name: defaultName,
-                      email: signedInEmail,
-                      currency,
-                    });
-                  }}
-                  autoComplete="tel"
-                  required
-                  maxLength={24}
-                />
-              </label>
+              <AddressBook storeId={storeId} checkout signedIn={signedIn} initial={addresses}
+                profile={{recipient_name:defaultName, phone:defaultPhone, governorate:defaultGovernorate, city:defaultCity, street:defaultAddress}}
+                onGovernorate={setGovernorate} onPhone={phone => syncAbandonedCartContact(tenantId, {
+                  phone, name:defaultName, email:signedInEmail, currency,
+                })} />
 
               {canUseWallet && (
                 <div

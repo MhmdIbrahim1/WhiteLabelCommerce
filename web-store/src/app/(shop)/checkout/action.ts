@@ -110,6 +110,7 @@ export async function checkout(
   couponCode?: string,
   customerName?: string,
   useWallet = false,
+  delivery?: { governorate: string; lat: number | null; lng: number | null },
 ): Promise<CheckoutResult> {
   const isEn = (await getServerLang()) === "en";
   const shippingAddress = typeof address === "string" ? address.trim() : "";
@@ -160,7 +161,8 @@ export async function checkout(
     resolveActiveStoreOrDefault(),
   ]);
   const { data, error } = await db
-    .rpc("store_checkout", {
+    .rpc("checkout_delivery", {
+      p_delivery: delivery ?? {},
       request_key: request,
       address: shippingAddress,
       customer_phone: digits,

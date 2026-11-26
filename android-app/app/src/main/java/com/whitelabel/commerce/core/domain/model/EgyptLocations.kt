@@ -486,11 +486,45 @@ object EgyptLocations {
         ),
     )
 
+    private val aliases = mapOf(
+        "cairo" to listOf("EG-C", "Al Qahirah", "Al Qāhirah"),
+        "giza" to listOf("EG-GZ", "Al Jizah"),
+        "alexandria" to listOf("EG-ALX", "Al Iskandariyah"),
+        "sharqia" to listOf("EG-SHR", "Al Sharqia", "Ash Sharqiyah"),
+        "dakahlia" to listOf("EG-DK", "Ad Daqahliyah", "Dakahlia"),
+        "beheira" to listOf("EG-BH", "El Beheira", "Al Buhayrah"),
+        "qalyubia" to listOf("EG-KB", "Al Qalyubia", "Qalyubiyya", "Al Qalyubiyah"),
+        "monufia" to listOf("EG-MNF", "Menofia", "Al Minufiyah"),
+        "gharbia" to listOf("EG-GH", "Al Gharbiyah"),
+        "kafr_el_sheikh" to listOf("EG-KFS", "Kafr Ash Shaykh", "Kafr El Sheikh"),
+        "damietta" to listOf("EG-DT", "Dumyat"),
+        "port_said" to listOf("EG-PTS", "Bur Said"),
+        "ismailia" to listOf("EG-IS", "Al Ismailiyah"),
+        "suez" to listOf("EG-SUZ", "As Suways"),
+        "north_sinai" to listOf("EG-SIN", "Shamal Sina"),
+        "south_sinai" to listOf("EG-JS", "Janub Sina"),
+        "red_sea" to listOf("EG-BA", "Al Bahr Al Ahmar"),
+        "matrouh" to listOf("EG-MT", "Matruh", "Marsa Matruh"),
+        "new_valley" to listOf("EG-WAD", "Al Wadi Al Jadid"),
+        "fayoum" to listOf("EG-FYM", "Faiyum", "Fayum", "Al Fayyum"),
+        "beni_suef" to listOf("EG-BNS", "Bani Suwayf", "Beni Sueif"),
+        "minya" to listOf("EG-MN", "Al Minya", "Minia"),
+        "assiut" to listOf("EG-AST", "Asyut", "Assiout"),
+        "sohag" to listOf("EG-SHG", "Suhaj"),
+        "qena" to listOf("EG-KN", "Qina"),
+        "luxor" to listOf("EG-LX", "Al Uqsur"),
+        "aswan" to listOf("EG-ASN", "Aswan"),
+    )
+    private fun normalizeGovernorate(raw: String) =
+        java.text.Normalizer.normalize(raw.lowercase(), java.text.Normalizer.Form.NFKD)
+            .replace(Regex("\\p{M}"), "").replace("governorate", "").replace("محافظة","").replace("محافظه","")
+            .replace('ى','ي').replace('ة','ه').replace(Regex("[^\\p{L}\\p{N}]"), "")
+
     fun findGovernorate(raw: String?): EgyptGovernorate? {
-        val clean = raw?.trim()?.lowercase().orEmpty()
+        val clean = normalizeGovernorate(raw.orEmpty())
         if (clean.isEmpty()) return null
         return governorates.firstOrNull { g ->
-            g.id == clean || g.nameAr.lowercase() == clean || g.nameEn.lowercase() == clean
+            (listOf(g.id,g.nameAr,g.nameEn) + aliases[g.id].orEmpty()).any { normalizeGovernorate(it) == clean }
         }
     }
 

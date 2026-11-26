@@ -94,7 +94,8 @@ data class CheckoutLineDto(
 
 @Serializable
 data class CheckoutRpcParamsDto(
-    @SerialName("p_store") val store: String,
+    @SerialName("p_delivery") val delivery: com.whitelabel.commerce.core.domain.model.DeliveryPin,
+    @SerialName("p_store_id") val store: String,
     @SerialName("p_coupon_code") val coupon: String?,
     @SerialName("p_customer_name") val name: String,
     @SerialName("p_use_wallet") val useWallet: Boolean = false,

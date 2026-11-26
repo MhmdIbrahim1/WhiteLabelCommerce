@@ -80,7 +80,7 @@ export default async function OrderDetails({
         <p>{t(lang, "orderNumberLabel")} <bdi>{id}</bdi> · {date(o.created_at, lang)}</p>
         <section>
           <h2>{t(lang, "shippingAddressLabel")}</h2>
-          {customer?.data?.full_name && <strong>{customer.data.full_name}</strong>}
+          {(o.recipient_name || customer?.data?.full_name) && <strong>{o.recipient_name || customer?.data?.full_name}</strong>}
           <p>{o.shipping_address}</p>
           {o.phone && <p>{t(lang, "deliveryPhone")} · <bdi>{o.phone}</bdi></p>}
           {o.shipping_carrier && <p>{localizeCarrierLabel(o.shipping_carrier, lang)}</p>}
@@ -202,7 +202,8 @@ export default async function OrderDetails({
             <MapPin size={15} />
             <div>
               <small>{t(lang, "shippingAddressLabel")}</small>
-              <strong>{o.shipping_address}</strong>
+              <strong>{o.recipient_name}</strong><span>{o.shipping_address}</span>
+              {o.lat != null && o.lng != null && <a href={`https://www.google.com/maps/search/?api=1&query=${o.lat},${o.lng}`} target="_blank" rel="noreferrer">{isEn ? "Open delivery pin" : "فتح موقع التوصيل"}</a>}
             </div>
           </div>
         </div>

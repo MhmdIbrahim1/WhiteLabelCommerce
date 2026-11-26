@@ -260,6 +260,9 @@ fun AccountScreen(
                         }
                     }
 
+                    com.whitelabel.commerce.feature.addresses.AddressBook(session.email,
+                        com.whitelabel.commerce.core.domain.model.CustomerAddress(recipientName = profileForm.fullName, phone = profileForm.phone))
+
                     // 1a. Preferences & Support Card (Appearance, Language, Customer Support)
                     PreferencesAndSupportCard(
                         darkThemeOverride = darkThemeOverride,
