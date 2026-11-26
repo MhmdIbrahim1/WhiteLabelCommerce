@@ -1,0 +1,25 @@
+.review-thread, .review-thread-editor {
+  margin-inline-start: .6rem;
+  padding-inline-start: .9rem;
+  border-inline-start: 2px solid color-mix(in srgb, var(--primary) 28%, transparent);
+  min-width: 0;
+}
+.review-thread summary, button.review-thread-link {
+  cursor: pointer;
+  font-size: .84rem;
+  font-weight: 600;
+  color: var(--primary);
+}
+.review-thread-turn + .review-thread-turn { margin-block-start: .6rem; }
+.review-thread[open] summary { margin-block: 0 .6rem; }
+.review-thread-meta { display: flex; align-items: baseline; flex-wrap: wrap; gap: .45rem; font-size: .76rem; color: var(--muted); }
+.review-thread-meta strong { color: var(--primary); background: color-mix(in srgb, var(--primary) 7%, transparent); padding: .08rem .38rem; border-radius: .35rem; }
+.review-thread-meta strong[data-role=customer] { color: var(--ink); background: color-mix(in srgb, var(--ink) 7%, transparent); }
+.review-thread-turn p { margin: .15rem 0 0; font-size: .9rem; line-height: 1.55; overflow-wrap: anywhere; white-space: pre-wrap; }
+button.review-thread-link { background: transparent; border: 0; box-shadow: none; padding: .45rem .6rem; }
+.review-thread-editor { display: grid; gap: .4rem; margin-block-start: .6rem; }
+.review-thread-editor label { display: grid; gap: .3rem; font-size: .85rem; font-weight: 600; }
+.review-thread-editor textarea { width: 100%; resize: vertical; padding: .6rem; font: inherit; font-weight: normal; }
+.review-thread-editor small { text-align: end; color: var(--muted); }
+.review-thread-editor textarea[aria-invalid=true], .review-thread-editor [role=alert] { color: #a32020; }
+.review-thread-editor button:disabled { opacity: .55; }

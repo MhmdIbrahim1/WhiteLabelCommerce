@@ -55,6 +55,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import com.whitelabel.commerce.core.designsystem.components.SearchAction
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -69,6 +70,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.SubcomposeAsyncImage
 import com.whitelabel.commerce.core.designsystem.LocalBrandColors
@@ -101,6 +105,10 @@ fun ProductDetailScreen(
     viewModel: ProductDetailViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(lifecycle, viewModel) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { viewModel.observeReviewReplies() }
+    }
     val brandColors = LocalBrandColors.current
     val settings = LocalStoreSettings.current
     var showSizeGuide by remember { mutableStateOf(false) }
@@ -822,7 +830,10 @@ fun ProductDetailScreen(
                         reviews = state.reviews,
                         eligibility = state.eligibility,
                         isSignedIn = state.isSignedIn,
-                        storeName = settings.storeName,
+                        userId = state.userId,
+                        sendingFollowUp = state.sendingFollowUp,
+                        followUpFailed = state.followUpFailed,
+                        onFollowUp = viewModel::submitFollowUp,
                         isSubmitting = state.isSubmittingReview,
                         submitError = state.reviewSubmitError,
                         onOpenWriteReview = { showWriteReview = true },

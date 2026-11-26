@@ -4,6 +4,8 @@ import com.whitelabel.commerce.core.designsystem.localized
 import java.util.Locale
 import kotlin.math.roundToInt
 
+data class ReviewReply(val role: String, val body: String, val createdAt: String?)
+
 data class ProductReview(
     val id: String,
     val storeId: String = "",
@@ -19,7 +21,19 @@ data class ProductReview(
     val adminRepliedAt: String? = null,
     val createdAt: String = "",
     val updatedAt: String = "",
+    val replies: List<ReviewReply> = emptyList(),
 ) {
+    val thread: List<ReviewReply>
+        get() = listOfNotNull(adminReply?.takeIf { it.isNotBlank() }?.let { ReviewReply("merchant", it, adminRepliedAt) }) +
+            replies.sortedBy { it.role != "customer" }
+
+    fun withReply(reply: ReviewReply): ProductReview =
+        if (replies.any { it.role == reply.role }) this else copy(replies = replies + reply)
+
+    fun canFollowUp(ownReview: ProductReview?, userId: String?): Boolean =
+        !userId.isNullOrBlank() && ownReview?.userId == userId && ownReview.id == id &&
+            status == "published" && !adminReply.isNullOrBlank() && replies.isEmpty()
+
     val authorInitial: String
         get() = authorName.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "★"
 }
@@ -48,6 +62,22 @@ data class RatingStats(
 }
 
 object ReviewFormatting {
+    const val FOLLOW_UP_LIMIT = 500
+
+    fun characterCount(text: String): Int = text.codePointCount(0, text.length)
+
+    fun validFollowUp(text: String): Boolean = text.isNotBlank() && characterCount(text) <= FOLLOW_UP_LIMIT
+
+    fun replyDate(timestamp: String?, locale: Locale): String {
+        if (timestamp.isNullOrBlank()) return ""
+        val normalized = timestamp.replace(Regex("\\.\\d+(?=Z|[+-])"), "")
+        val parser = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US)
+        val date = runCatching { parser.parse(normalized) }.getOrNull() ?: return ""
+        return java.text.SimpleDateFormat("d MMM yyyy · HH:mm", locale).apply {
+            timeZone = java.util.TimeZone.getTimeZone("Africa/Cairo")
+        }.format(date)
+    }
+
     fun formatScore(score: Double): String {
         if (!score.isFinite() || score <= 0.0) return "0.0"
         return String.format(Locale.US, "%.1f", score.coerceIn(0.0, 5.0))

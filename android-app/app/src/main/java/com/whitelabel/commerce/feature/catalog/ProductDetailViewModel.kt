@@ -22,6 +22,11 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.retryWhen
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -41,6 +46,9 @@ data class ProductDetailUiState(
     val isWishlisted: Boolean = false,
     val wishlistedProductIds: Set<String> = emptySet(),
     val isSignedIn: Boolean = false,
+    val userId: String? = null,
+    val sendingFollowUp: Boolean = false,
+    val followUpFailed: Boolean = false,
     val reviews: List<ProductReview> = emptyList(),
     val eligibility: ReviewEligibility = ReviewEligibility(),
     val isSubmittingReview: Boolean = false,
@@ -81,6 +89,7 @@ class ProductDetailViewModel @Inject constructor(
             isWishlisted = productId in wishIds,
             wishlistedProductIds = wishIds,
             isSignedIn = session is AuthSessionState.SignedIn,
+            userId = (session as? AuthSessionState.SignedIn)?.userId,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -94,6 +103,16 @@ class ProductDetailViewModel @Inject constructor(
 
     init {
         loadProduct()
+        viewModelScope.launch {
+            authRepository.sessionState.map { (it as? AuthSessionState.SignedIn)?.userId }
+                .distinctUntilChanged().collectLatest { userId ->
+                    _uiState.update { it.copy(eligibility = ReviewEligibility(), followUpFailed = false) }
+                    if (userId != null) {
+                        val result = reviewRepository.checkEligibility(productId)
+                        _uiState.update { it.copy(eligibility = result.getOrDefault(ReviewEligibility())) }
+                    }
+                }
+        }
     }
 
     fun loadProduct() {
@@ -101,12 +120,10 @@ class ProductDetailViewModel @Inject constructor(
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
             val productDeferred = async { catalogRepository.getProductById(productId) }
             val reviewsDeferred = async { reviewRepository.getPublishedReviews(productId) }
-            val eligibilityDeferred = async { reviewRepository.checkEligibility(productId) }
             val relatedDeferred = async { catalogRepository.getRelatedProducts(productId, limit = 6) }
 
             val productResult = productDeferred.await()
             val reviewsResult = reviewsDeferred.await()
-            val eligibilityResult = eligibilityDeferred.await()
             val relatedResult = relatedDeferred.await()
 
             productResult
@@ -126,7 +143,6 @@ class ProductDetailViewModel @Inject constructor(
                                 selectedColor = product.colors.firstOrNull(),
                                 quantity = if (product.stock > 0) 1 else 0,
                                 reviews = reviewsResult.getOrDefault(it.reviews),
-                                eligibility = eligibilityResult.getOrDefault(it.eligibility),
                                 relatedProducts = relatedResult.getOrDefault(emptyList()),
                                 isLoading = false,
                             )
@@ -212,6 +228,38 @@ class ProductDetailViewModel @Inject constructor(
         }
     }
 
+    suspend fun observeReviewReplies() {
+        reviewRepository.replyUpdates(productId).retryWhen { _, _ -> delay(5_000); true }
+            .collect { (id, reply) ->
+                _uiState.update { state ->
+                    if (state.reviews.none { it.id == id }) state else state.copy(
+                        reviews = state.reviews.map { if (it.id == id) it.withReply(reply) else it },
+                    )
+                }
+            }
+    }
+
+    fun submitFollowUp(reviewId: String, body: String) {
+        val state = _uiState.value
+        val review = state.reviews.find { it.id == reviewId } ?: return
+        val userId = (authRepository.sessionState.value as? AuthSessionState.SignedIn)?.userId
+        if (state.sendingFollowUp || !ReviewFormatting.validFollowUp(body) ||
+            !review.canFollowUp(state.eligibility.existingReview, userId)) return
+        _uiState.update { it.copy(sendingFollowUp = true, followUpFailed = false) }
+        viewModelScope.launch {
+            reviewRepository.followUp(reviewId, body).onSuccess { reply ->
+                _uiState.update { current ->
+                    current.copy(sendingFollowUp = false, reviews = current.reviews.map {
+                        if (it.id == reviewId) it.withReply(reply) else it
+                    })
+                }
+            }.onFailure {
+                val latest = reviewRepository.getPublishedReviews(productId)
+                _uiState.update { it.copy(sendingFollowUp = false, followUpFailed = true, reviews = latest.getOrDefault(it.reviews)) }
+            }
+        }
+    }
+
     fun submitReview(
         rating: Int,
         comment: String,
@@ -227,7 +275,7 @@ class ProductDetailViewModel @Inject constructor(
                 _uiState.update { prev ->
                     val updatedList = prev.reviews.toMutableList().apply {
                         val idx = indexOfFirst { it.id == saved.id }
-                        if (idx >= 0) set(idx, saved) else add(0, saved)
+                        if (idx >= 0) set(idx, saved.copy(replies = get(idx).replies)) else add(0, saved)
                     }
                     val stats = ReviewFormatting.computeStats(updatedList)
                     prev.copy(

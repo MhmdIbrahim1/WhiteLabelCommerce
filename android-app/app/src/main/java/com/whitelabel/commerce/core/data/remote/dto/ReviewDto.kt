@@ -1,9 +1,15 @@
 package com.whitelabel.commerce.core.data.remote.dto
 
+import com.whitelabel.commerce.core.domain.model.ReviewReply
 import com.whitelabel.commerce.core.domain.model.ProductReview
 import com.whitelabel.commerce.core.domain.model.ReviewEligibility
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+
+@Serializable
+data class ReviewReplyDto(val role: String, val body: String, @SerialName("created_at") val createdAt: String) {
+    fun toDomain() = ReviewReply(role, body, createdAt)
+}
 
 @Serializable
 data class ProductReviewDto(
@@ -20,6 +26,7 @@ data class ProductReviewDto(
     @SerialName("admin_reply") val adminReply: String? = null,
     @SerialName("admin_replied_at") val adminRepliedAt: String? = null,
     @SerialName("created_at") val createdAt: String = "",
+    @SerialName("review_replies") val replies: List<ReviewReplyDto> = emptyList(),
     @SerialName("updated_at") val updatedAt: String = "",
 ) {
     fun toDomain(): ProductReview = ProductReview(
@@ -37,6 +44,7 @@ data class ProductReviewDto(
         adminRepliedAt = adminRepliedAt,
         createdAt = createdAt,
         updatedAt = updatedAt,
+        replies = replies.map { it.toDomain() },
     )
 }
 

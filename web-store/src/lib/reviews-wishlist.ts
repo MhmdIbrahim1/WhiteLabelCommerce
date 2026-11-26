@@ -2,6 +2,19 @@ import type { Lang } from "./i18n";
 
 export type ReviewStatus = "published" | "hidden";
 
+export type ReviewReply = {
+  role: "customer" | "merchant";
+  body: string;
+  created_at: string;
+};
+
+export const FOLLOW_UP_LIMIT = 500;
+
+export function withReviewReply<T extends { review_replies?: ReviewReply[] }>(review: T, reply: ReviewReply): T {
+  const replies = review.review_replies ?? [];
+  return replies.some((r) => r.role === reply.role) ? review : { ...review, review_replies: [...replies, reply] };
+}
+
 export type ProductReview = {
   id: string;
   store_id: string;
@@ -13,6 +26,7 @@ export type ProductReview = {
   comment: string;
   is_verified_purchase: boolean;
   status: ReviewStatus;
+  review_replies?: ReviewReply[];
   admin_reply: string | null;
   admin_replied_at: string | null;
   created_at: string;

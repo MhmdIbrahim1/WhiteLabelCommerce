@@ -5,7 +5,6 @@ import Link from "next/link";
 import {
   Star,
   CheckCircle2,
-  MessageSquareReply,
   ShieldCheck,
   Sparkles,
   PenLine,
@@ -13,16 +12,20 @@ import {
   Info,
 } from "lucide-react";
 import { useLanguage } from "@/components/language-provider";
+import { useReviewReplies } from "@/components/use-review-replies";
 import { formatDate } from "@/lib/i18n";
 import {
   authorInitials,
   computeRatingStats,
   formatRatingScore,
   ratingLabel,
+  withReviewReply,
   type ProductReview,
   type ReviewEligibility,
+  type ReviewReply,
 } from "@/lib/reviews-wishlist";
-import { submitReviewAction } from "@/app/(shop)/products/[id]/actions";
+import { ReviewThread, ReplyComposer } from "@/components/review-thread";
+import { submitFollowUpAction, submitReviewAction } from "@/app/(shop)/products/[id]/actions";
 
 function StarRow({
   value,
@@ -53,19 +56,18 @@ export function ProductReviewsSection({
   initialEligibility,
   isSignedIn,
   currentPath,
-  storeName,
 }: {
   productId: string;
   initialReviews: ProductReview[];
   initialEligibility: ReviewEligibility;
   isSignedIn: boolean;
   currentPath: string;
-  storeName: string;
 }) {
   const { lang } = useLanguage();
   const isEn = lang === "en";
 
   const [reviews, setReviews] = useState<ProductReview[]>(initialReviews);
+  useReviewReplies(initialReviews[0]?.store_id, setReviews);
   const [existingReview, setExistingReview] = useState<ProductReview | null>(
     initialEligibility.existing_review,
   );
@@ -146,7 +148,7 @@ export function ProductReviewsSection({
         const idx = prev.findIndex((r) => r.id === saved.id);
         if (idx >= 0) {
           const next = [...prev];
-          next[idx] = saved;
+          next[idx] = { ...next[idx], ...saved };
           return next;
         }
         return [saved, ...prev];
@@ -499,24 +501,12 @@ export function ProductReviewsSection({
                 <p className="review-comment-body">{review.comment}</p>
               )}
 
-              {review.admin_reply && review.admin_reply.trim() && (
-                <div className="review-store-reply">
-                  <div className="review-store-reply-head">
-                    <MessageSquareReply size={14} aria-hidden="true" />
-                    <strong>
-                      {isEn
-                        ? `Store Reply · ${storeName}`
-                        : `رد المتجر · ${storeName}`}
-                    </strong>
-                    {review.admin_replied_at && (
-                      <time dateTime={review.admin_replied_at}>
-                        {formatDate(review.admin_replied_at, lang)}
-                      </time>
-                    )}
-                  </div>
-                  <p>{review.admin_reply}</p>
-                </div>
-              )}
+              <ReviewFollowUp
+                review={review}
+                isAuthor={isSignedIn && existingReview?.id === review.id}
+                onSaved={(reply) => setReviews((prev) => prev.map((r) => r.id === review.id
+                  ? withReviewReply(r, reply) : r))}
+              />
             </article>
           ))}
         </div>
@@ -537,5 +527,36 @@ export function ProductReviewsSection({
         </div>
       ) : null}
     </section>
+  );
+}
+
+function ReviewFollowUp({ review, isAuthor, onSaved }: {
+  review: ProductReview;
+  isAuthor: boolean;
+  onSaved: (reply: ReviewReply) => void;
+}) {
+  const { lang } = useLanguage();
+  const [editing, setEditing] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  if (!review.admin_reply) return null;
+  const canReply = isAuthor && review.status === "published" && !review.review_replies?.length;
+  const label = lang === "en" ? "Reply to store" : "الرد على المتجر";
+  return (
+    <div>
+      <ReviewThread review={review} lang={lang} expanded={expanded} onToggle={setExpanded} />
+      {canReply && (editing ? (
+        <ReplyComposer lang={lang} label={label} onCancel={() => setEditing(false)}
+          onSave={async (body) => {
+            const result = await submitFollowUpAction(review.id, body);
+            if (!result.ok) return false;
+            onSaved(result.reply);
+            setExpanded(true);
+            setEditing(false);
+            return true;
+          }} />
+      ) : (
+        <button type="button" className="review-thread-link" onClick={() => setEditing(true)}>{label}</button>
+      ))}
+    </div>
   );
 }

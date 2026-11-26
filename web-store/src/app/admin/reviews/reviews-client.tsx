@@ -10,13 +10,15 @@ import {
   EyeOff,
   MessageSquareReply,
   Package,
-  Send,
-  X,
   ExternalLink,
 } from "lucide-react";
 import { useLanguage } from "@/components/language-provider";
 import { formatDate, localizedText, type Lang } from "@/lib/i18n";
-import { authorInitials, formatRatingScore } from "@/lib/reviews-wishlist";
+import { authorInitials, formatRatingScore, withReviewReply } from "@/lib/reviews-wishlist";
+import { useReviewReplies } from "@/components/use-review-replies";
+import { ReviewThread, ReplyComposer } from "@/components/review-thread";
+import type { ReviewReply } from "@/lib/reviews-wishlist";
+import { answerFollowUpAction } from "./actions";
 import { moderateReviewAction } from "../mutations";
 
 export type AdminReviewItem = {
@@ -30,6 +32,7 @@ export type AdminReviewItem = {
   comment: string;
   is_verified_purchase: boolean;
   status: "published" | "hidden";
+  review_replies: ReviewReply[];
   admin_reply: string | null;
   admin_replied_at: string | null;
   created_at: string;
@@ -41,21 +44,29 @@ export type AdminReviewItem = {
 
 type FilterTab = "all" | "needs_reply" | "hidden";
 
+function needsReply(review: AdminReviewItem) {
+  return review.status === "published" && (!review.admin_reply ||
+    (review.review_replies.some((r) => r.role === "customer") && !review.review_replies.some((r) => r.role === "merchant")));
+}
+
 export function AdminReviewsClient({
   initialReviews,
   initialLang,
+  basePath,
 }: {
   initialReviews: AdminReviewItem[];
   initialLang: Lang;
+  basePath: string;
 }) {
   const { lang: ctxLang } = useLanguage();
   const lang = ctxLang ?? initialLang;
   const isEn = lang === "en";
 
   const [reviews, setReviews] = useState<AdminReviewItem[]>(initialReviews);
+  useReviewReplies(initialReviews[0]?.store_id, setReviews);
   const [filter, setFilter] = useState<FilterTab>("all");
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [replyDraft, setReplyDraft] = useState("");
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ kind: "ok" | "err"; text: string } | null>(
     null,
@@ -67,24 +78,19 @@ export function AdminReviewsClient({
       published.length > 0
         ? published.reduce((s, r) => s + r.rating, 0) / published.length
         : 0;
-    const needsReply = reviews.filter(
-      (r) => r.status === "published" && !(r.admin_reply && r.admin_reply.trim()),
-    ).length;
+    const awaitingReply = reviews.filter(needsReply).length;
     const hidden = reviews.filter((r) => r.status === "hidden").length;
     return {
       avg,
       total: reviews.length,
-      needsReply,
+      needsReply: awaitingReply,
       hidden,
     };
   }, [reviews]);
 
   const visibleReviews = useMemo(() => {
     if (filter === "needs_reply") {
-      return reviews.filter(
-        (r) =>
-          r.status === "published" && !(r.admin_reply && r.admin_reply.trim()),
-      );
+      return reviews.filter(needsReply);
     }
     if (filter === "hidden") {
       return reviews.filter((r) => r.status === "hidden");
@@ -131,47 +137,25 @@ export function AdminReviewsClient({
     }
   }
 
-  async function handleSaveReply(item: AdminReviewItem) {
+  async function handleSaveReply(item: AdminReviewItem, body: string) {
     setBusyId(item.id);
     setNotice(null);
     try {
-      const res = await moderateReviewAction({
-        reviewId: item.id,
-        status: item.status,
-        adminReply: replyDraft,
-      });
-      if (!res.ok) {
-        setNotice({
-          kind: "err",
-          text: isEn
-            ? "Could not save store reply."
-            : "تعذر حفظ رد المتجر.",
-        });
-        return;
+      if (item.review_replies.length) {
+        const res = await answerFollowUpAction(item.id, body);
+        if (!res.ok) return false;
+        setReviews((prev) => prev.map((r) => r.id === item.id
+          ? withReviewReply(r, res.reply) : r));
+        setExpanded((prev) => ({ ...prev, [item.id]: true }));
+      } else {
+        const res = await moderateReviewAction({ reviewId: item.id, status: item.status, adminReply: body });
+        if (!res.ok) return false;
+        setReviews((prev) => prev.map((r) => r.id === item.id
+          ? { ...r, admin_reply: res.review.admin_reply, admin_replied_at: res.review.admin_replied_at } : r));
       }
-      setReviews((prev) =>
-        prev.map((r) =>
-          r.id === item.id
-            ? {
-                ...r,
-                admin_reply: res.review.admin_reply,
-                admin_replied_at: res.review.admin_replied_at,
-              }
-            : r,
-        ),
-      );
       setEditingId(null);
-      setReplyDraft("");
-      setNotice({
-        kind: "ok",
-        text: replyDraft.trim()
-          ? isEn
-            ? "Store reply saved and customer notified."
-            : "تم حفظ رد المتجر وإرسال إشعار للعميل."
-          : isEn
-            ? "Store reply cleared."
-            : "تم مسح رد المتجر.",
-      });
+      setNotice({ kind: "ok", text: isEn ? "Store reply saved." : "تم حفظ رد المتجر." });
+      return true;
     } finally {
       setBusyId(null);
     }
@@ -353,7 +337,8 @@ export function AdminReviewsClient({
               item.product_name_ar,
               item.product_name_en,
             );
-            const isEditing = editingId === item.id;
+            const editorKey = `${item.id}-${item.review_replies.length}`;
+            const isEditing = editingId === editorKey;
             const isBusy = busyId === item.id;
             const isPublished = item.status === "published";
 
@@ -414,7 +399,7 @@ export function AdminReviewsClient({
                     </span>
                     <div style={{ minWidth: 0 }}>
                       <Link
-                        href={`/products/${item.product_id}#reviews`}
+                        href={`${basePath}/products/${item.product_id}#reviews`}
                         target="_blank"
                         style={{
                           display: "inline-flex",
@@ -537,42 +522,17 @@ export function AdminReviewsClient({
                       </span>
                     </button>
 
-                    <button
-                      type="button"
-                      disabled={isBusy}
-                      onClick={() => {
-                        if (isEditing) {
-                          setEditingId(null);
-                          setReplyDraft("");
-                        } else {
-                          setEditingId(item.id);
-                          setReplyDraft(item.admin_reply ?? "");
-                        }
-                      }}
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "0.32rem",
-                        padding: "0.35rem 0.78rem",
-                        borderRadius: "999px",
-                        fontSize: "0.8rem",
-                        fontWeight: 650,
-                        background: "color-mix(in srgb, var(--primary) 10%, transparent)",
-                        color: "var(--primary)",
-                        border: "1px solid color-mix(in srgb, var(--primary) 28%, transparent)",
-                      }}
-                    >
-                      <MessageSquareReply size={14} />
-                      <span>
-                        {item.admin_reply
-                          ? isEn
-                            ? "Edit Reply"
-                            : "تعديل الرد"
-                          : isEn
-                            ? "Reply"
-                            : "رد على التقييم"}
-                      </span>
-                    </button>
+                    {(!item.review_replies.length || needsReply(item)) && (
+                      <button type="button" className="review-thread-link" disabled={busyId !== null}
+                        onClick={() => {
+                          setEditingId(isEditing ? null : editorKey);
+                          if (item.review_replies.length) setExpanded((prev) => ({ ...prev, [item.id]: true }));
+                        }}>
+                        <MessageSquareReply size={14} /> {item.review_replies.length
+                          ? (isEn ? "Answer follow-up" : "الرد على العميل")
+                          : item.admin_reply ? (isEn ? "Edit Reply" : "تعديل الرد") : (isEn ? "Reply" : "رد على التقييم")}
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -590,151 +550,14 @@ export function AdminReviewsClient({
                   </p>
                 )}
 
-                {/* Existing Merchant Reply */}
-                {item.admin_reply && !isEditing && (
-                  <div
-                    style={{
-                      padding: "0.75rem 0.95rem",
-                      borderRadius: "10px",
-                      background: "color-mix(in srgb, var(--primary) 5%, var(--surface))",
-                      borderInlineStart: "3px solid var(--primary)",
-                      display: "grid",
-                      gap: "0.28rem",
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "0.4rem",
-                        fontSize: "0.78rem",
-                        fontWeight: 700,
-                        color: "var(--primary)",
-                      }}
-                    >
-                      <MessageSquareReply size={13} />
-                      <span>{isEn ? "Store Reply" : "رد المتجر"}</span>
-                      {item.admin_replied_at && (
-                        <span style={{ color: "var(--muted)", fontWeight: 500 }}>
-                          · {formatDate(item.admin_replied_at, lang)}
-                        </span>
-                      )}
-                    </div>
-                    <p
-                      style={{
-                        margin: 0,
-                        fontSize: "0.88rem",
-                        lineHeight: 1.55,
-                        color: "var(--ink)",
-                      }}
-                    >
-                      {item.admin_reply}
-                    </p>
-                  </div>
-                )}
-
-                {/* Inline Reply Editor */}
+                <ReviewThread review={item} lang={lang} expanded={!!expanded[item.id]}
+                  onToggle={(open) => setExpanded((prev) => ({ ...prev, [item.id]: open }))} />
                 {isEditing && (
-                  <div
-                    style={{
-                      display: "grid",
-                      gap: "0.6rem",
-                      padding: "0.85rem",
-                      borderRadius: "12px",
-                      background: "#f8fafc",
-                      border: "1px solid #e2e8f0",
-                    }}
-                  >
-                    <label
-                      style={{
-                        display: "grid",
-                        gap: "0.35rem",
-                        fontSize: "0.82rem",
-                        fontWeight: 650,
-                      }}
-                    >
-                      <span>
-                        {isEn
-                          ? "Merchant Reply (visible publicly on product page)"
-                          : "رد المتجر (يظهر للعملاء أسفل التقييم في صفحة المنتج)"}
-                      </span>
-                      <textarea
-                        rows={3}
-                        maxLength={1500}
-                        value={replyDraft}
-                        onChange={(e) => setReplyDraft(e.target.value)}
-                        placeholder={
-                          isEn
-                            ? "Thank the customer or address their feedback clearly..."
-                            : "اشكر العميل على تقييمه أو وضّح أي تفاصيل مفيدة..."
-                        }
-                        style={{
-                          width: "100%",
-                          padding: "0.65rem 0.75rem",
-                          borderRadius: "10px",
-                          border: "1px solid #cbd5e1",
-                          background: "#ffffff",
-                          color: "#0f172a",
-                          fontSize: "0.88rem",
-                        }}
-                      />
-                    </label>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "0.5rem",
-                        flexWrap: "wrap",
-                      }}
-                    >
-                      <button
-                        type="button"
-                        disabled={isBusy}
-                        onClick={() => void handleSaveReply(item)}
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: "0.35rem",
-                          padding: "0.45rem 0.9rem",
-                          borderRadius: "9px",
-                          fontSize: "0.83rem",
-                          fontWeight: 650,
-                        }}
-                      >
-                        <Send size={14} />
-                        <span>
-                          {isBusy
-                            ? isEn
-                              ? "Saving…"
-                              : "جارٍ الحفظ…"
-                            : isEn
-                              ? "Save Reply"
-                              : "حفظ الرد"}
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingId(null);
-                          setReplyDraft("");
-                        }}
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: "0.3rem",
-                          padding: "0.45rem 0.8rem",
-                          borderRadius: "9px",
-                          fontSize: "0.83rem",
-                          fontWeight: 600,
-                          background: "#e2e8f0",
-                          color: "#334155",
-                        }}
-                      >
-                        <X size={14} />
-                        <span>{isEn ? "Cancel" : "إلغاء"}</span>
-                      </button>
-                    </div>
-                  </div>
+                  <ReplyComposer lang={lang} label={isEn ? "Store Reply" : "رد المتجر"}
+                    initial={item.review_replies.length ? "" : item.admin_reply ?? ""}
+                    limit={item.review_replies.length ? 500 : 1500}
+                    allowClear={!!item.admin_reply && !item.review_replies.length}
+                    onCancel={() => setEditingId(null)} onSave={(body) => handleSaveReply(item, body)} />
                 )}
               </article>
             );

@@ -1,6 +1,8 @@
 import { requireAdmin, checked } from "@/lib/db";
+import { DEFAULT_STORE_ID } from "@/lib/tenant-shared";
 import { adminDb } from "@/lib/supabase/admin";
 import { getServerLang } from "@/lib/i18n-server";
+import type { ReviewReply } from "@/lib/reviews-wishlist";
 import { photo } from "@/lib/shop";
 import { AdminReviewsClient, type AdminReviewItem } from "./reviews-client";
 
@@ -15,6 +17,7 @@ type RawReviewJoinRow = {
   comment: string;
   is_verified_purchase: boolean;
   status: "published" | "hidden";
+  review_replies: ReviewReply[];
   admin_reply: string | null;
   admin_replied_at: string | null;
   created_at: string;
@@ -26,7 +29,7 @@ type RawReviewJoinRow = {
 };
 
 export default async function AdminReviewsPage() {
-  const [{ storeId }, lang] = await Promise.all([
+  const [{ storeId, activeStore }, lang] = await Promise.all([
     requireAdmin(),
     getServerLang(),
   ]);
@@ -34,7 +37,7 @@ export default async function AdminReviewsPage() {
   const res = await adminDb()
     .from("product_reviews")
     .select(
-      "id,store_id,product_id,user_id,order_id,author_name,rating,comment,is_verified_purchase,status,admin_reply,admin_replied_at,created_at,updated_at,products(id,name,name_en,image_path)",
+      "id,store_id,product_id,user_id,order_id,author_name,rating,comment,is_verified_purchase,status,admin_reply,admin_replied_at,review_replies(role,body,created_at),created_at,updated_at,products(id,name,name_en,image_path)",
     )
     .eq("store_id", storeId)
     .order("created_at", { ascending: false })
@@ -55,6 +58,7 @@ export default async function AdminReviewsPage() {
       comment: row.comment,
       is_verified_purchase: Boolean(row.is_verified_purchase),
       status: row.status === "hidden" ? "hidden" : "published",
+      review_replies: row.review_replies,
       admin_reply: row.admin_reply,
       admin_replied_at: row.admin_replied_at,
       created_at: row.created_at,
@@ -65,5 +69,6 @@ export default async function AdminReviewsPage() {
     };
   });
 
-  return <AdminReviewsClient initialReviews={reviews} initialLang={lang} />;
+  const basePath = storeId === DEFAULT_STORE_ID ? "" : `/s/${activeStore.slug}`;
+  return <AdminReviewsClient key={storeId} initialReviews={reviews} initialLang={lang} basePath={basePath} />;
 }

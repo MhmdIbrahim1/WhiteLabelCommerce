@@ -8,10 +8,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -23,7 +21,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material.icons.rounded.Edit
-import androidx.compose.material.icons.automirrored.rounded.Reply
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Verified
 import androidx.compose.material3.Button
@@ -41,12 +38,16 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.key
+import androidx.compose.runtime.saveable.rememberSaveable
+import java.util.Locale
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -74,7 +75,10 @@ fun ProductReviewsSection(
     reviews: List<ProductReview>,
     eligibility: ReviewEligibility,
     isSignedIn: Boolean,
-    storeName: String,
+    userId: String?,
+    sendingFollowUp: Boolean,
+    followUpFailed: Boolean,
+    onFollowUp: (String, String) -> Unit,
     isSubmitting: Boolean,
     submitError: String?,
     onOpenWriteReview: () -> Unit,
@@ -329,10 +333,15 @@ fun ProductReviewsSection(
 
         // Individual Review Cards
         filteredReviews.forEach { review ->
-            ReviewItemCard(
-                review = review,
-                storeName = storeName,
-            )
+            key(review.id) {
+                ReviewItemCard(
+                    review = review,
+                    canReply = review.canFollowUp(eligibility.existingReview, userId),
+                    sending = sendingFollowUp,
+                    failed = followUpFailed,
+                    onFollowUp = { onFollowUp(review.id, it) },
+                )
+            }
         }
     }
 }
@@ -340,7 +349,10 @@ fun ProductReviewsSection(
 @Composable
 private fun ReviewItemCard(
     review: ProductReview,
-    storeName: String,
+    canReply: Boolean,
+    sending: Boolean,
+    failed: Boolean,
+    onFollowUp: (String) -> Unit,
 ) {
     val brandColors = LocalBrandColors.current
     Card(
@@ -436,56 +448,70 @@ private fun ReviewItemCard(
                 )
             }
 
-            // Indented Merchant Reply Sub-Card with Logical Start Accent Bar
-            review.adminReply?.takeIf { it.isNotBlank() }?.let { reply ->
-                Surface(
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.28f),
-                    shape = MaterialTheme.shapes.small,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 8.dp),
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(IntrinsicSize.Min),
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .width(3.dp)
-                                .fillMaxHeight()
-                                .background(MaterialTheme.colorScheme.primary),
-                        )
-                        Column(
-                            modifier = Modifier
-                                .weight(1f)
-                                .padding(horizontal = 12.dp, vertical = 10.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(5.dp),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Rounded.Reply,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(14.dp),
-                                )
-                                Text(
-                                    text = localized("رد المتجر · $storeName", "Store Reply · $storeName"),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
-                            }
-                            Text(
-                                text = reply,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                        }
-                    }
+            if (!review.adminReply.isNullOrBlank()) {
+                ReviewThread(review, canReply, sending, failed, onFollowUp)
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ReviewThread(
+    review: ProductReview, canReply: Boolean, sending: Boolean, failed: Boolean, onFollowUp: (String) -> Unit,
+) {
+    var expanded by rememberSaveable(review.id) { mutableStateOf(false) }
+    var editing by rememberSaveable(review.id, canReply) { mutableStateOf(false) }
+    var body by rememberSaveable(review.id, canReply) { mutableStateOf("") }
+    val turns = review.thread
+    val locale = Locale.forLanguageTag(localized("ar-EG", "en-GB"))
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(start = 10.dp)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.32f), MaterialTheme.shapes.small)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        if (turns.size > 1) {
+            TextButton(onClick = { expanded = !expanded }) {
+                Text(if (expanded) localized("إخفاء الردود", "Hide replies")
+                    else localized("عرض الردود (${turns.size})", "View replies (${turns.size})"))
+            }
+        }
+        if (turns.size == 1 || expanded) {
+            turns.forEach { turn ->
+                val role = if (turn.role == "customer") localized("رد العميل", "Customer Follow-up") else localized("رد المتجر", "Store Reply")
+                val date = ReviewFormatting.replyDate(turn.createdAt, locale)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    val roleColor = if (turn.role == "customer") MaterialTheme.colorScheme.onSurfaceVariant
+                        else MaterialTheme.colorScheme.primary
+                    Text(role, style = MaterialTheme.typography.labelMedium, color = roleColor,
+                        modifier = Modifier.background(roleColor.copy(alpha = .08f), RoundedCornerShape(4.dp))
+                            .padding(horizontal = 5.dp, vertical = 1.dp))
+                    if (date.isNotEmpty()) Text(date, style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Text(turn.body, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+        if (canReply && !editing) {
+            TextButton(onClick = { editing = true }) { Text(localized("الرد على المتجر", "Reply to store")) }
+        }
+        if (canReply && editing) {
+            val count = ReviewFormatting.characterCount(body)
+            OutlinedTextField(value = body, onValueChange = { body = it }, enabled = !sending,
+                label = { Text(localized("رد العميل", "Customer Follow-up")) }, minLines = 2, maxLines = 5,
+                isError = count > ReviewFormatting.FOLLOW_UP_LIMIT,
+                supportingText = { Text("$count / ${ReviewFormatting.FOLLOW_UP_LIMIT}") },
+                modifier = Modifier.fillMaxWidth())
+            if (failed) Text(localized("تعذر حفظ الرد. حاول مرة أخرى.", "Couldn’t save your reply. Try again."),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Button(onClick = { expanded = true; onFollowUp(body) },
+                    enabled = !sending && ReviewFormatting.validFollowUp(body)) {
+                    Text(if (sending) localized("جارٍ الحفظ…", "Saving…") else localized("حفظ الرد", "Save reply"))
+                }
+                TextButton(onClick = { editing = false; body = "" }, enabled = !sending) {
+                    Text(localized("إلغاء", "Cancel"))
                 }
             }
         }

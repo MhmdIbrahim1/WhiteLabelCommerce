@@ -93,6 +93,37 @@ class ReviewsAndWishlistTest {
     }
 
     @Test
+    fun onlyTheSignedInAuthorCanTakeOneTurnAfterTheOpeningReply() {
+        val own = ProductReview("r", productId = "p", userId = "author", authorName = "Buyer", rating = 4)
+        val review = own.copy(userId = "", adminReply = "Opening")
+        assertTrue(review.canFollowUp(own, "author"))
+        assertFalse(own.canFollowUp(own, "author"))
+        assertFalse(review.canFollowUp(own, null))
+        assertFalse(review.canFollowUp(own, "other"))
+        assertFalse(review.canFollowUp(own.copy(id = "another"), "author"))
+        assertFalse(review.copy(status = "hidden").canFollowUp(own, "author"))
+        val thread = json.decodeFromString<ProductReviewDto>(
+            """{"id":"r","product_id":"p","admin_reply":"Opening","review_replies":[
+                {"role":"merchant","body":"Closing","created_at":"2026-11-25T00:00:00Z"},
+                {"role":"customer","body":"Follow-up","created_at":"2026-11-24T00:00:00Z"}]}"""
+        ).toDomain()
+        assertFalse(thread.canFollowUp(own, "author"))
+        assertEquals(listOf("Opening", "Follow-up", "Closing"), thread.thread.map { it.body })
+    }
+
+    @Test
+    fun followUpLengthCountsUnicodeCharactersAndDatesUseTheSelectedLanguage() {
+        val text = "🙂".repeat(500)
+        assertTrue(ReviewFormatting.validFollowUp(text))
+        assertFalse(ReviewFormatting.validFollowUp(text + "a"))
+        assertFalse(ReviewFormatting.validFollowUp("  "))
+        val time = "2026-11-25T23:12:00.123456+00:00"
+        assertTrue(ReviewFormatting.replyDate(time, java.util.Locale.UK).contains("26 Nov"))
+        assertTrue(ReviewFormatting.replyDate(time, java.util.Locale.forLanguageTag("ar-EG")).contains("نوفمبر"))
+        assertEquals("", ReviewFormatting.replyDate(null, java.util.Locale.US))
+    }
+
+    @Test
     fun toggleWishlistDtoDecodesInWishlistAndCount() {
         val added = json.decodeFromString<ToggleWishlistResultDto>(
             """{"in_wishlist":true,"wishlist_count":3}""",

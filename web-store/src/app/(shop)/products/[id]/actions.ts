@@ -3,11 +3,18 @@
 import { actionError } from "@/lib/action-error";
 import { revalidatePath } from "next/cache";
 import { serverDb } from "@/lib/db";
-import { resolveActiveStoreOrDefault } from "@/lib/tenant";
+import { resolveActiveStore, resolveActiveStoreOrDefault } from "@/lib/tenant";
+import { appendReviewReply } from "@/lib/append-review-reply";
 import type { ProductReview } from "@/lib/reviews-wishlist";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export async function submitFollowUpAction(reviewId: string, body: string) {
+  const [db, store] = await Promise.all([serverDb(), resolveActiveStore()]);
+  if (!store) return { ok: false } as const;
+  return appendReviewReply(db, store.id, reviewId, "customer", body);
+}
 
 export type SubmitReviewResult =
   | { ok: true; review: ProductReview }
