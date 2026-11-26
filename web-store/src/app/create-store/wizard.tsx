@@ -42,14 +42,14 @@ function slugify(value: string): string {
     .slice(0, 40);
 }
 
-export function CreateStoreWizard({ userEmail }: { userEmail: string }) {
+export function CreateStoreWizard({ userEmail, initialName }: { userEmail: string; initialName: string }) {
   const { lang } = useLanguage();
   const isEn = lang === "en";
   const ArrowIcon = isEn ? ArrowRight : ArrowLeft;
 
-  const [nameAr, setNameAr] = useState("");
-  const [nameEn, setNameEn] = useState("");
-  const [slug, setSlug] = useState("");
+  const [nameAr, setNameAr] = useState(initialName);
+  const [nameEn, setNameEn] = useState(initialName);
+  const [slug, setSlug] = useState(() => slugify(initialName));
   const [slugTouched, setSlugTouched] = useState(false);
   const [contactPhone, setContactPhone] = useState("");
   const [currency, setCurrency] = useState("EGP");

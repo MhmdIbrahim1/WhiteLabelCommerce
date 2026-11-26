@@ -4,15 +4,20 @@ import { CreateStoreWizard } from "./wizard";
 
 export const dynamic = "force-dynamic";
 
-export default async function CreateStorePage() {
+export default async function CreateStorePage({ searchParams }: {
+  searchParams: Promise<{ name?: string | string[] }>;
+}) {
+  const { name } = await searchParams;
+  const initialName = typeof name === "string" ? name.trim().slice(0, 120) : "";
   const db = await serverDb();
   const {
     data: { user },
   } = await db.auth.getUser();
 
   if (!user) {
-    redirect("/login?next=/create-store");
+    const next = initialName ? "/create-store?" + new URLSearchParams({ name: initialName }) : "/create-store";
+    redirect("/login?next=" + encodeURIComponent(next));
   }
 
-  return <CreateStoreWizard userEmail={user.email ?? ""} />;
+  return <CreateStoreWizard userEmail={user.email ?? ""} initialName={initialName} />;
 }

@@ -342,6 +342,11 @@ export function SuperAdminPortal({
 
           <div className="flex flex-wrap items-center gap-2.5">
             <LanguageToggle className="lang-toggle-pill" />
+            <Link href="/super-admin/appearance"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs sm:text-sm font-semibold text-slate-700 hover:bg-slate-50 no-underline">
+              <SlidersHorizontal size={15} strokeWidth={1.5} />
+              {isEn ? "Platform Appearance" : "مظهر المنصة"}
+            </Link>
             <Link
               href="/"
               className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs sm:text-sm font-semibold text-slate-700 hover:bg-slate-50 no-underline"

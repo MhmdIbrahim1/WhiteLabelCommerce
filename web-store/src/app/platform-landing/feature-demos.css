@@ -1,0 +1,122 @@
+.landing .storefront-demo, .landing .android-demo, .landing .domain-demo, .landing .sales-demo { margin-block-start: auto; min-inline-size: 0; }
+.landing .vertical-tabs, .landing .brand-options { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; min-block-size: 42px; margin-block-end: .8rem; }
+.landing .vertical-tabs button {
+  min-block-size: 38px; padding: .32rem .65rem; font: inherit; font-size: .81rem; font-weight: 550;
+  border: 1px solid transparent; border-radius: 30px; background: transparent; color: var(--pt-muted);
+}
+.landing .vertical-tabs button[aria-selected=true] { border-color: var(--pt-line); background: var(--pt-surface); color: var(--pt-ink); }
+.landing .vertical-tabs button:hover, .landing .demo-command:hover { text-decoration: underline; text-underline-offset: .2em; }
+.landing .mini-stage {
+  display: grid; place-items: center; min-block-size: 254px; padding: clamp(14px, 2vw, 28px);
+  overflow: hidden; border-radius: var(--pt-radius); background: #E5CCC1; color: #231D1B; transition: background-color .35s ease;
+}
+.landing .demo-storefront {
+  inline-size: min(100%, 398px); overflow: hidden; border: 1px solid #30231D22; border-radius: 6px;
+  background: #FFFCF7; color: #342821; animation: shop-enter .3s ease-out;
+}
+@keyframes shop-enter { from { opacity: .45; transform: translate3d(0, 5px, 0); } to { opacity: 1; transform: translate3d(0,0,0); } }
+.landing .mini-mast, .landing .mini-mast > div, .landing .mini-spec, .landing .builder-product span { display: flex; align-items: center; }
+.landing .mini-mast { justify-content: space-between; gap: 1rem; padding: .55rem .9rem; border-block-end: 1px solid #30231D22; }
+.landing .mini-mast span { font: italic 600 1.25rem/1.1 Georgia, serif; }
+.landing .mini-mast > div { gap: .55rem; }
+.landing .mini-product { display: grid; grid-template-columns: 48% 1fr; }
+.landing .mini-product > img { inline-size: 100%; block-size: 100%; min-block-size: 135px; max-block-size: 180px; object-fit: cover; }
+.landing .mini-description { display: flex; flex-direction: column; align-items: start; justify-content: center; padding: clamp(.6rem, 1.2vw, 1.1rem); gap: .2rem; min-inline-size: 0; }
+.landing .mini-description > span { font-size: .68rem; }
+.landing .mini-description > strong { font-size: clamp(.98rem, 1.4vw, 1.3rem); font-weight: 650; line-height: 1.3; }
+.landing .mini-spec { gap: .45rem; margin-block: .3rem .35rem; font-size: .66rem; }
+.landing .mini-spec bdi { padding: .11rem .36rem; border: 1px solid currentColor; border-radius: 3px; }
+.landing .mini-price { font-size: .82rem; font-weight: 650; }
+.landing .mini-stage[data-vertical=audio] { background: #C6D0B9; }
+.landing [data-vertical=audio] .demo-storefront { background: #192723; color: #F5F5EC; }
+.landing [data-vertical=audio] .mini-mast { border-color: #526059; }
+.landing [data-vertical=audio] .mini-mast span { font: 700 1.02rem/1.25 "DM Sans Variable", sans-serif; text-transform: uppercase; }
+.landing [data-vertical=audio] .mini-product { grid-template-columns: 1fr; }
+.landing [data-vertical=audio] .mini-product > img { min-block-size: 65px; block-size: 82px; object-position: center 34%; }
+.landing [data-vertical=audio] .mini-description { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: .1rem .6rem; padding-block: .4rem; }
+.landing [data-vertical=audio] .mini-description > span { grid-column: 1 / -1; }
+.landing [data-vertical=audio] .mini-spec { margin: 0; }
+.landing .mini-stage[data-vertical=coffee] { background: #DDBBA0; }
+.landing [data-vertical=coffee] .demo-storefront { background: #FFF1D9; color: #4B291A; }
+.landing [data-vertical=coffee] .mini-mast span { font: 700 1.2rem/1.2 Georgia, serif; }
+.landing [data-vertical=coffee] .mini-product { grid-template-columns: 1fr 43%; padding: .55rem; }
+.landing [data-vertical=coffee] .mini-product > img { grid-area: 1 / 2; align-self: center; min-block-size: 0; block-size: auto; aspect-ratio: 1; border-radius: 50% 50% 4px 4px; }
+.landing .mini-stage[data-vertical=fashion] { background: #BACCE4; }
+.landing [data-vertical=fashion] .demo-storefront { background: #F5F8FF; color: #122E61; }
+.landing [data-vertical=fashion] .mini-mast span { font: 800 1.3rem/1 "DM Sans Variable", sans-serif; }
+.landing [data-vertical=fashion] .mini-product { grid-template-columns: 57% 1fr; }
+.landing [data-vertical=fashion] .mini-product > img { max-block-size: 145px; object-position: center 65%; }
+.landing .fabric-swatch { display: inline-block; inline-size: 10px; block-size: 10px; border-radius: 50%; background: #224799; }
+.landing .mini-stage[data-vertical=objects] { background: #D9D2BE; }
+.landing [data-vertical=objects] .demo-storefront { background: #EBE7DA; color: #343126; }
+.landing [data-vertical=objects] .mini-mast { justify-content: center; }
+.landing [data-vertical=objects] .mini-mast > div { display: none; }
+.landing [data-vertical=objects] .mini-product { grid-template-columns: 40% 1fr; padding: .6rem; }
+.landing [data-vertical=objects] .mini-product > img { min-block-size: 105px; max-block-size: 128px; border-radius: 45% 45% 0 0; }
+
+.landing .brand-options { gap: .55rem; }
+.landing .brand-options button { inline-size: 30px; block-size: 30px; padding: 0; color: white; border: 1px solid transparent; border-radius: 50%; }
+.landing .brand-options button[aria-pressed=true] { outline: 1px solid var(--pt-ink); outline-offset: 2px; }
+.landing .brand-options button:focus-visible { outline: 2px dashed var(--pt-ink); outline-offset: 3px; }
+.landing .brand-options > span { color: var(--pt-muted); font-size: .8rem; margin-inline-start: .25rem; }
+.landing .builder-stage {
+  display: flex; align-items: center; justify-content: center; gap: 0; min-block-size: 254px; padding: .8rem;
+  border-radius: var(--pt-radius); color: #1A1C1C; background: #DFE2DA; overflow: hidden;
+}
+.landing .builder-phone {
+  position: relative; inline-size: 126px; flex: none; padding: 4px 4px 5px; border: 3px solid #222522;
+  border-radius: 22px; background: #FCFBF8; transform: rotate(-5deg); animation: brand-apply .4s ease-out;
+}
+@keyframes brand-apply { from { opacity: .6; transform: translate3d(0, 5px, 0) rotate(-4deg); } to { opacity: 1; transform: rotate(-5deg); } }
+.landing .device-camera { inline-size: 27%; block-size: 4px; margin: 2px auto 5px; border-radius: 8px; background: #282928; }
+.landing .builder-bar { display: flex; align-items: center; gap: 5px; padding: .4rem .3rem; border-radius: 8px 8px 0 0; color: white; }
+.landing .builder-bar b { font-size: .79rem; }
+.landing .builder-phone > img { inline-size: 100%; aspect-ratio: 1.18; object-fit: cover; }
+.landing .builder-product { padding: 5px 3px; font-size: .69rem; }
+.landing .builder-product span { justify-content: space-between; margin-block-start: .15rem; font-size: .6rem; }
+.landing .build-receipt {
+  position: relative; display: grid; justify-items: start; gap: .42rem; padding: .8rem .9rem; min-inline-size: 109px;
+  margin-inline-start: -.3rem; margin-block-start: 2.3rem; background: white; border: 1px solid #C1C5BE; border-radius: 9px;
+}
+.landing .receipt-icon { display: grid; place-items: center; inline-size: 30px; block-size: 30px; border-radius: 7px; color: white; }
+.landing .build-receipt > bdi { font-size: .75rem; font-weight: 650; }
+.landing .build-receipt > div, .landing .domain-state { display: inline-flex; align-items: center; gap: .35rem; font-size: .72rem; }
+.landing .build-receipt > div { color: #2F5339; background: #EDF3EA; border-radius: 3px; padding: .14rem .32rem; }
+
+.landing .domain-demo, .landing .sales-demo { display: flex; flex-direction: column; justify-content: end; align-items: start; gap: .85rem; }
+.landing .domain-window, .landing .sales-sheet { inline-size: 100%; border: 1px solid #D2D4D2; border-radius: var(--pt-radius); background: #FFF; color: #202324; overflow: hidden; }
+.landing .domain-window { padding-block-end: 1.05rem; }
+.landing .window-strip { display: flex; gap: 4px; padding: .73rem 1rem; border-block-end: 1px solid #E2E3E3; background: #FAFAFA; direction: ltr; }
+.landing .window-strip i { inline-size: 6px; block-size: 6px; border: 1px solid #ADB2AD; border-radius: 50%; }
+.landing .address-bar {
+  display: flex; align-items: center; gap: .6rem; min-block-size: 44px; margin: 1rem; margin-block-end: .65rem;
+  padding: .4rem .7rem; border: 1px solid #DADDDD; border-radius: 6px; background: #F6F7F6; font-size: clamp(.85rem, 1.3vw, 1.08rem);
+}
+.landing .address-bar bdi { overflow-wrap: anywhere; animation: shop-enter .25s ease-out; }
+.landing .verified-icon { color: #276738; }
+.landing .domain-state { margin-inline: 1rem; color: #46514B; }
+.landing .demo-command {
+  min-block-size: 40px; padding: .25rem 0; border: 0; color: var(--pt-ink); background: transparent; font: inherit; font-size: .86rem; font-weight: 650;
+}
+.landing .sales-sheet { padding: .9rem 1.15rem; }
+.landing .sales-summary, .landing .quota-row { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; }
+.landing .sales-summary > span, .landing .quota-row { font-size: .73rem; color: #515957; }
+.landing .sales-summary strong { font-size: 1.14rem; font-weight: 650; }
+.landing .sales-chart { display: block; inline-size: 100%; block-size: 64px; margin-block: .4rem .5rem; direction: ltr; }
+.landing .sales-curve { stroke-dasharray: 1; stroke-dashoffset: 0; animation: draw-sales .6s ease-out; }
+@keyframes draw-sales { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+.landing .quota-row bdi { border: 1px solid #D4DAD5; padding: 0 .35rem; border-radius: 3px; color: #263B2B; font-weight: 600; }
+.landing .sales-sheet progress { display: block; inline-size: 100%; block-size: 4px; margin-block-start: .4rem; appearance: none; border: 0; background: #E9ECE7; accent-color: #466A4A; }
+.landing .sales-sheet progress::-webkit-progress-bar { background: #E9ECE7; }
+.landing .sales-sheet progress::-webkit-progress-value { background: #466A4A; }
+.landing .sales-sheet progress::-moz-progress-bar { background: #466A4A; }
+@media (max-width: 900px) {
+  .landing .vertical-tabs { gap: .12rem; }
+  .landing .vertical-tabs button { padding-inline: .46rem; }
+  .landing .builder-stage { padding-inline: .4rem; }
+}
+@media (max-width: 380px) {
+  .landing .mini-stage { padding: .6rem; }
+  .landing .vertical-tabs button { font-size: .76rem; }
+  .landing .builder-phone { inline-size: 112px; }
+}
