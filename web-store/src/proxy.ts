@@ -83,7 +83,7 @@ export async function proxy(request: NextRequest) {
     const restPath = slugMatch[2] || "/";
     requestHeaders.set(STORE_SLUG_HEADER, slug);
     requestHeaders.set(STORE_BASE_PATH_HEADER, `/s/${slug}`);
-    cookieToSet = { name: STORE_SLUG_COOKIE, value: slug };
+    if (restPath !== "/api/catalog-search") cookieToSet = { name: STORE_SLUG_COOKIE, value: slug };
 
     rewriteUrl = request.nextUrl.clone();
     rewriteUrl.pathname = restPath;

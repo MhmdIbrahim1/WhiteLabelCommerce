@@ -122,6 +122,7 @@ export default async function Layout({
         <Navigation
           name={displayName}
           storeId={s.storeId}
+          storeSlug={s.slug}
           basePath={s.basePath}
           admin={Boolean(admin)}
           superAdmin={Boolean(superAdmin)}

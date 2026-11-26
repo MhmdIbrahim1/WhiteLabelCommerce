@@ -2705,6 +2705,12 @@
   background: color-mix(in srgb, var(--primary) 12%, transparent);
 }
 
+.shop .search-correction-link {
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+  overflow-wrap: anywhere;
+}
+
 .shop .search-closest-banner {
   display: inline-flex;
   align-items: center;

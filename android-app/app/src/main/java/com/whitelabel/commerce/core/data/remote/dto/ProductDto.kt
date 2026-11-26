@@ -43,6 +43,11 @@ data class ProductDto(
     @SerialName("specifications") val specifications: List<ProductSpecificationDto> = emptyList(),
     @SerialName("avg_rating") val avgRating: Double = 0.0,
     @SerialName("review_count") val reviewCount: Int = 0,
+    @SerialName("effective_query") val effectiveQuery: String? = null,
+    @SerialName("corrected_from") val correctedFrom: String? = null,
+    @SerialName("was_auto_corrected") val wasAutoCorrected: Boolean = false,
+    @SerialName("correction_reason") val correctionReason: String? = null,
+    @SerialName("match_tier") val matchTier: Int? = null,
     @SerialName("match_type") val matchType: String? = null,
     @SerialName("created_at") val createdAt: String? = null,
 ) {

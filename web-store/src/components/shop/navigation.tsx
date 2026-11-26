@@ -44,12 +44,14 @@ import { getInstantSearchHints } from "@/lib/searchSynonyms";
 import { LanguageToggle, useLanguage } from "@/components/language-provider";
 import { NotificationBell } from "@/components/notifications/notification-bell";
 import { logout } from "@/app/login/actions";
+import { SearchCorrection } from "./search-correction";
 import { useCart } from "./cart-store";
 import { useWishlist } from "./wishlist-provider";
 
 export function Navigation({
   name,
   storeId,
+  storeSlug,
   basePath = "",
   admin = false,
   superAdmin = false,
@@ -57,6 +59,7 @@ export function Navigation({
 }: {
   name: string;
   storeId: string;
+  storeSlug: string;
   basePath?: string;
   admin?: boolean;
   superAdmin?: boolean;
@@ -156,16 +159,15 @@ export function Navigation({
     };
   }, [searchOpen]);
 
-  // Zero-bloat server-first autocomplete with 0ms client LRU cache + 180ms debounce + AbortController
   useEffect(() => {
     const trimmed = q.trim();
-    if (trimmed.length < 2 || getCachedSearchHits(trimmed) !== null) return;
+    if (trimmed.length < 2 || getCachedSearchHits(storeId, trimmed) !== null) return;
 
     const ac = new AbortController();
     const timer = setTimeout(async () => {
       try {
-        const { hits: nextHits } = await searchCatalogCached(
-          trimmed,
+        const nextHits = await searchCatalogCached(
+          storeId, storeSlug, trimmed,
           ac.signal,
         );
         if (!ac.signal.aborted) {
@@ -183,7 +185,7 @@ export function Navigation({
       clearTimeout(timer);
       ac.abort();
     };
-  }, [q]);
+  }, [q, storeId, storeSlug]);
 
   const trimmedQuery = q.trim();
   const instantHints = useMemo(
@@ -202,7 +204,15 @@ export function Navigation({
     (h) => h.match_type === "exact" || h.match_type === "synonym",
   );
   const hasSpecHit = hits.some((h) => h.match_type === "spec");
-  const showSmartBanner = hits.length > 0 && !hasDirectHit;
+  const correction = hits[0]?.was_auto_corrected ? hits[0] : null;
+  const showSmartBanner = hits.length > 0 && !correction && !hasDirectHit;
+  function exactHref(original: string) {
+    const params = new URLSearchParams(pathname.endsWith("/products") ? window.location.search : "");
+    params.set("q", original);
+    params.set("exact", "1");
+    params.delete("page");
+    return href(`/products?${params}`);
+  }
 
   const desktopLinks = [
     {
@@ -288,12 +298,14 @@ export function Navigation({
                         setSearching(false);
                         return;
                       }
-                      const cached = getCachedSearchHits(trimmed);
+                      const cached = getCachedSearchHits(storeId, trimmed);
                       if (cached !== null) {
                         setHits(cached);
                         setHasSearched(true);
                         setSearching(false);
                       } else {
+                        setHits([]);
+                        setHasSearched(false);
                         setSearching(true);
                       }
                     }}
@@ -392,6 +404,10 @@ export function Navigation({
                     <p className="suggest-state">{t("navSearching")}</p>
                   ) : hits.length > 0 ? (
                     <>
+                      {correction?.corrected_from && (
+                        <SearchCorrection compact effective={correction.effective_query} original={correction.corrected_from}
+                          isEn={isEn} exactHref={exactHref(correction.corrected_from)} onNavigate={() => setSearchOpen(false)} />
+                      )}
                       {showSmartBanner && (
                         <div className="suggest-banner">
                           <Sparkles size={13} aria-hidden="true" />
@@ -438,9 +454,7 @@ export function Navigation({
                                     {t("searchMatchSpec")}
                                   </span>
                                 )}
-                                {(h.match_type === "skeleton" ||
-                                  h.match_type === "phonetic" ||
-                                  h.match_type === "fuzzy") && (
+                                {h.match_type === "fuzzy" && (
                                   <span className="suggest-match-pill is-smart">
                                     {t("searchMatchSmart")}
                                   </span>

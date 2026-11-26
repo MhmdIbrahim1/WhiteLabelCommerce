@@ -12,6 +12,9 @@ import { localizedText, t } from "@/lib/i18n";
 import { getServerLang } from "@/lib/i18n-server";
 import { pagination } from "@/lib/workflow";
 import { type CatalogSortKey } from "@/lib/flash-sale";
+import type { SearchMetadata } from "@/lib/smart-search";
+import { SearchCorrection } from "@/components/shop/search-correction";
+import { CatalogQueryInput } from "@/components/shop/catalog-query-input";
 import { Grid } from "@/components/shop/cards";
 
 type SearchProductRow = Product & {
@@ -20,7 +23,7 @@ type SearchProductRow = Product & {
   created_at?: string | null;
 };
 
-type CatalogProductPageRow = SearchProductRow & {
+type CatalogProductPageRow = SearchProductRow & SearchMetadata & {
   total_count: number | string;
 };
 
@@ -39,6 +42,7 @@ export default async function Catalog({
   const read = (k: string) =>
     typeof params[k] === "string" ? String(params[k]).trim() : "";
   const q = read("q");
+  const exact = read("exact") === "1";
   const category = read("category");
   const min = read("min");
   const max = read("max");
@@ -64,6 +68,7 @@ export default async function Catalog({
     : Promise.resolve(null);
   const fetchPage = (categoryId: string | null) => db.rpc("catalog_products_page", {
     p_store_id: store.id,
+    p_exact_query: exact,
     p_query: q.slice(0, 100),
     p_category_id: categoryId,
     p_min_price: minNum,
@@ -83,7 +88,8 @@ export default async function Catalog({
   const totalCount = Number(rows[0]?.total_count ?? 0);
   let searchBannerKind: "closest" | "spec" | null = null;
 
-  if (q && rows.length > 0) {
+  const correction = rows[0]?.was_auto_corrected ? rows[0] : null;
+  if (q && !exact && !correction && rows.length > 0) {
     const hasDirect = rows.some(
       (p) => p.match_type === "exact" || p.match_type === "synonym",
     );
@@ -96,6 +102,7 @@ export default async function Catalog({
   const buildFilterHref = (
     overrides: Partial<{
       q: string;
+      exact: boolean;
       category: string;
       min: string;
       max: string;
@@ -116,6 +123,7 @@ export default async function Catalog({
     const np = overrides.page !== undefined ? overrides.page : 1;
 
     if (nq) next.set("q", nq);
+    if (nq && (overrides.exact ?? exact)) next.set("exact", "1");
     if (nc) next.set("category", nc);
     if (nmin) next.set("min", nmin);
     if (nmax) next.set("max", nmax);
@@ -218,9 +226,10 @@ export default async function Catalog({
         {inStockOnly && <input type="hidden" name="in_stock" value="1" />}
         <label>
           {t(lang, "filterSearch")}
-          <input
-            name="q"
-            defaultValue={q}
+          <CatalogQueryInput
+            key={JSON.stringify([q, exact])}
+            query={q}
+            exact={exact}
             placeholder={t(lang, "filterSearchPlaceholder")}
           />
         </label>
@@ -278,6 +287,10 @@ export default async function Catalog({
         <button>{t(lang, "filterApply")}</button>
       </form>
 
+      {correction?.corrected_from && (
+        <SearchCorrection effective={correction.effective_query} original={correction.corrected_from}
+          isEn={isEn} exactHref={buildFilterHref({ q: correction.corrected_from, exact: true })} />
+      )}
       {q && searchBannerKind && (
         <div className="search-closest-banner" role="status">
           <Sparkles size={16} aria-hidden="true" />

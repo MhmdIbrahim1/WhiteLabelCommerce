@@ -7,6 +7,7 @@ import com.whitelabel.commerce.core.domain.model.Category
 import com.whitelabel.commerce.core.domain.model.Product
 import com.whitelabel.commerce.core.domain.model.WishlistToggleOutcome
 import com.whitelabel.commerce.core.domain.repository.CartRepository
+import com.whitelabel.commerce.core.domain.repository.SearchCorrection
 import com.whitelabel.commerce.core.domain.repository.CatalogRepository
 import com.whitelabel.commerce.core.domain.repository.WishlistRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -50,6 +51,8 @@ data class CatalogUiState(
     val selectedCategoryId: String? = null,
     val searchQuery: String = "",
     val instantHints: List<InstantSearchHint> = emptyList(),
+    val exactQuery: Boolean = false,
+    val correction: SearchCorrection? = null,
     val isClosestSmartMatch: Boolean = false,
     val sortOption: CatalogSortOption = CatalogSortOption.RELEVANCE,
     val inStockOnly: Boolean = false,
@@ -222,7 +225,9 @@ class CatalogViewModel @Inject constructor(
 
     fun onSearchQueryChange(query: String) {
         val hints = SearchSynonyms.getInstantHints(query)
-        _uiState.update { it.copy(searchQuery = query, instantHints = hints) }
+        fetchJob?.cancel()
+        _uiState.update { it.copy(searchQuery = query, instantHints = hints, exactQuery = false,
+            correction = null, isClosestSmartMatch = false, isLoading = true) }
         searchJob?.cancel()
         searchJob = viewModelScope.launch {
             delay(180)
@@ -230,9 +235,16 @@ class CatalogViewModel @Inject constructor(
         }
     }
 
+    fun searchInstead() {
+        val original = _uiState.value.correction?.original ?: return
+        searchJob?.cancel()
+        _uiState.update { it.copy(searchQuery = original, correction = null, exactQuery = true, instantHints = emptyList()) }
+        fetchProducts(isPullRefresh = false)
+    }
+
     fun onHintClick(hint: InstantSearchHint) {
         val q = hint.displayQuery
-        _uiState.update { it.copy(searchQuery = q, instantHints = emptyList()) }
+        _uiState.update { it.copy(searchQuery = q, instantHints = emptyList(), exactQuery = false, correction = null) }
         searchJob?.cancel()
         fetchProducts(isPullRefresh = false)
     }
@@ -321,6 +333,7 @@ class CatalogViewModel @Inject constructor(
         if (query.isNotBlank()) {
             catalogRepository.searchProducts(
                 query = query,
+                exact = _uiState.value.exactQuery && _uiState.value.searchQuery == query,
                 categoryId = categoryId,
             )
         } else {
@@ -346,6 +359,7 @@ class CatalogViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         rawProducts = searchResult.products,
+                        correction = searchResult.correction,
                         isClosestSmartMatch = searchResult.isClosestSmartMatch,
                         isLoading = false,
                         isRefreshing = false,

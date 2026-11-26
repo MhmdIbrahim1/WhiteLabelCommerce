@@ -12,6 +12,10 @@ import com.whitelabel.commerce.core.domain.repository.CatalogRepository
 import com.whitelabel.commerce.core.domain.repository.StoreRepository
 import com.whitelabel.commerce.core.domain.repository.WishlistRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import com.whitelabel.commerce.core.domain.repository.SearchCorrection
+import com.whitelabel.commerce.core.domain.search.LocalCatalogSearch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
@@ -31,6 +35,7 @@ data class HomeUiState(
     val wishlistedProductIds: Set<String> = emptySet(),
     val searchQuery: String = "",
     val searchResults: List<Product> = emptyList(),
+    val correction: SearchCorrection? = null,
     val isSearching: Boolean = false,
     val isLoading: Boolean = true,
     val isRefreshing: Boolean = false,
@@ -104,52 +109,29 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    fun onSearchQueryChange(query: String) {
-        val trimmed = query.trim()
+    fun onSearchQueryChange(query: String) = search(query, exact = false)
+
+    fun searchInstead() {
+        localState.value.correction?.let { search(it.original, exact = true) }
+    }
+
+    private fun search(query: String, exact: Boolean) {
         searchJob?.cancel()
-
-        if (trimmed.isEmpty()) {
-            localState.update {
-                it.copy(
-                    searchQuery = query,
-                    searchResults = emptyList(),
-                    isSearching = false,
-                )
-            }
-            return
-        }
-
-        // 0ms instant bilingual local fuzzy match against loaded featured products
-        val instantHits = fuzzyFilterProducts(localState.value.featuredProducts, trimmed)
-        localState.update {
-            it.copy(
-                searchQuery = query,
-                searchResults = instantHits,
-                isSearching = true,
-            )
-        }
-
-        // 180ms debounced full-catalog smart search via Supabase `search_products_fast`
+        val state = localState.value
+        val trimmed = query.trim()
+        localState.update { it.copy(searchQuery = query, correction = null, searchResults = emptyList(), isSearching = trimmed.isNotEmpty()) }
+        if (trimmed.isEmpty()) return
         searchJob = viewModelScope.launch {
+            val instant = withContext(Dispatchers.Default) {
+                LocalCatalogSearch.search(state.featuredProducts, state.categories, trimmed, exact)
+            }
+            localState.update { it.copy(searchResults = instant.products, correction = instant.correction) }
             delay(180)
-            catalogRepository.searchProducts(query = trimmed, limit = 24)
+            catalogRepository.searchProducts(query = trimmed, limit = 24, exact = exact)
                 .onSuccess { res ->
-                    if (localState.value.searchQuery.trim() == trimmed) {
-                        val merged = if (res.products.isNotEmpty()) {
-                            res.products
-                        } else {
-                            fuzzyFilterProducts(localState.value.featuredProducts, trimmed)
-                        }
-                        localState.update {
-                            it.copy(searchResults = merged, isSearching = false)
-                        }
-                    }
+                    localState.update { it.copy(searchResults = res.products, correction = res.correction, isSearching = false) }
                 }
-                .onFailure {
-                    if (localState.value.searchQuery.trim() == trimmed) {
-                        localState.update { it.copy(isSearching = false) }
-                    }
-                }
+                .onFailure { localState.update { it.copy(isSearching = false) } }
         }
     }
 
@@ -158,6 +140,7 @@ class HomeViewModel @Inject constructor(
         localState.update {
             it.copy(
                 searchQuery = "",
+                correction = null,
                 searchResults = emptyList(),
                 isSearching = false,
             )
@@ -182,32 +165,5 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             onOutcome(wishlistRepository.toggleWishlist(productId))
         }
-    }
-
-    private fun fuzzyFilterProducts(products: List<Product>, query: String): List<Product> {
-        val tokens = normalizeSearchText(query).split(' ').filter { it.isNotBlank() }
-        if (tokens.isEmpty()) return emptyList()
-        return products.filter { product ->
-            val haystack = normalizeSearchText(
-                listOfNotNull(
-                    product.name,
-                    product.nameEn,
-                    product.description,
-                    product.descriptionEn,
-                ).joinToString(" "),
-            )
-            tokens.all { token -> haystack.contains(token) }
-        }
-    }
-
-    private fun normalizeSearchText(raw: String): String {
-        return raw.lowercase()
-            .replace(Regex("[\\u064B-\\u0652\\u0670]"), "")
-            .replace('أ', 'ا')
-            .replace('إ', 'ا')
-            .replace('آ', 'ا')
-            .replace('ة', 'ه')
-            .replace('ى', 'ي')
-            .trim()
     }
 }

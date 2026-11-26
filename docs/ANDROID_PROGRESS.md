@@ -306,3 +306,8 @@
 - Cold launch initializes the store and HTTP client off the main thread. Session and receipt encryption also run on the IO dispatcher.
 - Product detail uses a loading skeleton. Catalog, support, wishlist and order failures display localized recovery messages.
 - Nova devices running v1.4.2 (46) can discover this release through the GitHub updater. Merchant APKs keep their independently assigned versions.
+
+### Nova Store v1.4.4 (48)
+
+- Home and catalog search use the tenant-scoped catalog RPC for Arabic, English, Egyptian Arabizi and wrong-keyboard queries. Shoppers can tap the original query to run a literal search.
+- The on-device matcher searches previously loaded products during network interruptions and while the home search request is pending.

@@ -196,6 +196,11 @@ fun HomeScreen(
                     }
                 }
 
+                state.correction?.let { correction ->
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        com.whitelabel.commerce.core.designsystem.SearchCorrectionBanner(correction, viewModel::searchInstead)
+                    }
+                }
                 if (state.searchResults.isEmpty() && !state.isSearching) {
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         BrandEmptyState(

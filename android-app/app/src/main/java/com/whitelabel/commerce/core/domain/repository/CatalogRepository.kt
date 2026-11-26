@@ -3,9 +3,12 @@ package com.whitelabel.commerce.core.domain.repository
 import com.whitelabel.commerce.core.domain.model.Category
 import com.whitelabel.commerce.core.domain.model.Product
 
+data class SearchCorrection(val effective: String, val original: String, val reason: String?)
+
 data class CatalogSearchResult(
     val products: List<Product>,
     val isClosestSmartMatch: Boolean = false,
+    val correction: SearchCorrection? = null,
 )
 
 interface CatalogRepository {
@@ -17,15 +20,12 @@ interface CatalogRepository {
         limit: Int? = null,
     ): Result<List<Product>>
 
-    /**
-     * Bilingual smart search backed by `public.search_products_fast` RPC (strictly scoped by
-     * `BuildConfig.STORE_ID`) with a 50-entry / 60s TTL in-memory LRU cache.
-     */
     suspend fun searchProducts(
         query: String,
         categoryId: String? = null,
         limit: Int = 24,
         offset: Int = 0,
+        exact: Boolean = false,
     ): Result<CatalogSearchResult>
 
     suspend fun getProductById(productId: String): Result<Product?>

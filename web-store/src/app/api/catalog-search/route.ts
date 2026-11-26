@@ -1,8 +1,8 @@
 import { serverDb } from "@/lib/db";
 import { photo, settings } from "@/lib/shop";
-import type { SearchMatchType, SmartSearchHit } from "@/lib/smart-search";
+import type { SearchMetadata, SmartSearchHit } from "@/lib/smart-search";
 
-type FastSearchRow = {
+type SearchRow = SearchMetadata & {
   id: string;
   name: string;
   name_en?: string | null;
@@ -10,22 +10,8 @@ type FastSearchRow = {
   old_price: number | null;
   image_path: string | null;
   rank: number;
-  match_type?: string | null;
+  match_type: SmartSearchHit["match_type"];
 };
-
-function toMatchType(raw?: string | null): SearchMatchType {
-  if (
-    raw === "exact" ||
-    raw === "synonym" ||
-    raw === "spec" ||
-    raw === "skeleton" ||
-    raw === "phonetic" ||
-    raw === "fuzzy"
-  ) {
-    return raw;
-  }
-  return "fuzzy";
-}
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -53,7 +39,8 @@ export async function GET(req: Request) {
       : null;
 
   const [db, store] = await Promise.all([serverDb(), settings()]);
-  const { data, error } = await db.rpc("search_products_fast", {
+  const { data, error } = await db.rpc("catalog_products_page", {
+    p_exact_query: searchParams.get("exact") === "1",
     p_store_id: store.storeId,
     p_query: q.slice(0, 100),
     p_limit: limit,
@@ -68,7 +55,7 @@ export async function GET(req: Request) {
     });
   }
 
-  const hits: SmartSearchHit[] = ((data ?? []) as FastSearchRow[]).map((p) => ({
+  const hits: SmartSearchHit[] = ((data ?? []) as SearchRow[]).map((p) => ({
     id: p.id,
     name: p.name,
     name_en: p.name_en ?? "",
@@ -76,7 +63,12 @@ export async function GET(req: Request) {
     old_price: p.old_price !== null ? Number(p.old_price) : null,
     image_url: photo(p.image_path),
     currency: store.currency,
-    match_type: toMatchType(p.match_type),
+    match_type: p.match_type,
+    match_tier: p.match_tier,
+    effective_query: p.effective_query,
+    corrected_from: p.corrected_from,
+    correction_reason: p.correction_reason,
+    was_auto_corrected: p.was_auto_corrected,
     rank: Number(p.rank ?? 0),
   }));
 

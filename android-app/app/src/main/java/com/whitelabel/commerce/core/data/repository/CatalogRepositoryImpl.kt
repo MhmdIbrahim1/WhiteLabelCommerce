@@ -13,7 +13,10 @@ import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
 import io.github.jan.supabase.postgrest.query.Order as SortOrder
-import kotlinx.serialization.json.JsonNull
+import com.whitelabel.commerce.core.domain.repository.SearchCorrection
+import com.whitelabel.commerce.core.domain.search.LocalCatalogSearch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -32,7 +35,8 @@ class CatalogRepositoryImpl @Inject constructor(
         val expiresAtMs: Long,
     )
 
-    // Bounded 50-entry / 60s TTL LRU cache matching web-store Phase 7d scalable search contract.
+    @Volatile private var categories: List<Category> = emptyList()
+    @Volatile private var browsed: List<Product> = emptyList()
     private val searchCacheLock = Any()
     private val searchCache = object : LinkedHashMap<String, CacheEntry>(64, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CacheEntry>?): Boolean =
@@ -51,7 +55,7 @@ class CatalogRepositoryImpl @Inject constructor(
             }
             .decodeList<CategoryDto>()
             .distinctBy { it.id }
-            .map { it.toDomain() }
+            .map { it.toDomain() }.also { categories = it }
     }
 
     override suspend fun getActiveProducts(
@@ -83,7 +87,15 @@ class CatalogRepositoryImpl @Inject constructor(
                     orderByCreatedAt = false,
                 )
             }
-            dtos.map { it.toDomain() }
+            dtos.map { it.toDomain() }.also { rows ->
+                synchronized(searchCacheLock) {
+                    browsed = when {
+                        categoryId == null && limit == null -> rows
+                        limit == null -> browsed.filterNot { it.categoryId == categoryId } + rows
+                        else -> (rows + browsed).distinctBy { it.id }
+                    }
+                }
+            }
         }
     }
 
@@ -92,15 +104,16 @@ class CatalogRepositoryImpl @Inject constructor(
         categoryId: String?,
         limit: Int,
         offset: Int,
+        exact: Boolean,
     ): Result<CatalogSearchResult> = runSuspendCatching {
-        val cleanQuery = query.trim()
+        val cleanQuery = query.trim().take(100)
         if (cleanQuery.isEmpty()) {
             val all = getActiveProducts(categoryId = categoryId, searchQuery = null, limit = limit)
                 .getOrThrow()
             return@runSuspendCatching CatalogSearchResult(products = all, isClosestSmartMatch = false)
         }
 
-        val cacheKey = buildCacheKey(cleanQuery, categoryId, limit, offset)
+        val cacheKey = "${BuildConfig.STORE_ID}|${categoryId.orEmpty()}|$limit|$offset|$exact|$cleanQuery"
         val now = System.currentTimeMillis()
         synchronized(searchCacheLock) {
             searchCache[cacheKey]?.takeIf { it.expiresAtMs > now }?.let { cached ->
@@ -108,63 +121,36 @@ class CatalogRepositoryImpl @Inject constructor(
             }
         }
 
-        val rpcProducts = runCatching {
-            val params = buildJsonObject {
-                put("p_store_id", BuildConfig.STORE_ID)
-                put("p_query", cleanQuery)
-                put("p_limit", limit.coerceIn(1, 50))
-                if (categoryId.isNullOrBlank()) {
-                    put("p_category_id", JsonNull)
-                } else {
-                    put("p_category_id", categoryId)
-                }
-                put("p_offset", offset.coerceAtLeast(0))
+        val params = buildJsonObject {
+            put("p_store_id", BuildConfig.STORE_ID)
+            put("p_query", cleanQuery)
+            put("p_exact_query", exact)
+            put("p_limit", limit.coerceIn(1, 100))
+            put("p_offset", offset.coerceAtLeast(0))
+            if (!categoryId.isNullOrBlank()) put("p_category_id", categoryId)
+        }
+        val rows = runSuspendCatching {
+            supabase.postgrest.rpc("catalog_products_page", params).decodeList<ProductDto>()
+        }.getOrElse { failure ->
+            val snapshot = browsed
+            if (snapshot.isEmpty()) throw failure
+            return@runSuspendCatching withContext(Dispatchers.Default) {
+                val scoped = snapshot.filter { categoryId == null || it.categoryId == categoryId }
+                val local = LocalCatalogSearch.search(scoped, categories, cleanQuery, exact)
+                local.copy(products = local.products.drop(offset.coerceAtLeast(0)).take(limit.coerceIn(1, 100)))
             }
-            supabase.postgrest
-                .rpc(function = "search_products_fast", parameters = params)
-                .decodeList<ProductDto>()
-                .map { it.toDomain() }
-        }.getOrElse {
-            // Safe bilingual fallback across both Arabic & English title/description columns
-            fallbackBilingualSearch(cleanQuery, categoryId, limit)
         }
-
-        val isClosestOnly = rpcProducts.isNotEmpty() && rpcProducts.none { product ->
-            val mt = product.matchType
-            mt == null || mt == "exact" || mt == "synonym"
-        }
-        val result = CatalogSearchResult(
-            products = rpcProducts,
-            isClosestSmartMatch = isClosestOnly,
-        )
+        val first = rows.firstOrNull()
+        val correction = if (first?.wasAutoCorrected == true && first.effectiveQuery != null && first.correctedFrom != null) {
+            SearchCorrection(first.effectiveQuery, first.correctedFrom, first.correctionReason)
+        } else null
+        val result = CatalogSearchResult(rows.map { it.toDomain() }, !exact && first?.matchTier == 3, correction)
 
         synchronized(searchCacheLock) {
             searchCache[cacheKey] = CacheEntry(result = result, expiresAtMs = now + CACHE_TTL_MS)
         }
 
         result
-    }
-
-    private suspend fun fallbackBilingualSearch(
-        query: String,
-        categoryId: String?,
-        limit: Int,
-    ): List<Product> {
-        val all = queryActiveProducts(categoryId = categoryId, limit = 100, orderByCreatedAt = false)
-            .map { it.toDomain() }
-        val q = query.lowercase()
-        return all.filter { p ->
-            p.name.lowercase().contains(q) ||
-                (p.nameEn?.lowercase()?.contains(q) == true) ||
-                p.description.lowercase().contains(q) ||
-                (p.descriptionEn?.lowercase()?.contains(q) == true) ||
-                p.specifications.any { spec ->
-                    spec.keyAr.lowercase().contains(q) ||
-                        spec.keyEn.lowercase().contains(q) ||
-                        spec.valueAr.lowercase().contains(q) ||
-                        spec.valueEn.lowercase().contains(q)
-                }
-        }.take(limit)
     }
 
     private suspend fun queryActiveProducts(
@@ -260,9 +246,6 @@ class CatalogRepositoryImpl @Inject constructor(
             .decodeList<ProductDto>()
             .map { it.toDomain() }
     }
-
-    private fun buildCacheKey(query: String, categoryId: String?, limit: Int, offset: Int): String =
-        "${BuildConfig.STORE_ID}|${categoryId.orEmpty()}|$limit|$offset|${query.lowercase()}"
 
     private companion object {
         const val MAX_CACHE_ENTRIES = 50

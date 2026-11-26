@@ -370,8 +370,12 @@ fun CatalogScreen(
                 }
             }
 
-            // 3b. Closest Smart Match Banner (Phase 7c/7d contract)
-            if (!state.isLoading && state.isClosestSmartMatch && state.displayedProducts.isNotEmpty()) {
+            val correction = state.correction
+            if (!state.isLoading && correction != null && state.displayedProducts.isNotEmpty()) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    com.whitelabel.commerce.core.designsystem.SearchCorrectionBanner(correction, viewModel::searchInstead)
+                }
+            } else if (!state.isLoading && state.isClosestSmartMatch && state.displayedProducts.isNotEmpty()) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     Surface(
                         color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f),
@@ -560,7 +564,7 @@ private fun CatalogFilterBottomSheet(
 
     val previewProducts by androidx.compose.runtime.produceState(
         initialValue = state.rawProducts,
-        draftCategoryId, state.selectedCategoryId, state.searchQuery, state.rawProducts,
+        draftCategoryId, state.selectedCategoryId, state.searchQuery, state.exactQuery, state.rawProducts,
     ) {
         value = if (draftCategoryId == state.selectedCategoryId) state.rawProducts else
             loadCategory(state.searchQuery, draftCategoryId).getOrNull()?.products.orEmpty()
