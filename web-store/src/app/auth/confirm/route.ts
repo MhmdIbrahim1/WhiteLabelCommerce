@@ -1,11 +1,13 @@
-import { authEntry, authErrorCode, safeAuthNext, validTokenHash, verifiedEmailUser } from "@/lib/auth-flow";
+import { authEntry, authErrorCode, safeAuthNext, safeStorefrontNext, validTokenHash, verifiedEmailUser } from "@/lib/auth-flow";
 import { serverDb } from "@/lib/db";
-import { STORE_BASE_PATH_HEADER, STORE_SLUG_HEADER, storeHref } from "@/lib/tenant-shared";
+import { PLATFORM_SURFACE_HEADER, STORE_BASE_PATH_HEADER, STORE_SLUG_HEADER, STORE_ID_HEADER, storeHref } from "@/lib/tenant-shared";
+import { storefrontDestination } from "@/lib/storefront-auth";
 
 export async function GET(request: Request) {
   const query = new URL(request.url).searchParams;
   const base = request.headers.get(STORE_BASE_PATH_HEADER) ?? "";
-  const next = safeAuthNext(query.get("next"), base, request.headers.get(STORE_SLUG_HEADER) ?? undefined);
+  const storefront = request.headers.get(PLATFORM_SURFACE_HEADER) === "storefront";
+  const next = (storefront ? safeStorefrontNext : safeAuthNext)(query.get("next"), base, request.headers.get(STORE_SLUG_HEADER) ?? undefined);
   const login = authEntry(base, "/login", next);
   const type = query.get("type");
   const token = query.get("token_hash");
@@ -31,5 +33,10 @@ export async function GET(request: Request) {
   const db = await serverDb();
   const { data, error } = await db.auth.verifyOtp({ token_hash: token, type });
   if (error || !data.session || !verifiedEmailUser(data.user)) return failure(error ? authErrorCode(error, "invalid_link") : "invalid_link");
+  if (storefront) {
+    const storeId = request.headers.get(STORE_ID_HEADER);
+    if (!storeId) return failure("invalid_link");
+    return go(await storefrontDestination(db, storeId, base, next));
+  }
   return go(next || storeHref(base, "/account"));
 }

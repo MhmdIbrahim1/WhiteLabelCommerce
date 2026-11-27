@@ -1,13 +1,16 @@
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, Heart, LifeBuoy, LockKeyhole, LogOut, MapPin, Pencil, Settings2, ShoppingBag, Sparkles, UserRound, Wallet } from "lucide-react";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
+import { ArrowLeft, ArrowRight, Heart, LifeBuoy, LogOut, MapPin, Pencil, Settings2, ShoppingBag, UserRound, Wallet } from "lucide-react";
 import { AddressBook } from "@/components/shop/address-book";
 import { WalletSection, type WalletSummaryData } from "@/components/shop/wallet-section";
 import { ToastFeedback } from "@/components/floating-toast";
-import { PasswordForm } from "@/components/shop/password-form";
 import { LanguageToggle } from "@/components/language-provider";
 import { EgyptAddressFields } from "@/components/shop/egypt-address-fields";
 import { HybridAuthPanel } from "@/components/shop/hybrid-auth-panel";
-import { safeAuthNext } from "@/lib/auth-flow";
+import { authEntry, safeStorefrontNext, verifiedEmailUser, welcomeHref } from "@/lib/auth-flow";
+import { storeCustomerEnrolled } from "@/lib/storefront-auth";
+import { PLATFORM_SURFACE_HEADER } from "@/lib/tenant-shared";
 import { serverDb, checked } from "@/lib/db";
 import { settings } from "@/lib/shop";
 import { storeHref } from "@/lib/tenant";
@@ -15,25 +18,26 @@ import { getServerLang } from "@/lib/i18n-server";
 import { t } from "@/lib/i18n";
 import { LogoutForm } from "@/components/auth-session";
 import { saveCustomerAccount } from "../../login/actions";
+import { CustomerTickets } from "./customer-tickets";
 import "./account.css";
 
 export default async function AccountPage({ searchParams }: Pick<PageProps<"/account">, "searchParams">) {
-  const [params, store, lang, db] = await Promise.all([searchParams, settings(), getServerLang(), serverDb()]);
-  const { data: { user } } = await db.auth.getUser();
-  if (!user) {
-    const section = typeof params.section === "string" && ["profile","addresses","tickets","wallet","preferences","security"].includes(params.section)
-      ? "/" + params.section : "";
-    const next = safeAuthNext(params.next, store.basePath, store.slug) || storeHref(store.basePath, "/account" + section);
+  const [params, store, db] = await Promise.all([searchParams, settings(), serverDb()]);
+  const [lang, { data: { user } }] = await Promise.all([getServerLang(store.uiConfig.defaultLanguage), db.auth.getUser()]);
+  const href = (path: string) => storeHref(store.basePath, path);
+  if (params.section === "security") redirect(href("/account"));
+  const section = typeof params.section === "string" && ["profile", "addresses", "tickets", "wallet", "preferences"].includes(params.section)
+    ? params.section : params.result ? "profile" : "";
+  const ticket = section === "tickets" && typeof params.ticket === "string" ? params.ticket : "";
+  const currentPath = href("/account" + (section ? "/" + section : "")) + (ticket ? "?ticket=" + encodeURIComponent(ticket) : "");
+  if (!verifiedEmailUser(user)) {
+    const next = safeStorefrontNext(params.next, store.basePath, store.slug) || currentPath;
+    if ((await headers()).get(PLATFORM_SURFACE_HEADER) === "platform") redirect(authEntry(store.basePath, "/login", next));
     const error = typeof params.error === "string" ? params.error : "";
-    const registered =
-      typeof params.registered === "string" ? params.registered : "";
     return (
       <section className="account-auth-wrap">
         <div className="panel account-auth-card">
           <div className="auth-heading">
-            <span className="auth-pill">
-              <Sparkles size={13} /> {t(lang, "authSecurePill")}
-            </span>
             <h1>
               {lang === "en"
                 ? "My Account & Order Sync"
@@ -49,22 +53,16 @@ export default async function AccountPage({ searchParams }: Pick<PageProps<"/acc
           <HybridAuthPanel
             nextPath={next}
             basePath={store.basePath}
-            initialOtp={params.method === "otp"}
             initialError={error}
-            initialRegistered={registered}
           />
-
-          <footer className="auth-footer">
-            <LockKeyhole size={14} /> {t(lang, "authFooterNote")}
-          </footer>
         </div>
       </section>
     );
   }
 
+  if (!(await storeCustomerEnrolled(db, store.storeId))) redirect(welcomeHref(store.basePath, currentPath));
   const en = lang === "en";
-  const view = typeof params.section === "string" ? params.section : params.result ? "profile" : "";
-  const href = (path: string) => storeHref(store.basePath, path);
+  const view = section;
   const { data: profile } = await db.from("store_customers").select("full_name,email,phone,governorate,city,address")
     .eq("store_id", store.storeId).eq("user_id", user.id).maybeSingle();
   const name = profile?.full_name || user.email?.split("@")[0] || (en ? "My account" : "حسابي");
@@ -76,7 +74,6 @@ export default async function AccountPage({ searchParams }: Pick<PageProps<"/acc
   ];
   const groups = [
     { key: "profile", icon: UserRound, label: en ? "Personal information" : "بياناتي الشخصية" },
-    { key: "security", icon: LockKeyhole, label: en ? "Security & password" : "الأمان وكلمة المرور" },
     { key: "preferences", icon: Settings2, label: en ? "Preferences" : "التفضيلات" },
     { key: "wallet", icon: Wallet, label: en ? "Store wallet" : "محفظة المتجر" },
   ];
@@ -87,11 +84,11 @@ export default async function AccountPage({ searchParams }: Pick<PageProps<"/acc
     return <section className="account-hub">
       <h1>{account}</h1>
       <header className="hub-profile"><span className="hub-avatar" aria-hidden="true">{Array.from(String(name).trim())[0]}</span>
-        <div><h2>{name}</h2><p dir="auto">{user.email}</p>{profile?.phone && <small><bdi dir="ltr">{profile.phone}</bdi></small>}</div>
+        <div><h2 dir="auto">{name}</h2><p><bdi dir="ltr">{user.email}</bdi></p>{profile?.phone && <small><bdi dir="ltr">{profile.phone}</bdi></small>}</div>
         <Link href={href("/account/profile")}><Pencil size={16}/>{en ? "Edit profile" : "تعديل الحساب"}</Link>
       </header>
       <nav className="hub-tiles" aria-label={en ? "Quick access" : "وصول سريع"}>{tiles.map(({ key, icon: Icon, label, path }) =>
-        <Link key={key} href={href(path)}><Icon size={23}/><strong>{label}</strong><span>{Number(counts[key] ?? 0).toLocaleString(lang)}</span></Link>)}</nav>
+        <Link key={key} href={href(path)}><Icon size={23}/><strong>{label}</strong><span><bdi dir="ltr">{Number(counts[key] ?? 0).toLocaleString(lang)}</bdi></span></Link>)}</nav>
       <nav className="hub-settings" aria-label={en ? "Account settings" : "إعدادات الحساب"}>
         {groups.map(({ key, icon: Icon, label }) => <Link key={key} href={href("/account/"+key)}><Icon size={19}/>{label}<Arrow size={16}/></Link>)}
         <LogoutForm><LogOut size={18}/>{t(lang, "navLogout")}</LogoutForm>
@@ -142,13 +139,8 @@ export default async function AccountPage({ searchParams }: Pick<PageProps<"/acc
     const wallet = checked(await db.rpc("get_customer_wallet_summary", {p_store_id: store.storeId, p_user_id: user.id})) as WalletSummaryData;
     content = <WalletSection summary={wallet} />;
   } else if (view === "tickets") {
-    const tickets = checked(await db.from("support_tickets").select("id,subject,status,admin_reply").eq("store_id",store.storeId)
-      .eq("customer_id",user.id).order("created_at",{ascending:false}).limit(50));
-    content = <><Link className="section-more-link" href={href("/contact")}>{en ? "Contact support" : "تواصل مع الدعم"}</Link>
-      {tickets.length ? tickets.map(ticket => <details key={ticket.id}><summary>{ticket.subject} · {ticket.status}</summary>
-        <p>{ticket.admin_reply || (en ? "Awaiting a reply" : "في انتظار الرد")}</p></details>) : <p>{en ? "You have no support tickets." : "لا توجد تذاكر دعم."}</p>}</>;
-  } else if (view === "security") content = <PasswordForm mode="change" />;
-  else content = <LanguageToggle className="lang-toggle-pill"/>;
+    content = <CustomerTickets lang={lang} userId={user.id} storeId={store.storeId} basePath={store.basePath} ticketId={ticket} />;
+  } else content = <LanguageToggle className="lang-toggle-pill"/>;
   return <section className="account-hub hub-spoke"><Link className="section-more-link" href={href("/account")}>{account}</Link>
     <h1>{heading}</h1><section className="panel hub-content">{content}</section></section>;
 }

@@ -1759,6 +1759,16 @@ details details,
   background: var(--wash);
   border: 1px solid var(--line);
 }
+.google-auth-button {
+  inline-size: 100%; min-block-size: 2.95rem; display: flex; align-items: center;
+  justify-content: center; gap: .7rem; padding: .55rem 1rem; font: inherit; font-weight: 600;
+  color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: .65rem;
+}
+.google-auth-button svg { flex-shrink: 0; }
+.auth-divider { display: flex; align-items: center; gap: .8rem; font-size: .85rem; color: var(--muted); }
+.auth-divider::before, .auth-divider::after { content: ""; flex: 1; block-size: 1px; background: var(--line); }
+.auth-code-hint { color: var(--muted); font-size: .88rem; margin: 0; }
+.hybrid-auth-root bdi, .access-content bdi[dir="ltr"] { unicode-bidi: isolate; font-variant-numeric: tabular-nums; }
 
 .hybrid-auth-tab {
   width: 100%;

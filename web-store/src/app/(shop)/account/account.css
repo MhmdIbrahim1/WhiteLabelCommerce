@@ -16,4 +16,15 @@
 .hub-spoke { max-width:42rem; }
 .hub-content { padding:clamp(1rem,3vw,1.6rem); }
 .hub-content form,.password-form { display:grid; gap:1rem; }
+.account-hub .lucide { stroke-width: 1.5; }
+.account-hub bdi[dir="ltr"] { unicode-bidi: isolate; font-variant-numeric: tabular-nums; }
+.account-ticket-list,.account-thread ol { list-style:none; margin:1rem 0 0; padding:0; }
+.account-ticket-list li,.account-thread li { border-block-start:1px solid var(--glass-border); }
+.account-ticket-list li a,.account-thread li > div,.account-thread header { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:.35rem 1rem; }
+.account-ticket-list li a { padding-block:1rem; }
+.account-ticket-list strong,.account-thread :is(h2,p) { overflow-wrap:anywhere; }
+.account-ticket-list span,.account-thread :is(time,header span) { color:var(--muted); font-size:.85rem; }
+.account-thread header { margin-block-start:1.3rem; }
+.account-thread li { padding-block:1rem; }
+.account-thread li p { margin:.4rem 0 0; white-space:pre-wrap; }
 @media(max-width:600px) { .hub-tiles { grid-template-columns:repeat(2,minmax(0,1fr)); } .hub-profile { flex-wrap:wrap; } }

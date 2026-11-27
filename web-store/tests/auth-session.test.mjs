@@ -186,7 +186,7 @@ test("switch account clears server cookies, refreshes layouts, and returns to fr
   let error=null;
   const {endSessionAction}=loadSource("app/login/actions.ts",{"next/navigation":{},"next/cache":{revalidatePath:(...args)=>refreshes.push(args)},
     "next/headers":{cookies:()=>jar},"@/lib/auth-flow":flow,"@/lib/email-otp":otp,"@/lib/phone":phone,
-    "@/lib/auth-destination":{},"@/lib/tenant":{...tenant,resolveActiveStore:()=>null},
+    "@/lib/auth-destination":{},"@/lib/tenant-shared":tenant,"@/lib/storefront-auth":{},"@/lib/tenant":{...tenant,resolveActiveStore:()=>null},
     "@/lib/db":{serverDb:()=>({auth:{signOut:opts=>{scopes.push(opts.scope);return {error};}}})}});
   const form=new FormData();form.set("switchAccount","1");form.set("next","/create-store?name=My+Store");
   assert.deepEqual(await endSessionAction(form),{ok:true,redirectTo:"/register?next=%2Fcreate-store%3Fname%3DMy%2BStore"});

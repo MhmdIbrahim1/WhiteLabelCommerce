@@ -5,6 +5,8 @@ import { ArrowLeft, ArrowRight, MapPin, Phone, Wallet, Sparkles, TicketPercent }
 import { serverDb, checked } from "@/lib/db";
 import { settings } from "@/lib/shop";
 import { storeHref } from "@/lib/tenant";
+import { authEntry, welcomeHref } from "@/lib/auth-flow";
+import { storeCustomerEnrolled } from "@/lib/storefront-auth";
 import { date, money } from "@/lib/brand";
 import { getServerLang } from "@/lib/i18n-server";
 import { t, translateColor } from "@/lib/i18n";
@@ -58,11 +60,9 @@ export default async function CustomerOrderDetailPage({
     data: { user },
   } = await db.auth.getUser();
 
-  if (!user) {
-    redirect(
-      `/login?next=${encodeURIComponent(storeHref(store.basePath, `/orders/${id}`))}`,
-    );
-  }
+  const orderPath = storeHref(store.basePath, `/orders/${id}`);
+  if (!user) redirect(authEntry(store.basePath, "/login", orderPath));
+  if (!(await storeCustomerEnrolled(db, store.storeId))) redirect(welcomeHref(store.basePath, orderPath));
 
   const [orderRes, returnRes] = await Promise.all([
     db

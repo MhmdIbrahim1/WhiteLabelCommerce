@@ -170,7 +170,7 @@ export async function resolveStoreBinding(host: RouteKey | "platform", aliasSlug
 }
 
 // Only storefront routes may appear beneath a path alias. Administrative routes have their own auth guards.
-const shopPath = /^\/(?:$|(?:products|cart|checkout|account|orders|auth|contact|support|wishlist|login|register|forgot-password|reset-password)(?:\/|$)|api\/(?:auth\/password-reset(?:\/complete)?|catalog-search|cart-upsells|abandoned-cart|reverse-geocode|notifications\/(?:back-in-stock|cart-heartbeat|inbox|register)|payments\/paymob\/initiate)(?:\/|$))/;
+const shopPath = /^\/(?:$|(?:products|cart|checkout|account|orders|auth|contact|support|wishlist|login|register|welcome|forgot-password|reset-password)(?:\/|$)|api\/(?:auth\/password-reset(?:\/complete)?|catalog-search|cart-upsells|abandoned-cart|reverse-geocode|notifications\/(?:back-in-stock|cart-heartbeat|inbox|register)|payments\/paymob\/initiate)(?:\/|$))/;
 export function storePath(path: string) {
   if (!/^\/(?:s|store)(?:\/|$)/.test(path)) return null;
   const match = /^\/(s|store)\/([^/]+)(\/.*)?$/.exec(path);

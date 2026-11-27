@@ -49,7 +49,7 @@ type SelectedPayment = "cod" | "paymob_card" | "paymob_wallet";
 
 export function Basket({
   order = false,
-  storeId = "", buyer = "guest", addresses = [], rates = {}, signedIn = false,
+  storeId = "", buyer = "guest", addresses = [], rates = {}, canSaveAddress = false,
   fee,
   currency,
   defaultName = "",
@@ -78,7 +78,7 @@ export function Basket({
   buyer?: string;
   addresses?: SavedAddress[];
   rates?: ShippingRates;
-  signedIn?: boolean;
+  canSaveAddress?: boolean;
   fee: number;
   currency: string;
   defaultName?: string;
@@ -454,7 +454,7 @@ export function Basket({
                 </>
               )}
             </div>
-            <AddressBook storeId={storeId} checkout signedIn={signedIn} initial={addresses}
+            <AddressBook storeId={storeId} checkout signedIn={canSaveAddress} initial={addresses}
               profile={{recipient_name:defaultName, phone:defaultPhone, governorate:defaultGovernorate, city:defaultCity, street:defaultAddress}}
               onGovernorate={setGovernorate} onPhone={phone => syncAbandonedCartContact(tenantId, {
                 phone, name:defaultName, email:signedInEmail, currency,

@@ -1,6 +1,7 @@
 import { safeRelativePath } from "./security.ts";
 import { storePath } from "./host-routing.ts";
 import { storeHref } from "./tenant-shared.ts";
+import { normalizePhone } from "./phone.ts";
 
 export const validEmail = (email: string) => email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 export const validTokenHash = (value: unknown): value is string => typeof value === "string" && /^[a-zA-Z0-9_-]{32,256}$/.test(value);
@@ -27,6 +28,28 @@ export function authEntry(basePath: string, route: "/login" | "/register" | "/fo
   return basePath + route + (path ? "?next=" + encodeURIComponent(path) : "");
 }
 
+export function safeStorefrontNext(raw: unknown, basePath: string, slug?: string) {
+  const safe = safeAuthNext(raw, basePath, slug);
+  if (!safe) return "";
+  const pathname = new URL(safe, "https://internal.invalid").pathname;
+  const alias = storePath(pathname);
+  if (alias === "invalid") return "";
+  const path = alias ? alias.pathname : pathname;
+  return /^\/(?:$|(?:account|cart|checkout|contact|orders|products|support|wishlist)(?:\/|$))/.test(path) ? safe : "";
+}
+
+export function welcomeHref(basePath: string, safeNext = "") {
+  return storeHref(basePath, "/welcome") + (safeNext ? "?next=" + encodeURIComponent(safeNext) : "");
+}
+
+export function onboardingProfile(nameRaw: string, phoneRaw: string) {
+  const fullName = nameRaw.trim();
+  const phone = normalizePhone(phoneRaw).replace(/^0020/, "20").replace(/^200?(1[0125][0-9]{8})$/, "0$1");
+  if (Array.from(fullName).length < 2 || Array.from(fullName).length > 100) return { errorCode: "name" } as const;
+  if (phoneRaw.trim() && !/^01[0125][0-9]{8}$/.test(phone)) return { errorCode: "phone" } as const;
+  return { fullName, phone } as const;
+}
+
 export function recoveryRedirect(origin: string | null, basePath: string) {
   if (!origin || !URL.canParse(origin)) return null;
   if (basePath) {
@@ -40,6 +63,10 @@ export function recoveryRedirect(origin: string | null, basePath: string) {
 }
 
 const messages = {
+  account_changed: ["Your account changed. Reload this page to review the signed-in email.", "تغيّر الحساب. أعد تحميل الصفحة لمراجعة البريد المسجّل."],
+  oauth_cancelled: ["Google sign-in was cancelled. You can try again.", "ألغيت تسجيل الدخول باستخدام Google. يمكنك المحاولة مجدداً."],
+  oauth_failed: ["Google sign-in could not be completed. Try again or use an email code.", "تعذّر إكمال تسجيل الدخول باستخدام Google. حاول مجدداً أو استخدم رمز البريد."],
+  phone_already_in_use: ["This phone is already linked to an account at this store.", "هذا الرقم مرتبط بالفعل بحساب في هذا المتجر."],
   invalid_email: ["Enter a valid email address.", "أدخل بريداً إلكترونياً صحيحاً."],
   invalid_otp: ["Check the six digits and the email address, or request a new code.", "تحقق من الأرقام الستة وعنوان البريد، أو اطلب رمزاً جديداً."],
   otp_expired: ["This code or link is invalid, expired or already used. Request a new one.", "الرمز أو الرابط غير صحيح، أو انتهت صلاحيته، أو سبق استخدامه. اطلب رمزاً جديداً."],

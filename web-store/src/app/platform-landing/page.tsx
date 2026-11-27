@@ -41,7 +41,7 @@ const copy = {
       ["Team permissions", "Give each teammate access to the work they do."],
     ],
     pricingTitle: "A plan for your storefront.", collection: "The canvas collection", material: "Cotton canvas",
-    footer: "Footer navigation",
+    footer: "Footer navigation", privacy: "Privacy Policy", terms: "Terms of Service",
   },
   ar: {
     features: "المزايا", verticals: "الأنشطة", pricing: "الباقات", login: "دخول", start: "ابدأ مجاناً",
@@ -61,7 +61,7 @@ const copy = {
       ["صلاحيات الفريق", "امنح كل زميل الصلاحيات التي يحتاج إليها لأداء عمله."],
     ],
     pricingTitle: "باقة تناسب متجرك.", collection: "تشكيلة الكانفاس", material: "كانفاس قطني",
-    footer: "روابط التذييل",
+    footer: "روابط التذييل", privacy: "سياسة الخصوصية", terms: "شروط الخدمة",
   },
 };
 
@@ -152,6 +152,7 @@ export default async function PlatformLanding() {
     <footer className="landing-footer"><div className="landing-wrap">
       <a href="#top" className="landing-brand" aria-label="WhiteLabelCommerce"><PlatformBrand /></a>
       <nav aria-label={c.footer}><a href="#pricing">{c.pricing}</a><Link href={demo}>{c.demo}</Link>
+        <Link href="/privacy">{c.privacy}</Link><Link href="/terms">{c.terms}</Link>
         <a href="#top">{c.top}<ArrowUp size={14} /></a></nav>
     </div></footer>
   </div>;

@@ -11,16 +11,19 @@ import { emailPasswordResetEnabled } from "@/lib/password-policy";
 import { sendEmailOtpAction, verifyEmailOtpAction, signInWithPasswordAction, signUpWithPasswordAction, signUpWithCodeAction,
   type AuthActionResult } from "@/app/login/actions";
 import { OtpInput, ResendCode, useResendCooldown } from "./otp-input";
+import { sendStorefrontEmailOtpAction, verifyStorefrontEmailOtpAction } from "@/app/login/storefront-actions";
+import { GoogleAuthButton, beginGoogleAuth } from "./google-auth-button";
 import { PasswordField } from "./password-field";
 
 export function HybridAuthPanel({ platform = false, nextPath = "", initialOtp = false, basePath,
-  initialSignup = false, initialError = "", initialRegistered = "" }: {
+  initialSignup: registration = false, initialError = "", initialRegistered = "" }: {
   platform?: boolean; nextPath?: string; initialOtp?: boolean; basePath: string;
   initialSignup?: boolean; initialError?: string; initialRegistered?: string;
 }) {
   const en = useLanguage().lang === "en";
   const interactive = useHydrated();
-  const [method, setMethod] = useState<"password" | "code">(initialOtp ? "code" : "password");
+  const initialSignup = platform && registration;
+  const [method, setMethod] = useState<"password" | "code">(!platform || initialOtp ? "code" : "password");
   const [purpose, setPurpose] = useState<"signin" | "signup">(initialSignup ? "signup" : "signin");
   const [email, setEmail] = useState("");
   const [verifying, setVerifying] = useState(false);
@@ -77,7 +80,7 @@ export function HybridAuthPanel({ platform = false, nextPath = "", initialOtp = 
     setVerifying(true);
   }
   function finish(result: AuthActionResult) {
-    if (result.needsConfirmation || result.errorCode === "unconfirmed") {
+    if (platform && (result.needsConfirmation || result.errorCode === "unconfirmed")) {
       setPurpose("signup");
       enterCode();
     } else if (result.ok && result.redirectTo) {
@@ -87,7 +90,7 @@ export function HybridAuthPanel({ platform = false, nextPath = "", initialOtp = 
   }
   function send() {
     if (!checkEmail() || cooldown.seconds) return;
-    void request(() => sendEmailOtpAction(email, purpose), result => {
+    void request(() => platform ? sendEmailOtpAction(email, purpose) : sendStorefrontEmailOtpAction(email), result => {
       if (result.ok) enterCode();
       else setError(result.errorCode ?? "server");
     });
@@ -107,7 +110,8 @@ export function HybridAuthPanel({ platform = false, nextPath = "", initialOtp = 
   }
   function verify(event: FormEvent) {
     event.preventDefault();
-    if (validOtp(code)) void request(() => verifyEmailOtpAction(email, code, nextPath, purpose), finish);
+    if (validOtp(code)) void request(() => platform ? verifyEmailOtpAction(email, code, nextPath, purpose)
+      : verifyStorefrontEmailOtpAction(email, code, nextPath), finish);
   }
   const emailError = error === "invalid_email";
   const credentialsPending = busy && (method === "password" || verifying);
@@ -115,17 +119,20 @@ export function HybridAuthPanel({ platform = false, nextPath = "", initialOtp = 
   const label = otpSend ? (en ? "Send verification code" : "إرسال رمز التحقق")
     : initialSignup ? (en ? "Create account" : "إنشاء حساب") : (en ? "Sign in" : "تسجيل الدخول");
   return <div className="hybrid-auth-root">
-    {!verifying && <div className="hybrid-auth-tabs" role="group" aria-label={en ? "Authentication method" : "طريقة التحقق"}>
+    {!verifying && <><GoogleAuthButton en={en} busy={busy} interactive={interactive} onClick={() =>
+      void request(() => beginGoogleAuth(platform, basePath, nextPath), result => { if (!result.ok) setError("oauth_failed"); })} />
+      <div className="auth-divider">{en ? "or" : "أو"}</div></>}
+    {platform && !verifying && <div className="hybrid-auth-tabs" role="group" aria-label={en ? "Authentication method" : "طريقة التحقق"}>
       {(["password", "code"] as const).map(value => <button key={value} type="button" aria-pressed={method === value}
         className={"hybrid-auth-tab" + (method === value ? " is-active" : "")} disabled={!interactive || credentialsPending} onClick={() => chooseMethod(value)}>
         {value === "password" ? (en ? "Password" : "كلمة المرور") : (en ? "Verification code" : "رمز التحقق")}
       </button>)}
     </div>}
-    {initialRegistered === "reset" && <p role="status">{en ? "Password updated. Sign in with your new password." : "تم تغيير كلمة المرور. سجّل الدخول بكلمة المرور الجديدة."}</p>}
+    {platform && initialRegistered === "reset" && <p role="status">{en ? "Password updated. Sign in with your new password." : "تم تغيير كلمة المرور. سجّل الدخول بكلمة المرور الجديدة."}</p>}
     {initialRegistered === "confirm" && !verifying && <p role="status">{en ? "Check your inbox for your confirmation code." : "تحقق من بريدك للعثور على رمز التأكيد."}</p>}
     {error && !emailError && <p id={errorId} role="alert" className="auth-error">{authMessage(error, en)}</p>}
     {verifying ? <form className="auth-form" onSubmit={verify}>
-      <p role="status">{purpose === "signup"
+      <p role="status">{!platform ? (en ? "Enter the six-digit code sent to " : "أدخل الرمز المكوّن من ستة أرقام المرسل إلى ") : purpose === "signup"
         ? (en ? "If this address can be registered, enter the confirmation code sent to " : "إذا كان التسجيل متاحاً لهذا البريد، فأدخل رمز التأكيد المرسل إلى ")
         : (en ? "If you have an account, enter the sign-in code sent to " : "إذا كان لديك حساب، فأدخل رمز الدخول المرسل إلى ")}
         <bdi dir="ltr">{email.trim()}</bdi></p>
@@ -148,6 +155,7 @@ export function HybridAuthPanel({ platform = false, nextPath = "", initialOtp = 
           onChange={e => { invalidate(); setEmail(e.target.value); }} />
       </label>
       {emailError && <p id={errorId} role="alert" className="auth-error">{authMessage(error, en)}</p>}
+      {!platform && <p className="auth-code-hint">{en ? "We’ll email you a six-digit sign-in code." : "سنرسل إلى بريدك رمز دخول من ستة أرقام."}</p>}
       {method === "password" && <PasswordField en={en} label={en ? "Password" : "كلمة المرور"} newPassword={initialSignup}
         minLength={initialSignup ? 6 : undefined} extra={emailPasswordResetEnabled && !initialSignup &&
           <Link href={authEntry(basePath, "/forgot-password", nextPath)}>{en ? "Forgot password?" : "نسيت كلمة المرور؟"}</Link>} />}
@@ -155,7 +163,5 @@ export function HybridAuthPanel({ platform = false, nextPath = "", initialOtp = 
         {busy ? (en ? "Please wait…" : "انتظر قليلاً…") : otpSend && cooldown.seconds
           ? <>{en ? "Try again in " : "أعد المحاولة خلال "}<bdi dir="ltr">{cooldown.seconds}</bdi>{en ? "s" : " ثانية"}</> : label}</button>
     </form>}
-    {!platform && !verifying && <Link href={authEntry(basePath, initialSignup ? "/login" : "/register", nextPath)}>
-      {initialSignup ? (en ? "Sign in to an existing account" : "الدخول إلى حساب موجود") : (en ? "Create an account" : "إنشاء حساب جديد")}</Link>}
   </div>;
 }

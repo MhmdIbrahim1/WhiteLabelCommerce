@@ -78,7 +78,7 @@ export function AuthSessionProvider({ initialUser, children }: { initialUser: st
   return <SessionContext.Provider value={{ userId, end }}>{children}</SessionContext.Provider>;
 }
 
-export function LogoutForm({ children, registerNext }: { children: ReactNode; registerNext?: string }) {
+export function LogoutForm({ children, registerNext, storeLoginNext }: { children: ReactNode; registerNext?: string; storeLoginNext?: string }) {
   const session = useContext(SessionContext);
   const [busy, setBusy] = useState(false);
   return <form className="session-logout" action={logout} onSubmit={event => {
@@ -89,6 +89,7 @@ export function LogoutForm({ children, registerNext }: { children: ReactNode; re
     void session.end(new FormData(event.currentTarget)).then(ok => { if (!ok) setBusy(false); });
   }}>
     {registerNext && <><input type="hidden" name="switchAccount" value="1" /><input type="hidden" name="next" value={registerNext} /></>}
+    {storeLoginNext !== undefined && <><input type="hidden" name="storeLogin" value="1" /><input type="hidden" name="next" value={storeLoginNext} /></>}
     <button type="submit" disabled={busy}>{children}</button>
   </form>;
 }

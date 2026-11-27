@@ -7,11 +7,12 @@ import { Store } from "lucide-react";
 import { storefrontSurfaceProps } from "@/lib/storefront-theme";
 import { getPublishedTheme } from "@/lib/platform-theme-data";
 import { settings } from "@/lib/shop";
+import { storeCustomerMembership } from "@/lib/storefront-auth";
 import { storefrontAppearance } from "@/lib/storefront-appearance";
 import { serverDb } from "@/lib/db";
 import { adminUser, hasStorePermission, superAdminUser } from "@/lib/access";
 import { storeHref } from "@/lib/tenant";
-import { PASSWORD_RECOVERY_HEADER, PLATFORM_ORIGIN_HEADER, STORE_CANONICAL_HEADER } from "@/lib/tenant-shared";
+import { STANDALONE_AUTH_HEADER, PLATFORM_ORIGIN_HEADER, STORE_CANONICAL_HEADER } from "@/lib/tenant-shared";
 import { localizedText, t } from "@/lib/i18n";
 import { getServerLang, getStudioPreviewLang } from "@/lib/i18n-server";
 import brand from "@/lib/brand";
@@ -63,9 +64,9 @@ export default async function Layout({
 }: {
   children: React.ReactNode;
 }) {
-  // Keep merchant pixels and other storefront integrations off password recovery pages.
+  // Authentication and onboarding have their own branded shell without merchant pixels.
   const requestHeaders = await headers();
-  if (requestHeaders.has(PASSWORD_RECOVERY_HEADER)) return children;
+  if (requestHeaders.has(STANDALONE_AUTH_HEADER)) return children;
   const [db, s, authRes, appearance, jar, previewLang] = await Promise.all([
     serverDb(), settings(), serverDb().then((client) => client.auth.getUser()), storefrontAppearance(), cookies(), getStudioPreviewLang(),
   ]);
@@ -74,12 +75,13 @@ export default async function Layout({
     if (!(await hasStorePermission(db, s.storeId, "manage_settings"))) notFound();
   }
   const authUser = previewLang ? null : authRes.data.user;
-  const [admin, superAdmin, wishRows, lang] = await Promise.all([
+  const [admin, superAdmin, wishRows, lang, membership] = await Promise.all([
     adminUser(db, s.storeId, authUser),
     superAdminUser(db, authUser),
     authUser ? db.from("wishlists").select("product_id")
       .eq("store_id", s.storeId).eq("user_id", authUser.id) : null,
     getServerLang(s.uiConfig.defaultLanguage),
+    authUser && s.status !== "suspended" ? storeCustomerMembership(db, s.storeId).catch(() => null) : null,
   ]);
   const displayName = localizedText(lang, s.nameAr, s.nameEn) || s.name;
 
@@ -100,10 +102,7 @@ export default async function Layout({
     ? {
         id: authUser.id,
         email: authUser.email ?? "",
-        name:
-          (typeof authUser.user_metadata?.full_name === "string" &&
-            authUser.user_metadata.full_name.trim()) ||
-          (authUser.email?.split("@")[0] ?? t(lang, "navAccount")),
+        name: membership?.fullName || t(lang, "navAccount"),
       }
     : null;
   const href = (path: string) => storeHref(s.basePath, path);

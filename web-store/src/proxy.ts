@@ -9,7 +9,7 @@ import { isLang, LANG_COOKIE } from "@/lib/i18n";
 import { resolveHostRoute } from "@/lib/host-resolver";
 import {
   DEFAULT_STORE_SLUG, PLATFORM_ORIGIN_HEADER, STORE_BASE_PATH_HEADER, STORE_CANONICAL_HEADER,
-  REQUEST_ORIGIN_HEADER, PASSWORD_RECOVERY_HEADER, STORE_ID_HEADER, STORE_SLUG_COOKIE, STORE_SLUG_HEADER, storefrontPath, tenantAuthEntry,
+  REQUEST_ORIGIN_HEADER, PLATFORM_SURFACE_HEADER, STANDALONE_AUTH_HEADER, STORE_ID_HEADER, STORE_SLUG_COOKIE, STORE_SLUG_HEADER, storefrontPath, tenantAuthEntry,
   PAGE_LOCALE_HEADER, STUDIO_LOCALE_HEADER, STUDIO_PREVIEW_QUERY, isStudioPreviewPage,
 } from "@/lib/tenant-shared";
 
@@ -26,7 +26,7 @@ function cleanRoutingHeaders(request: NextRequest) {
   const outgoing = new Headers(request.headers);
   for (const header of [PLATFORM_ORIGIN_HEADER, PLATFORM_REDIRECT_HEADER, REQUEST_ORIGIN_HEADER, STORE_ID_HEADER,
     STORE_BASE_PATH_HEADER, STORE_CANONICAL_HEADER, STORE_SLUG_HEADER, PAGE_LOCALE_HEADER, STUDIO_LOCALE_HEADER,
-    PASSWORD_RECOVERY_HEADER, "x-store-host", "x-store-subdomain", "forwarded"]) outgoing.delete(header);
+    PLATFORM_SURFACE_HEADER, STANDALONE_AUTH_HEADER, "x-store-host", "x-store-subdomain", "forwarded"]) outgoing.delete(header);
   return outgoing;
 }
 
@@ -96,6 +96,8 @@ export async function proxy(request: NextRequest) {
     return new NextResponse(null, { status: 405, headers: { ...privateHeaders, Allow: "GET, HEAD" } });
   }
   const landing = platform && !alias && path === "/";
+  const legal = path === "/privacy" || path === "/terms";
+  if (legal && !platform) return routingError();
   const asset = assetRead && assetPath.test(path);
   const invite = /^\/invite(?:\/|$)/.test(path);
   const admin = controlPlane.test(path) || invite;
@@ -106,6 +108,7 @@ export async function proxy(request: NextRequest) {
   const publicAuthority = scheme === "http" ? host.authority : host.hostname;
   const origin = scheme + "://" + publicAuthority;
   const outgoing = cleanRoutingHeaders(request);
+  outgoing.set(PLATFORM_SURFACE_HEADER, platform && !alias ? "platform" : "storefront");
   if (studioPreview) outgoing.set(STUDIO_LOCALE_HEADER, previewLang);
   if (platformUrl) outgoing.set(PLATFORM_ORIGIN_HEADER, platformUrl);
   outgoing.set(REQUEST_ORIGIN_HEADER, new URL(origin).origin);
@@ -113,7 +116,7 @@ export async function proxy(request: NextRequest) {
   outgoing.set("x-forwarded-host", publicAuthority);
   outgoing.set("x-forwarded-proto", scheme);
 
-  const storefront = !landing && !asset && !admin && !path.startsWith("/delivery/") && (!api || tenantApi.test(path));
+  const storefront = !landing && !legal && !asset && !admin && !path.startsWith("/delivery/") && (!api || tenantApi.test(path));
   let cookieSlug: string | undefined;
   if (!platform || alias || storefront) {
     const fallback = api && platform && !alias ? apiStoreSlug(request, origin) : DEFAULT_STORE_SLUG;
@@ -160,7 +163,7 @@ export async function proxy(request: NextRequest) {
     outgoing.set(PAGE_LOCALE_HEADER, "ar");
   }
   const recoveryPath = path === "/forgot-password" || path === "/reset-password" ? "/auth/reset-password" : path;
-  if (recoveryPath === "/auth/reset-password") outgoing.set(PASSWORD_RECOVERY_HEADER, "1");
+  if (recoveryPath === "/auth/reset-password" || path === "/welcome") outgoing.set(STANDALONE_AUTH_HEADER, "1");
   destination.pathname = access ? accessPath + "/" + access : landing ? landingPath : recoveryPath;
   const forward = () => destination.pathname !== externalPath
     ? NextResponse.rewrite(destination, { request: { headers: outgoing } })
