@@ -4,18 +4,17 @@ import { notFound } from "next/navigation";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { serverDb } from "./db";
 import { resolveHostRoute } from "./host-resolver";
-import { platformRootDomain, publicStoreOrigin } from "./host-routing";
+import { resolveMerchantStorefrontUrl } from "./host-routing";
 import {
   ADMIN_STORE_COOKIE,
   DEFAULT_STORE_ID,
   DEFAULT_STORE_SLUG,
-  PLATFORM_ORIGIN_HEADER,
+  REQUEST_ORIGIN_HEADER,
   STORE_BASE_PATH_HEADER,
   STORE_SLUG_HEADER,
   STORE_ID_HEADER,
   computeMobileAppUnlocked,
   storeHref,
-  storefrontPath,
   type ManagedStoreSummary,
   type MobileAppAccess,
   type ResolvedStore,
@@ -44,13 +43,13 @@ export {
 const STORE_SELECT = "id,slug,name_ar,name_en,custom_domain,plan,status";
 
 export const merchantStorefrontUrl = cache(async (slug: string) => {
-  const platform = (await headers()).get(PLATFORM_ORIGIN_HEADER);
-  if (!platform) throw new Error("Missing platform origin");
+  const requestOrigin = (await headers()).get(REQUEST_ORIGIN_HEADER);
+  let primaryDomain: string | null = null;
   try {
     const route = await resolveHostRoute({ kind: "slug", value: slug });
-    if (route) return publicStoreOrigin(route, platform, platformRootDomain());
-  } catch { /* The explicit path still identifies the merchant's store. */ }
-  return platform + storefrontPath(slug);
+    primaryDomain = route?.primaryDomain ?? null;
+  } catch { /* The store can still be reached without its directory entry. */ }
+  return resolveMerchantStorefrontUrl(slug, primaryDomain, requestOrigin);
 });
 
 export function normalizeStoreRecord(

@@ -113,6 +113,33 @@ export function publicStoreOrigin(route: StoreRoute, platform: string, root: str
   return primary ? "https://" + primary : subdomainOrigin(route.slug, platform);
 }
 
+export function resolveMerchantStorefrontUrl(slug: string, primaryDomain: string | null, requestOrigin: string | null,
+  env = process.env) {
+  if (!isStoreSlug(slug)) throw new TypeError("Invalid storefront slug");
+  const configured = normalizeHost(env.PLATFORM_ROOT_DOMAIN ?? null);
+  const root = configured && configured.authority === configured.hostname && !isLocalHost(configured.hostname)
+    ? configured.hostname : null;
+  const primary = primaryDomain && customDomain(primaryDomain, root ?? "localhost");
+  if (primary) return "https://" + primary;
+  if (root) return subdomainOrigin(slug, "https://" + root);
+
+  const path = "/s/" + slug;
+  const request = requestOrigin && URL.canParse(requestOrigin) ? new URL(requestOrigin) : null;
+  const host = request && normalizeHost(request.host);
+  if (!request || !host || !["https:", "http:"].includes(request.protocol)) return path;
+  if (!isLocalHost(host.hostname)) return request.origin + path;
+
+  // With only a loopback origin on a deployment, let the browser supply its public origin.
+  if (env.VERCEL === "1" || env.VERCEL_ENV === "preview" || env.VERCEL_ENV === "production" || env.NODE_ENV === "production") {
+    return path;
+  }
+  return subdomainOrigin(slug, platformOrigin(host, "localhost"));
+}
+
+export function storefrontUrlLabel(href: string) {
+  return href.replace(/^https?:\/\//, "");
+}
+
 export async function resolveStoreBinding(host: RouteKey | "platform", aliasSlug: string | undefined,
   fallbackSlug: string | null, lookup: (key: RouteKey) => Promise<StoreRoute | null>, registered?: StoreRoute) {
   if (host === "platform") {

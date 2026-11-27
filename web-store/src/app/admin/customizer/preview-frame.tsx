@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ExternalLink, Globe2, Monitor, Moon, RotateCcw, Smartphone, Sun } from "lucide-react";
 import { useLanguage } from "@/components/language-provider";
+import { storefrontUrlLabel } from "@/lib/host-routing";
 import type { Lang } from "@/lib/i18n";
 import { isPreviewPeer, previewLanguage, previewMessage, previewMode, previewNavigate, previewReady, readFrameMessage, studioFrameSrc, type PreviewMode } from "@/lib/storefront-preview";
 import type { StudioDraft } from "@/lib/storefront-studio";
@@ -83,7 +84,7 @@ export function PreviewStage({ slug, liveUrl, productId, draft }: {
   return <section className="studio-stage" id="studio-preview" aria-label={en ? "Live preview" : "المعاينة المباشرة"}>
     <header className="studio-stage-head">
       <div><h2>{en ? "Live preview" : "المعاينة المباشرة"}</h2>
-        <bdi dir="ltr" className="tabular-nums">{new URL(liveUrl).host}</bdi></div>
+        <bdi dir="ltr" className="tabular-nums">{storefrontUrlLabel(liveUrl)}</bdi></div>
       <a href={liveUrl} target="_blank" rel="noopener noreferrer">{en ? "Open live store" : "فتح المتجر المباشر"}<ExternalLink className="studio-directional" size={15}/></a>
     </header>
     <div className="studio-stage-tools">
