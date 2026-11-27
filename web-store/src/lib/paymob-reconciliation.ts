@@ -1,25 +1,7 @@
 import { adminDb } from "./supabase/admin";
 import { notifyPaymentOutcome } from "./notifications/events";
-import { verifyPaymobTransactionHmac, type PaymobTransactionObj } from "./paymob";
-
-export function queryTransaction(q: URLSearchParams): PaymobTransactionObj {
-  return {
-    ...Object.fromEntries(q), order: { id: q.get("order") ?? "" },
-    source_data: { pan: q.get("source_data.pan"), sub_type: q.get("source_data.sub_type"), type: q.get("source_data.type") }
-  };
-}
-const truth = (v: unknown) => v === true || v === "true";
-const falsity = (v: unknown) => v === false || v === "false";
-
-export function signedEvent(tx: PaymobTransactionObj) {
-  if (truth(tx.is_refunded)) return "refunded";
-  if (truth(tx.is_voided)) return "voided";
-  if (truth(tx.pending)) return "pending";
-  if (!falsity(tx.pending)) return null;
-  if (truth(tx.error_occured) || falsity(tx.success)) return "failed";
-  if (!truth(tx.success) || !falsity(tx.error_occured)) return null;
-  return truth(tx.is_auth) && !truth(tx.is_capture) ? "pending" : "paid";
-}
+import { signedEvent, verifyPaymobTransactionHmac, type PaymobTransactionObj } from "./paymob";
+export { queryTransaction, signedEvent } from "./paymob";
 
 export async function reconcilePaymob(tx: PaymobTransactionObj, signature: string) {
   const provider = String(tx.order?.id ?? "");

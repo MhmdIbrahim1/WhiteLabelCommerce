@@ -22,6 +22,8 @@ export type Subscription = {
 };
 export type StoreBilling = Pick<Subscription, "billing_cycle" | "status" | "trial_ends_at" | "current_period_start" | "current_period_end" | "quota_overrides"> & {
   plan: Plan; entitlements: Entitlements; products: number; orders: number; apk_builds: number; staff_members: number; period_ym: string;
+  trial_used_at: string | null; can_start_trial: boolean; scheduled_plan_code: PlanCode | null;
+  scheduled_billing_cycle: BillingCycle | null; scheduled_effective_at: string | null; custom_domains: number;
 };
 
 export const quotaResources = {

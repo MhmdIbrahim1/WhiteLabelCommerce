@@ -1,14 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { annualSavings, cycleName, cycles, limitLabel, quotaKeys, quotaResources, resourceName,
   type BillingCycle, type Plan, type PlanCode } from "@/lib/billing";
 import { localizedText, type Lang } from "@/lib/i18n";
 import { StatusDot } from "./workspace-data";
 import "./plan-comparison.css";
 
-export function PlanComparison({ plans, lang, current, initialCycle = "monthly", heading, id }: {
+export function PlanComparison({ plans, lang, current, initialCycle = "monthly", heading, id, renderActions }: {
   plans: Plan[] | null; lang: Lang; current?: PlanCode; initialCycle?: BillingCycle; heading?: string; id?: string;
+  renderActions?: (plan: Plan, cycle: BillingCycle) => ReactNode;
 }) {
   const [cycle, setCycle] = useState(initialCycle);
   const en = lang === "en";
@@ -27,9 +28,9 @@ export function PlanComparison({ plans, lang, current, initialCycle = "monthly",
       : (en ? "There are no plans open for enrollment right now." : "لا توجد باقات متاحة للاشتراك حالياً.")}</p> :
       <div className="plan-cards">{plans.map(plan => {
         const savings = annualSavings(plan);
-        return <article key={plan.code} className="plan-card" data-current={plan.code === current}>
+        return <article key={plan.code} className="plan-card" data-plan={plan.code} data-current={plan.code === current && cycle === initialCycle}>
           <div className="plan-card-title"><h3>{localizedText(lang, plan.name_ar, plan.name_en)}</h3>
-            {plan.code === current && <StatusDot status="active">{en ? "Current plan" : "باقتك الحالية"}</StatusDot>}</div>
+            {plan.code === current && cycle === initialCycle && <StatusDot status="active">{en ? "Current plan" : "باقتك الحالية"}</StatusDot>}</div>
           <p className="plan-description">{localizedText(lang, plan.description_ar, plan.description_en)}</p>
           <p className="plan-price"><strong><bdi dir="ltr">{currency.format(cycle === "annual" ? plan.annual_price_egp : plan.monthly_price_egp)}</bdi></strong>
             <span>{cycle === "annual" ? (en ? "/ year" : "/ سنة") : (en ? "/ month" : "/ شهر")}</span></p>
@@ -42,6 +43,7 @@ export function PlanComparison({ plans, lang, current, initialCycle = "monthly",
             <div><dt>{en ? "Free trial" : "التجربة المجانية"}</dt><dd>{plan.trial_days
               ? <><bdi dir="ltr">{limitLabel(plan.trial_days, lang)}</bdi>{en ? " days" : " يوم"}</> : (en ? "None" : "لا توجد")}</dd></div>
           </dl>
+          {renderActions?.(plan, cycle)}
         </article>;
       })}</div>}
   </section>;

@@ -87,6 +87,8 @@ export async function proxy(request: NextRequest) {
   if (path === landingPath || path.startsWith(landingPath + "/") || path === accessPath || path.startsWith(accessPath + "/") ||
       path === redirectPath || path.startsWith(redirectPath + "/")) return routingError();
   const platform = classification === "platform";
+  const billingProviderRoute = /^\/api\/billing\/paymob\/(initiate|callback|webhook)$/.exec(path)?.[1];
+  if (billingProviderRoute && (!platform || alias)) return routingError();
   const previewLang = platform && alias && isStudioPreviewPage(path)
     ? request.nextUrl.searchParams.get(STUDIO_PREVIEW_QUERY) : null;
   const studioPreview = previewLang === "ar" || previewLang === "en";
@@ -164,6 +166,11 @@ export async function proxy(request: NextRequest) {
     ? NextResponse.rewrite(destination, { request: { headers: outgoing } })
     : NextResponse.next({ request: { headers: outgoing } });
   let response = forward();
+  if (billingProviderRoute === "webhook" || billingProviderRoute === "callback") {
+    response.headers.set("Referrer-Policy", "no-referrer");
+    response.headers.set("Cache-Control", "private, no-store");
+    return response;
+  }
 
   const db = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
     cookies: {
