@@ -4,14 +4,17 @@ import { getBillingStores, getStoreBilling, getPlanCatalog } from "@/lib/billing
 import { cycleName, limitLabel, quotaKeys, quotaResources, resourceName, statusNames, type Subscription } from "@/lib/billing";
 import { formatDate, langDir, localizedText } from "@/lib/i18n";
 import { getServerLang } from "@/lib/i18n-server";
-import { PlanComparison } from "@/components/plan-comparison";
+import { uuidPattern, type BillingInvoice, type BillingOptions } from "@/lib/billing-checkout";
 import { StatusDot, UsageBar, WorkspaceHeading } from "@/components/workspace-data";
 import { PlatformModeBar } from "@/components/workspace-surface";
 import { BillingControls } from "./controls";
+import { BillingManagement } from "./management";
+import { BillingBanners, InvoiceHistory } from "./invoices";
+import { MerchantPlans } from "./merchant-plans";
 import "./billing.css";
 
-export default async function BillingPage({ searchParams }: { searchParams: Promise<{ tab?: string; store?: string }> }) {
-  const [{ storeId, activeStore, isSuperAdmin }, lang, params] = await Promise.all([requireAdmin("manage_billing"), getServerLang(), searchParams]);
+export default async function BillingPage({ searchParams }: { searchParams: Promise<{ tab?: string; store?: string; page?: string; payment?: string; invoice?: string }> }) {
+  const [{ db, storeId, activeStore, isSuperAdmin }, lang, params] = await Promise.all([requireAdmin("manage_billing"), getServerLang(), searchParams]);
   const en = lang === "en";
   const manage = isSuperAdmin && params.tab === "manage";
   const heading = <WorkspaceHeading title={en ? "Billing" : "الفوترة"}
@@ -28,15 +31,37 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
     const target = stores.find(s => s.store_id === params.store)?.store_id ?? storeId;
     const sub = await db.rpc("billing_admin_subscription", { p_store: target }).single<Subscription>();
     return <div className="ws-page billing-page" dir={langDir(lang)}><PlatformModeBar />{heading}
+      <BillingManagement lang={lang} plans={plans} />
       <BillingControls lang={lang} plans={plans} subscription={checked(sub)} stores={stores.map(s => ({
         id: s.store_id, name: localizedText(lang, s.stores.name_ar, s.stores.name_en), slug: s.stores.slug,
       }))} />
     </div>;
   }
-  const [bill, plans] = await Promise.all([getStoreBilling(storeId), getPlanCatalog()]);
+  const page = /^\d{1,6}$/.test(params.page ?? "") ? Math.max(1, Number(params.page)) : 1;
+  const pageSize = 25;
+  const from = (page - 1) * pageSize;
+  const invoiceQuery = () => db.from("subscription_invoices")
+    .select("id,target_plan_code,target_billing_cycle,amount_egp,payment_channel,status,transfer_reference,paymob_order_id,review_note,receipt_path,created_at,saas_plans(name_ar,name_en)")
+    .eq("store_id", storeId);
+  const [bill, plans, options, history, pending, callback] = await Promise.all([
+    getStoreBilling(storeId), getPlanCatalog(), db.rpc("get_platform_billing_options", { p_store: storeId }),
+    invoiceQuery().order("created_at", { ascending: false }).order("id", { ascending: false }).range(from, from + pageSize).returns<BillingInvoice[]>(),
+    invoiceQuery().eq("status", "awaiting_review").maybeSingle<BillingInvoice>(),
+    params.invoice && uuidPattern.test(params.invoice) && params.payment && params.payment !== "unverified"
+      ? db.from("subscription_invoices").select("status").eq("store_id", storeId).eq("id", params.invoice).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+  ]);
+  if (pending.error || callback.error) throw new Error("Billing invoices could not be loaded");
+  const invoices = checked(history);
+  const status = callback.data?.status;
+  const receiptStatus: Record<string, string> = { paid: "success", pending: "pending", refunded: "refunded",
+    expired: "failed", cancelled: "failed", failed: "failed" };
+  const payment = params.payment === "unverified" ? "unverified" : params.payment && ["success", "pending", "failed"].includes(params.payment)
+    ? receiptStatus[status ?? ""] ?? "unverified" : undefined;
   const month = new Intl.DateTimeFormat(en ? "en-GB" : "ar-EG", { month: "long", year: "numeric", timeZone: "UTC" })
     .format(new Date(bill.period_ym + "-01T00:00:00Z"));
   return <div className="ws-page billing-page" dir={langDir(lang)}>{heading}
+    <BillingBanners bill={bill} plans={plans} store={storeId} lang={lang} pending={pending.data} payment={payment} />
     <section className="billing-box billing-summary" aria-labelledby="subscription-title">
       <div><h2 id="subscription-title">{en ? "Your subscription" : "اشتراك متجرك"}</h2>
         <p>{localizedText(lang, activeStore.name_ar, activeStore.name_en)}</p></div>
@@ -67,6 +92,7 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
         <span>{bill.entitlements.custom_domains_enabled ? (en ? "Included" : "مشمولة") : (en ? "Unavailable" : "غير متاحة")}
         {Object.hasOwn(bill.quota_overrides, "custom_domains_enabled") && (en ? " · Store override" : " · إعداد مخصص")}</span></div>
     </section>
-    <div id="plans"><PlanComparison lang={lang} plans={plans} current={bill.plan.code} initialCycle={bill.billing_cycle} /></div>
+    <MerchantPlans key={storeId} lang={lang} plans={plans} store={storeId} bill={bill} options={checked(options) as BillingOptions} manualPending={Boolean(pending.data)} />
+    <InvoiceHistory invoices={invoices.slice(0, pageSize)} page={page} more={invoices.length > pageSize} lang={lang} />
   </div>;
 }

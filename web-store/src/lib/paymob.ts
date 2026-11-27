@@ -15,13 +15,11 @@ function toPaymobScalar(value: unknown): string {
 function safeHexEqual(aHex: string, bHex: string): boolean {
   const cleanA = aHex.trim().toLowerCase();
   const cleanB = bHex.trim().toLowerCase();
-  if (!/^[0-9a-f]+$/.test(cleanA) || !/^[0-9a-f]+$/.test(cleanB)) {
+  if (!/^[0-9a-f]{128}$/.test(cleanA) || !/^[0-9a-f]{128}$/.test(cleanB)) {
     return false;
   }
-  if (cleanA.length !== cleanB.length) return false;
   const bufA = Buffer.from(cleanA, "hex");
   const bufB = Buffer.from(cleanB, "hex");
-  if (bufA.length !== bufB.length) return false;
   return timingSafeEqual(bufA, bufB);
 }
 
@@ -52,6 +50,26 @@ export type PaymobTransactionObj = {
   };
   success?: boolean | string;
 };
+
+export function queryTransaction(q: URLSearchParams): PaymobTransactionObj {
+  return {
+    ...Object.fromEntries(q), order: { id: q.get("order") ?? "" },
+    source_data: { pan: q.get("source_data.pan"), sub_type: q.get("source_data.sub_type"), type: q.get("source_data.type") },
+  };
+}
+
+const truth = (v: unknown) => v === true || v === "true";
+const falsity = (v: unknown) => v === false || v === "false";
+
+export function signedEvent(tx: PaymobTransactionObj) {
+  if (truth(tx.is_refunded)) return "refunded";
+  if (truth(tx.is_voided)) return "voided";
+  if (truth(tx.pending)) return "pending";
+  if (!falsity(tx.pending)) return null;
+  if (truth(tx.error_occured) || falsity(tx.success)) return "failed";
+  if (!truth(tx.success) || !falsity(tx.error_occured)) return null;
+  return truth(tx.is_auth) && !truth(tx.is_capture) ? "pending" : "paid";
+}
 
 /**
  * Verifies Paymob Transaction Processed POST Webhook HMAC-SHA512 using the exact

@@ -1,0 +1,20 @@
+.billing-queue { display: grid; gap: 1rem; max-inline-size: 62rem; inline-size: 100%; }
+.billing-queue > p, .billing-review-facts dt { color: var(--muted); }
+.billing-review, .billing-reviewed, .payment-endpoints { border-block-start: 1px solid var(--line); padding-block-start: 1rem; }
+.billing-review { display: grid; gap: .85rem; min-inline-size: 0; overflow-wrap: anywhere; }
+.billing-review h3 { font-size: 1rem; }
+.billing-review header, .billing-review-actions, .billing-review-actions form, .payment-endpoint { display: flex; align-items: center; flex-wrap: wrap; gap: .6rem 1rem; }
+.billing-review header { justify-content: space-between; }
+.billing-review-facts { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,8rem),1fr)); gap: 1rem; margin: 0; }
+.billing-review-facts dt, .payment-endpoint strong { font-size: .81rem; }
+.billing-review-facts dd { margin: 0; }
+.billing-review-actions, .billing-review-actions form { align-items: end; }
+.billing-review-actions form { min-inline-size: 0; }
+.billing-review-actions label { display: grid; gap: .25rem; min-inline-size: 0; }
+.billing-reviewed > summary { cursor: pointer; font-weight: 600; }
+.billing-reviewed[open] > summary { margin-block-end: 1rem; }
+.billing-reviewed .billing-review + .billing-review { margin-block-start: 1rem; }
+.payment-endpoints { display: grid; gap: .65rem; margin-block-start: 1.5rem; }
+.payment-endpoint bdi { overflow-wrap: anywhere; user-select: all; min-inline-size: 0; font-size: .88rem; }
+.payment-endpoint bdi, .billing-review bdi { font-variant-numeric: tabular-nums; unicode-bidi: isolate; }
+.payment-endpoint .ws-button { display: inline-flex; align-items: center; gap: .35rem; }

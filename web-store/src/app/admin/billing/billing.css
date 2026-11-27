@@ -37,6 +37,30 @@
 .ws-content .billing-page .plan-cycles button[aria-pressed=true] { color: var(--ink); background: var(--surface); border-color: var(--line); }
 .ws-content .billing-page .plan-card[data-current=true] { border-color: var(--ink); }
 .ws-content .billing-page .plan-savings { background: transparent; padding-inline: 0; }
+.billing-page bdi { font-variant-numeric: tabular-nums; unicode-bidi: isolate; }
+.billing-plan-actions { display: grid; align-content: end; gap: .55rem; margin-block-start: auto; padding-block-start: 1rem; }
+.billing-plan-actions > :is(.ws-primary,.ws-button) { inline-size: 100%; flex-wrap: wrap; }
+.ws-content .billing-impact { color: var(--ws-warn); }
+.billing-banner, .billing-checkout-summary, .billing-receiving-detail { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .6rem 1rem; }
+.billing-banner { padding: 1rem clamp(1rem,2.4vw,1.65rem); background: var(--card); border-inline-start: 3px solid var(--ws-control-line); overflow-wrap: anywhere; }
+.billing-banner h2 { margin-block-end: .25rem; }
+.billing-banner p { font-size: .9rem; }
+.billing-checkout-summary { padding-block-end: 1rem; margin-block-end: 1.25rem; border-block-end: 1px solid var(--line); }
+.billing-checkout-summary strong { font-size: 1.45rem; }
+.billing-checkout-summary p, .billing-checkout-form small, .billing-receiving dt { color: var(--muted); font-size: .85rem; }
+.billing-checkout-form label { display: grid; gap: .35rem; font-weight: 600; }
+.billing-file { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: .45rem .8rem; min-block-size: 44px;
+  padding: .5rem .7rem; border: 1px solid var(--ws-control-line); border-radius: var(--pt-radius); overflow-wrap: anywhere; }
+.billing-file bdi { min-inline-size: 0; font-size: .85rem; font-weight: 400; color: var(--muted); }
+.billing-file input[type=file] { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; opacity: 0; cursor: pointer; }
+.billing-file:focus-within { outline: 2px solid var(--ink); outline-offset: 2px; }
+.billing-checkout-form small { font-weight: 400; }
+.billing-receiving { display: grid; margin: 0; padding: 1rem; gap: .75rem; background: var(--card); border-radius: var(--pt-radius); }
+.billing-receiving-detail { min-inline-size: 0; }
+.billing-receiving-detail dd { margin: 0; font-weight: 600; }
+.billing-transfer-instructions { white-space: pre-line; }
+.billing-history-empty { padding: 0 clamp(1rem,2.4vw,1.65rem) 1.3rem; color: var(--muted); }
+.billing-page .ws-inspector svg { stroke-width: 1.5; }
 @media (max-width: 620px) {
   .billing-form-grid, .billing-quota-grid, .billing-meters { grid-template-columns: minmax(0,1fr); }
 }
