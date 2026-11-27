@@ -1,23 +1,26 @@
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
 import type { CSSProperties } from "react";
+import { notFound } from "next/navigation";
 import Link from "next/link";
 import { Store } from "lucide-react";
-import { uiConfigDataAttrs, uiConfigToCssVars } from "@/lib/ui-config";
+import { storefrontSurfaceProps } from "@/lib/storefront-theme";
+import { getPublishedTheme } from "@/lib/platform-theme-data";
 import { settings } from "@/lib/shop";
 import { storefrontAppearance } from "@/lib/storefront-appearance";
 import { serverDb } from "@/lib/db";
-import { adminUser, superAdminUser } from "@/lib/access";
+import { adminUser, hasStorePermission, superAdminUser } from "@/lib/access";
 import { storeHref } from "@/lib/tenant";
 import { STORE_CANONICAL_HEADER } from "@/lib/tenant-shared";
 import { localizedText, t } from "@/lib/i18n";
-import { getServerLang } from "@/lib/i18n-server";
+import { getServerLang, getStudioPreviewLang } from "@/lib/i18n-server";
 import brand from "@/lib/brand";
 import { Navigation } from "@/components/shop/navigation";
 import { SuspendedStoreGate } from "@/components/shop/suspended-store";
 import { WishlistProvider } from "@/components/shop/wishlist-provider";
 import { StorePixels } from "@/components/shop/store-pixels";
 import { CartTenantProvider } from "@/components/shop/cart-store";
+import { StudioPreview } from "@/components/shop/studio-preview";
 import "./shop.css";
 import "./storefront.css";
 
@@ -60,10 +63,14 @@ export default async function Layout({
 }: {
   children: React.ReactNode;
 }) {
-  const [db, s, authRes, appearance, jar] = await Promise.all([
-    serverDb(), settings(), serverDb().then((client) => client.auth.getUser()), storefrontAppearance(), cookies(),
+  const [db, s, authRes, appearance, jar, previewLang] = await Promise.all([
+    serverDb(), settings(), serverDb().then((client) => client.auth.getUser()), storefrontAppearance(), cookies(), getStudioPreviewLang(),
   ]);
-  const authUser = authRes.data.user;
+  if (previewLang) {
+    if (!authRes.data.user) notFound();
+    if (!(await hasStorePermission(db, s.storeId, "manage_settings"))) notFound();
+  }
+  const authUser = previewLang ? null : authRes.data.user;
   const [admin, superAdmin, wishRows, lang] = await Promise.all([
     adminUser(db, s.storeId, authUser),
     superAdminUser(db, authUser),
@@ -73,7 +80,7 @@ export default async function Layout({
   ]);
   const displayName = localizedText(lang, s.nameAr, s.nameEn) || s.name;
 
-  if (s.status === "suspended") {
+  if (s.status === "suspended" && !previewLang) {
     return (
       <div className="shop sf-store" lang={lang} dir={lang === "ar" ? "rtl" : "ltr"} style={appearance.tokens as CSSProperties}>
         <SuspendedStoreGate
@@ -96,11 +103,6 @@ export default async function Layout({
           (authUser.email?.split("@")[0] ?? t(lang, "navAccount")),
       }
     : null;
-  const style: CSSProperties = {
-    ...uiConfigToCssVars(s.uiConfig),
-    ...appearance.tokens,
-  } as CSSProperties;
-  const dataAttrs = uiConfigDataAttrs(s.uiConfig);
   const href = (path: string) => storeHref(s.basePath, path);
   const savedMode = jar.get("shop_theme")?.value;
   // First visit after the cookie was introduced: restore the old preference before painting the merchant surface.
@@ -112,35 +114,15 @@ export default async function Layout({
       }
     } catch {}
   })()`;
-  return (
-    <div data-storefront-mode="" data-shop-theme={savedMode === "dark" ? "dark" : "light"} suppressHydrationWarning>
-    {!savedMode && <script dangerouslySetInnerHTML={{ __html: restoreMode }} />}
-    <CartTenantProvider storeId={s.storeId} defaultMaxOrderQty={s.defaultMaxOrderQty}>
-      <WishlistProvider
-        storeId={s.storeId}
-        initialProductIds={initialWishlistIds}
-        isSignedIn={Boolean(authUser)}
-      >
-        <div
-          className="shop sf-store"
-          lang={lang}
-          dir={lang === "ar" ? "rtl" : "ltr"}
-          {...dataAttrs}
-          data-storefront-preset={appearance.preset}
-          data-motion-enabled={appearance.motionEnabled}
-          data-entrance={appearance.motionEnabled ? dataAttrs["data-entrance"] : "none"}
-          data-card-hover={appearance.motionEnabled ? dataAttrs["data-card-hover"] : "none"}
-          data-sticky-cta={appearance.stickyCtaEnabled}
-          data-card={brand.presets.productCard}
-          style={style}
-        >
-        <StorePixels
+  const content = s.status === "suspended" ? <SuspendedStoreGate storeName={displayName} lang={lang} canManage={false}/> : <>
+        {!previewLang && <StorePixels
           storeId={s.storeId}
           metaPixelId={s.pixels.metaPixelId}
           tiktokPixelId={s.pixels.tiktokPixelId}
           ga4MeasurementId={s.pixels.ga4MeasurementId}
-        />
+        />}
         <Navigation
+          preview={Boolean(previewLang)}
           name={displayName}
           logo={s.uiConfig.storefrontLogo}
           currency={s.currency}
@@ -179,9 +161,18 @@ export default async function Layout({
           </div>
         </footer>
         <div data-storefront-overlays="" />
-        </div>
-      </WishlistProvider>
-    </CartTenantProvider>
-    </div>
-  );
+  </>;
+  const platform = previewLang ? await getPublishedTheme() : null;
+  return <CartTenantProvider storeId={s.storeId} defaultMaxOrderQty={s.defaultMaxOrderQty}>
+    <WishlistProvider storeId={s.storeId} initialProductIds={initialWishlistIds} isSignedIn={Boolean(authUser)}>
+      {platform && previewLang ? <StudioPreview slug={s.slug} lang={previewLang} card={brand.presets.productCard}
+        base={s.previewBase}
+        gates={{ motion_enabled: platform.motion_enabled, sticky_cta_enabled: platform.sticky_cta_enabled }}>{content}</StudioPreview> :
+        <div data-storefront-mode="" data-shop-theme={savedMode === "dark" ? "dark" : "light"} suppressHydrationWarning>
+          {!savedMode && <script dangerouslySetInnerHTML={{ __html: restoreMode }} />}
+          <div className="shop sf-store" lang={lang} dir={lang === "ar" ? "rtl" : "ltr"} data-card={brand.presets.productCard}
+            {...storefrontSurfaceProps(s.uiConfig, appearance)}>{content}</div>
+        </div>}
+    </WishlistProvider>
+  </CartTenantProvider>;
 }

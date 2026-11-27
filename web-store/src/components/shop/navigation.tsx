@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useRef, useState } from "react";
 import {
-  ArrowRight, ClipboardList, Grid2X2, Headphones, Heart, House, LogIn, LogOut,
+  ArrowRight, Bell, ClipboardList, Grid2X2, Headphones, Heart, House, LogIn, LogOut,
   Menu, Moon, PlusCircle, Search, ShieldCheck, ShoppingBag, SlidersHorizontal, Sun, UserRound, Zap,
 } from "lucide-react";
 import { logout } from "@/app/login/actions";
@@ -20,6 +20,7 @@ import { StoreSearch } from "./store-search";
 import { useWishlist } from "./wishlist-provider";
 
 type Props = {
+  preview?: boolean;
   name: string; logo?: string; storeId: string; storeSlug: string; basePath: string; currency: string; hasFeatured: boolean;
   admin: boolean; superAdmin: boolean; user: { id: string; email: string; name: string } | null;
 };
@@ -30,7 +31,7 @@ export function Navigation(props: Props) {
   return <StoreHeader key={props.storeId + pathname} {...props} pathname={pathname}/>;
 }
 
-function StoreHeader({ name, logo, storeId, storeSlug, basePath, currency, user, admin, superAdmin, hasFeatured, pathname }: Props & { pathname: string }) {
+function StoreHeader({ name, logo, storeId, storeSlug, basePath, currency, user, admin, superAdmin, hasFeatured, pathname, preview }: Props & { pathname: string }) {
   const { lang, t } = useLanguage();
   const en = lang === "en";
   const href = (path: string) => storeHref(basePath, path);
@@ -71,7 +72,8 @@ function StoreHeader({ name, logo, storeId, storeSlug, basePath, currency, user,
       <div className="sf-nav-tools">
         <button type="button" className="sf-icon" aria-label={t("navSearchAria")} aria-haspopup="dialog" onClick={e => open("search", e.currentTarget)}><Search size={20}/></button>
         <LanguageToggle className="sf-language sf-header-lang"/>
-        <NotificationBell storeId={storeId} userId={user?.id ?? null} scope="customer" basePath={basePath}/>
+        {preview ? <button type="button" className="notif-bell-btn" disabled aria-label={t("notifTitle")}><Bell size={18}/></button>
+          : <NotificationBell storeId={storeId} userId={user?.id ?? null} scope="customer" basePath={basePath}/>}
         <button type="button" className="sf-cart-trigger" aria-label={t("navCart") + " · " + count} aria-haspopup="dialog"
           aria-expanded={drawer === "cart"} onClick={e => open("cart", e.currentTarget)}>
           <ShoppingBag size={19}/><bdi dir="ltr" aria-live="polite" aria-atomic="true">{count.toLocaleString(lang)}</bdi>

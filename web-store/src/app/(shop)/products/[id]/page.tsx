@@ -8,7 +8,7 @@ import { ChevronRight, Star } from "lucide-react";
 import { serverDb, checked } from "@/lib/db";
 import { settings, productFields, type Product } from "@/lib/shop";
 import { localizedText } from "@/lib/i18n";
-import { getServerLang } from "@/lib/i18n-server";
+import { getServerLang, getStudioPreviewLang } from "@/lib/i18n-server";
 import { storeHref } from "@/lib/tenant";
 import {
   formatRatingScore,
@@ -68,7 +68,7 @@ export default async function Details({ params }: PageProps<"/products/[id]">) {
     notFound();
   const p = checked(result);
 
-  const [lang, relatedRpc, authRes, reviewsRes] = await Promise.all([
+  const [lang, relatedRpc, authRes, reviewsRes, preview] = await Promise.all([
     getServerLang(s.uiConfig.defaultLanguage),
     db.rpc("get_related_products", {
       p_store_id: s.storeId,
@@ -86,6 +86,7 @@ export default async function Details({ params }: PageProps<"/products/[id]">) {
       .eq("status", "published")
       .order("created_at", { ascending: false })
       .limit(100),
+    getStudioPreviewLang(),
   ]);
 
   let relatedProducts: Product[] = [];
@@ -106,7 +107,7 @@ export default async function Details({ params }: PageProps<"/products/[id]">) {
       : ((fallbackRelated.data ?? []) as Product[]);
   }
 
-  const user = authRes.data.user;
+  const user = preview ? null : authRes.data.user;
   let eligibility: ReviewEligibility = {
     eligible: false,
     order_id: null,
@@ -141,12 +142,12 @@ export default async function Details({ params }: PageProps<"/products/[id]">) {
 
   return (
     <>
-      <ProductViewTracker
+      {!preview && <ProductViewTracker
         id={p.id}
         name={title}
         price={resolveEffectivePrice(p, initialNow)}
         currency={s.currency}
-      />
+      />}
       <nav className="sf-breadcrumb" aria-label={lang === "en" ? "Breadcrumb" : "مسار التصفّح"}>
         <Link href={storeHref(s.basePath, "/")}>{localizedText(lang, s.nameAr, s.nameEn)}</Link><ChevronRight className="sf-forward" size={14}/>
         <Link href={storeHref(s.basePath, "/products")}>{lang === "en" ? "All products" : "كل المنتجات"}</Link>

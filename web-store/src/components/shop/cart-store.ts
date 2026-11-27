@@ -12,6 +12,7 @@ import { browserDb } from "@/lib/supabase/browser";
 import type { Variant } from "@/lib/variant-stock";
 import { lineEffectivePrice, resolveEffectivePrice, type FlashSalePriceInput } from "@/lib/flash-sale";
 import { remainingQuantity } from "@/lib/variant-stock";
+import { useStudioPreview } from "./studio-preview-context";
 export { lineEffectivePrice, remainingQuantity };
 
 export type Line = {
@@ -186,9 +187,9 @@ function decode(raw: string): Line[] {
   }
 }
 
-function snapshot(tenantId: string): string {
+function snapshot(tenantId: string, preview = false): string {
   const cleanTenant = requireTenantId(tenantId);
-  isolateLegacyStorage();
+  if (!preview) isolateLegacyStorage();
   try {
     return localStorage.getItem(cartKey(cleanTenant)) || emptySnapshot;
   } catch {
@@ -310,11 +311,12 @@ function subscribe(tenantId: string, fn: () => void) {
 
 export function useCart() {
   const tenantId = useCartTenant();
+  const preview = Boolean(useStudioPreview());
   const subscribeToTenant = useCallback(
     (fn: () => void) => subscribe(tenantId, fn),
     [tenantId],
   );
-  const getTenantSnapshot = useCallback(() => snapshot(tenantId), [tenantId]);
+  const getTenantSnapshot = useCallback(() => snapshot(tenantId, preview), [tenantId, preview]);
   const raw = useSyncExternalStore(
     subscribeToTenant,
     getTenantSnapshot,

@@ -82,6 +82,19 @@ export function classifyHost(hostname: string, root: string, allowLocal: boolean
   return customDomain(hostname, root) ? { kind: "domain", value: hostname } : null;
 }
 
+// A preview deployment shares its suffix with domains a merchant can verify.
+// Only a successful negative directory lookup can promote it to a platform host.
+export async function resolveRequestHost(hostname: string, root: string, allowLocal: boolean,
+  environment: string | undefined, lookup: (key: RouteKey) => Promise<StoreRoute | null>) {
+  const host = classifyHost(hostname, root, allowLocal);
+  if (!hostname.endsWith(".vercel.app")) return { host };
+  if (environment !== "preview") return { host: host === "platform" ? null : host };
+  if (!validDnsName(hostname)) return { host: null };
+  const domain: RouteKey = { kind: "domain", value: hostname };
+  const registered = await lookup(domain);
+  return registered ? { host: domain, registered } : { host: "platform" as const };
+}
+
 export function platformOrigin(host: Authority, root: string) {
   if (isLocalHost(host.hostname)) {
     return "http://localhost" + host.authority.slice(host.hostname.length);
@@ -101,12 +114,12 @@ export function publicStoreOrigin(route: StoreRoute, platform: string, root: str
 }
 
 export async function resolveStoreBinding(host: RouteKey | "platform", aliasSlug: string | undefined,
-  fallbackSlug: string | null, lookup: (key: RouteKey) => Promise<StoreRoute | null>) {
+  fallbackSlug: string | null, lookup: (key: RouteKey) => Promise<StoreRoute | null>, registered?: StoreRoute) {
   if (host === "platform") {
     const slug = aliasSlug ?? fallbackSlug;
     return slug && isStoreSlug(slug) ? lookup({ kind: "slug", value: slug }) : null;
   }
-  const route = await lookup(host);
+  const route = registered ?? await lookup(host);
   if (!route || (aliasSlug && route.slug !== aliasSlug)) return null;
   return route;
 }

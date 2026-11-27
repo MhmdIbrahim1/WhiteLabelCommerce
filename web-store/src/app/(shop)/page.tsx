@@ -10,8 +10,9 @@ import {
 } from "@/lib/shop";
 import { storeHref } from "@/lib/tenant";
 import { localizedText, t, translateHomeCopy } from "@/lib/i18n";
-import { getServerLang } from "@/lib/i18n-server";
+import { getServerLang, getStudioPreviewLang } from "@/lib/i18n-server";
 import { Hero } from "@/components/shop/hero";
+import { PreviewHeroVisibility } from "@/components/shop/studio-preview-context";
 import { StoreCopy } from "@/components/shop/store-copy";
 import { Grid } from "@/components/shop/cards";
 import { FlashDealsSection } from "@/components/shop/flash-deals-section";
@@ -24,10 +25,10 @@ import fragrance from "../platform-landing/photos/fragrance.webp";
 import coffee from "../platform-landing/photos/coffee.webp";
 import objects from "../platform-landing/photos/objects.webp";
 
-const art = { fashion_editorial: fashion, tech_precision: audio, beauty_maison: fragrance, gourmet_craft: coffee, commerce_signature: objects };
+const art = { fashion_editorial: fashion.src, tech_precision: audio.src, beauty_maison: fragrance.src, gourmet_craft: coffee.src, commerce_signature: objects.src };
 
 export default async function Home() {
-  const [db, s, c, appearance] = await Promise.all([serverDb(), settings(), categories(), storefrontAppearance()]);
+  const [db, s, c, appearance, preview] = await Promise.all([serverDb(), settings(), categories(), storefrontAppearance(), getStudioPreviewLang()]);
   const result = await db
     .from("products")
     .select(productFields)
@@ -58,7 +59,7 @@ export default async function Home() {
   const firstFeaturedId = visibleSections.find(
     (sec) => sec.type === "featured_products",
   )?.id;
-  const firstHeroId = s.uiConfig.pages.home.hero_visible
+  const firstHeroId = preview || s.uiConfig.pages.home.hero_visible
     ? visibleSections.find((sec) => sec.type === "hero_banner")?.id
     : undefined;
   const activeFlashDeals = filterActiveFlashDeals(allProducts);
@@ -76,12 +77,12 @@ export default async function Home() {
 
   return (
     <div className="home-sections-stack">
-      {!firstHeroId && flashDealsNode}
+      {!firstHeroId ? flashDealsNode : preview && flashDealsNode && <PreviewHeroVisibility visible={false}>{flashDealsNode}</PreviewHeroVisibility>}
       {visibleSections.map((sec) => {
         switch (sec.type) {
-          case "hero_banner":
-            if (!s.uiConfig.pages.home.hero_visible) return null;
-            return (
+          case "hero_banner": {
+            if (!preview && !s.uiConfig.pages.home.hero_visible) return null;
+            const section = (
               <div
                 key={sec.id}
                 className="sf-hero-section"
@@ -90,7 +91,8 @@ export default async function Home() {
                 <Hero
                   preset={appearance.preset}
                   motion={appearance.motionEnabled}
-                  artwork={art[appearance.preset].src}
+                  artwork={art[appearance.preset]}
+                  previewArt={preview ? art : undefined}
                   collectionHref={firstFeaturedId ? "#latest" : undefined}
                   name={displayName}
                   banners={s.banners}
@@ -103,6 +105,8 @@ export default async function Home() {
                 {sec.id === firstHeroId && flashDealsNode}
               </div>
             );
+            return preview ? <PreviewHeroVisibility key={sec.id} visible>{section}</PreviewHeroVisibility> : section;
+          }
 
           case "categories_grid":
             return (

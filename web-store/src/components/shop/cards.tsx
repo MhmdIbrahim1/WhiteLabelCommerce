@@ -9,6 +9,7 @@ import { localizedText, t, type Lang } from "@/lib/i18n";
 import { storeHref } from "@/lib/tenant-shared";
 import { normalizeSpecs } from "@/lib/specs";
 import type { StorefrontPreset } from "@/lib/storefront-presets";
+import { getStudioPreviewLang } from "@/lib/i18n-server";
 import { formatRatingScore } from "@/lib/reviews-wishlist";
 import { Buy } from "./buy";
 import { WishlistHeartButton } from "./wishlist-heart";
@@ -56,7 +57,7 @@ export function Price({
   );
 }
 
-export function Grid({
+export async function Grid({
   rows,
   currency,
   lang = "ar",
@@ -73,6 +74,7 @@ export function Grid({
 }) {
   const initialNow = serverNowMs();
   if (!rows.length) return <p className="panel shop-empty-state">{t(lang, "noMatchingProducts")}</p>;
+  const includeSpecs = preset === "tech_precision" || Boolean(await getStudioPreviewLang());
   return (
     <div
       className={
@@ -86,7 +88,7 @@ export function Grid({
         const detailHref = storeHref(basePath, "/products/" + p.id);
         const reviewCount = Number(p.review_count ?? 0);
         const avgRating = Number(p.avg_rating ?? 0);
-        const specs = preset === "tech_precision" ? normalizeSpecs(p.specifications).slice(0, 2) : [];
+        const specs = includeSpecs ? normalizeSpecs(p.specifications).slice(0, 2) : [];
         return (
           <article
             className="tile"

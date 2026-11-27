@@ -1,7 +1,8 @@
 import { cache } from "react";
 import { notFound } from "next/navigation";
 import { serverDb, checked } from "./db";
-import { resolveUiConfig, type StoreUiConfig } from "./ui-config";
+import { readStoreDesign } from "./store-design-settings";
+import { studioPreviewBase } from "./storefront-studio";
 import type { ProductSpec } from "./specs";
 import type { StorePixelsConfig } from "./marketing";
 import {
@@ -101,13 +102,7 @@ export const settings = cache(async () => {
     error = fallback.error;
   }
   if (error || !data) throw new Error("تعذر تحميل إعدادات المتجر");
-  const uiConfig: StoreUiConfig = resolveUiConfig(data.ui_config, {
-    template: data.theme_template,
-    primary: data.primary_color || brand.colors.primary,
-    accent: data.secondary_color || brand.colors.secondary,
-    surface: data.surface_color || brand.colors.surface,
-    radius: data.border_radius ?? brand.borderRadius,
-  });
+  const uiConfig = readStoreDesign(data);
   return {
     storeId: data.store_id || resolved.id || DEFAULT_STORE_ID,
     slug: resolved.slug,
@@ -132,6 +127,7 @@ export const settings = cache(async () => {
       s.startsWith("https://"),
     ),
     uiConfig,
+    previewBase: studioPreviewBase(data.ui_config, uiConfig),
     payment: {
       codEnabled: data.cod_enabled ?? true,
       paymobEnabled: data.paymob_enabled ?? false,
