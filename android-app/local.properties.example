@@ -4,5 +4,7 @@
 SUPABASE_URL=https://your-project-ref.supabase.co
 SUPABASE_ANON_KEY=sb_publishable_replace_with_your_anon_key
 STORE_ID=00000000-0000-0000-0000-000000000001
+# Emulator development. For a release, set this to the public HTTPS storefront origin
+# or pass -PWEB_STORE_BASE_URL=https://shopstage.live to Gradle.
 WEB_STORE_BASE_URL=http://10.0.2.2:3000
 GITHUB_REPO=OWNER/WhiteLabelCommerce

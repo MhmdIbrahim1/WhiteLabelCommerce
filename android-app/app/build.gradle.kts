@@ -1,6 +1,7 @@
 import groovy.json.JsonSlurper
 import org.gradle.api.GradleException
 import java.io.File
+import java.net.URI
 import java.util.Properties
 import javax.xml.parsers.DocumentBuilderFactory
 
@@ -97,8 +98,8 @@ if (isCiEnvironment && isReleaseBuildRequested && !hasReleaseSigning) {
 
 // Single source of truth for Android release versioning (read by .github/workflows/android-release.yml).
 // Must be strictly greater than all previously published GitHub Releases (v1.2.0 = 40, v1.3.0 = 42, v1.3.1 = 43, v1.4.0 = 44).
-val defaultVersionCode = 53
-val defaultVersionName = "1.5.0"
+val defaultVersionCode = 54
+val defaultVersionName = "1.5.1"
 
 val resolvedVersionCode = ((project.findProperty("versionCode") ?: project.findProperty("VERSION_CODE")) as? String)
     ?.trim()
@@ -134,6 +135,37 @@ val resolvedStoreName = (
         ?: (project.findProperty("STORE_NAME") as? String)
 )?.trim()?.trim('"')?.takeIf { it.isNotEmpty() } ?: if (isWhiteLabelTenant) "Store" else "Nova Store"
 
+val webStoreBaseUrl = resolveConfigValue("WEB_STORE_BASE_URL", "http://10.0.2.2:3000")
+
+fun validReleaseStorefrontOrigin(raw: String, storeSlug: String): Boolean {
+    val uri = runCatching { URI(raw) }.getOrNull() ?: return false
+    val host = uri.host?.lowercase() ?: return false
+    // Production storefront routing accepts DNS names. Localhost and IP literals are for development.
+    val suffix = host.substringAfterLast('.')
+    val publicHost = '.' in host && host.length <= 253 &&
+        suffix.matches(Regex("[a-z]{2,63}|xn--[a-z0-9-]{1,58}[a-z0-9]")) &&
+        suffix !in setOf("localhost", "local", "internal", "invalid") &&
+        host != "home.arpa" && !host.endsWith(".home.arpa")
+    val path = uri.rawPath.removeSuffix("/")
+    return uri.scheme.equals("https", ignoreCase = true) && publicHost &&
+        uri.port in setOf(-1, 80, 443) && !uri.rawAuthority.endsWith(':') &&
+        uri.rawUserInfo == null && uri.rawQuery == null && uri.rawFragment == null &&
+        (path.isEmpty() || (storeSlug.isNotEmpty() && path == "/s/$storeSlug"))
+}
+
+val validateReleaseStorefrontOrigin = tasks.register("validateReleaseStorefrontOrigin") {
+    val validOrigin = validReleaseStorefrontOrigin(webStoreBaseUrl, resolvedStoreSlug)
+    doLast {
+        if (!validOrigin) throw GradleException(
+            "Set WEB_STORE_BASE_URL to the public HTTPS storefront origin before building a release.",
+        )
+    }
+}
+
+androidComponents.onVariants(androidComponents.selector().withBuildType("release")) { variant ->
+    variant.lifecycleTasks.registerPreBuild(validateReleaseStorefrontOrigin)
+}
+
 android {
     namespace = "com.whitelabel.commerce"
     compileSdk = 35
@@ -161,7 +193,7 @@ android {
         buildConfigField("String", "STORE_ID", "\"$resolvedStoreId\"")
         buildConfigField("String", "STORE_SLUG", "\"$resolvedStoreSlug\"")
         buildConfigField("Boolean", "IS_WHITE_LABEL_TENANT", isWhiteLabelTenant.toString())
-        buildConfigField("String", "WEB_STORE_BASE_URL", "\"${resolveConfigValue("WEB_STORE_BASE_URL", "http://10.0.2.2:3000")}\"")
+        buildConfigField("String", "WEB_STORE_BASE_URL", "\"$webStoreBaseUrl\"")
         buildConfigField(
             type = "String",
             name = "SUPABASE_URL",
@@ -319,6 +351,22 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
 }
+
+val verifyReleaseStorefrontOriginContract = tasks.register("verifyReleaseStorefrontOriginContract") {
+    doLast {
+        val slug = "nova-store"
+        listOf(
+            "https://shopstage.live", "https://shopstage.live:443/s/$slug/", "https://$slug.shopstage.live/",
+        ).forEach { check(validReleaseStorefrontOrigin(it, slug)) { "Expected a valid storefront origin: $it" } }
+        listOf(
+            "", "http://127.0.0.1:3000", "http://shopstage.live", "https://127.0.0.1",
+            "https://[::1]", "https://10.0.2.2", "https://$slug.localhost", "https://localhost",
+            "https://user@shopstage.live", "https://shopstage.live/?q=1", "https://shopstage.live/#section",
+            "https://shopstage.live/s/another-store",
+        ).forEach { check(!validReleaseStorefrontOrigin(it, slug)) { "Expected an invalid storefront origin: $it" } }
+    }
+}
+tasks.named("check") { dependsOn(verifyReleaseStorefrontOriginContract) }
 
 // End-to-end contract check for the workflow inputs consumed by the Android
 // manifest merger. Invoke with the same -PstoreName/-PVERSION_* arguments used
