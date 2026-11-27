@@ -5,6 +5,7 @@ import { setImmediate as tick } from "node:timers/promises";
 import { NextRequest } from "next/server.js";
 import * as flow from "../src/lib/auth-flow.ts";
 import * as otp from "../src/lib/email-otp.ts";
+import * as i18n from "../src/lib/i18n.ts";
 import * as phone from "../src/lib/phone.ts";
 import * as routing from "../src/lib/host-routing.ts";
 import * as tenant from "../src/lib/tenant-shared.ts";
@@ -174,7 +175,7 @@ test("proxy binds recovery pages, confirmation and API posts to the actual apex,
     if (saved[i] === undefined) delete process.env[key]; else process.env[key] = saved[i];
   } });
   const route = {id: store.id, slug: store.slug, primaryDomain: "shop.example.test"};
-  const {proxy} = loadSource("proxy.ts", {"@/lib/host-routing":routing, "@/lib/tenant-shared":tenant, "@/lib/access":{},
+  const {proxy} = loadSource("proxy.ts", {"@/lib/i18n":i18n, "@/lib/host-routing":routing, "@/lib/tenant-shared":tenant, "@/lib/access":{},
     "@/lib/host-resolver":{resolveHostRoute: async k => ["nova-store","shop.example.test"].includes(k.value) ? route : null},
     "@supabase/ssr":{createServerClient:()=>({})}});
   for (const [host, prefix] of [["shopstage.live",""],["nova-store.shopstage.live",""],["shop.example.test",""],["branch.vercel.app",base]]) {

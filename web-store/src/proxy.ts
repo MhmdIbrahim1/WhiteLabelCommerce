@@ -5,11 +5,12 @@ import {
   isLocalHost, isStoreSlug, isVercelDeployment, platformAuthScreen, platformOrigin, platformRootDomain, publicStoreOrigin, resolveRequestHost,
   requestAuthority, resolveStoreBinding, storePath,
 } from "@/lib/host-routing";
+import { isLang, LANG_COOKIE } from "@/lib/i18n";
 import { resolveHostRoute } from "@/lib/host-resolver";
 import {
   DEFAULT_STORE_SLUG, PLATFORM_ORIGIN_HEADER, STORE_BASE_PATH_HEADER, STORE_CANONICAL_HEADER,
   REQUEST_ORIGIN_HEADER, PASSWORD_RECOVERY_HEADER, STORE_ID_HEADER, STORE_SLUG_COOKIE, STORE_SLUG_HEADER, storefrontPath, tenantAuthEntry,
-  STUDIO_LOCALE_HEADER, STUDIO_PREVIEW_QUERY, isStudioPreviewPage,
+  PAGE_LOCALE_HEADER, STUDIO_LOCALE_HEADER, STUDIO_PREVIEW_QUERY, isStudioPreviewPage,
 } from "@/lib/tenant-shared";
 
 const privateHeaders = { "Cache-Control": "private, no-store" };
@@ -24,7 +25,7 @@ const assetPath = /^(?:\/_next\/static\/|\/_next\/(?:image|webpack-hmr)(?:\/|$)|
 function cleanRoutingHeaders(request: NextRequest) {
   const outgoing = new Headers(request.headers);
   for (const header of [PLATFORM_ORIGIN_HEADER, PLATFORM_REDIRECT_HEADER, REQUEST_ORIGIN_HEADER, STORE_ID_HEADER,
-    STORE_BASE_PATH_HEADER, STORE_CANONICAL_HEADER, STORE_SLUG_HEADER, STUDIO_LOCALE_HEADER,
+    STORE_BASE_PATH_HEADER, STORE_CANONICAL_HEADER, STORE_SLUG_HEADER, PAGE_LOCALE_HEADER, STUDIO_LOCALE_HEADER,
     PASSWORD_RECOVERY_HEADER, "x-store-host", "x-store-subdomain", "forwarded"]) outgoing.delete(header);
   return outgoing;
 }
@@ -149,6 +150,13 @@ export async function proxy(request: NextRequest) {
   // Keep rewrites internal to the Next server, even when a trusted ingress terminates TLS.
   const destination = request.nextUrl.clone();
   const access = platformAuthScreen(platform, Boolean(alias), path);
+  const urlLang = request.nextUrl.searchParams.get(LANG_COOKIE);
+  if (!api && isLang(urlLang)) {
+    outgoing.set(PAGE_LOCALE_HEADER, urlLang);
+  } else if (access && !isLang(request.cookies.get(LANG_COOKIE)?.value)) {
+    // Apex auth has a store binding for sign-in, but its interface uses the platform default.
+    outgoing.set(PAGE_LOCALE_HEADER, "ar");
+  }
   const recoveryPath = path === "/forgot-password" || path === "/reset-password" ? "/auth/reset-password" : path;
   if (recoveryPath === "/auth/reset-password") outgoing.set(PASSWORD_RECOVERY_HEADER, "1");
   destination.pathname = access ? accessPath + "/" + access : landing ? landingPath : recoveryPath;

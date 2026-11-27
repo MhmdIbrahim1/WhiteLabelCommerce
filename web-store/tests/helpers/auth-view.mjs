@@ -1,7 +1,7 @@
 import { loadSource } from "./load-source.mjs";
 
 // Exercise React event handlers and effect disposal with deterministic focus, time and network fixtures.
-export function view(file, imports) {
+export function view(file, imports, reactOverrides = {}) {
   let cursor = 0;
   const slots = [], effects = new Map();
   function useState(initial) {
@@ -27,7 +27,7 @@ export function view(file, imports) {
     useId: () => useState(() => "field-" + cursor)[0], useMemo: memoSlot, useCallback: (fn, deps) => memoSlot(() => fn, deps),
     useSyncExternalStore: (_subscribe, get) => get(), createContext: value => ({ value, Provider: "provider" }), useContext: ctx => ctx.value,
   };
-  const exports = loadSource(file, { ...imports, react: hooks });
+  const exports = loadSource(file, { ...imports, react: { ...hooks, ...reactOverrides } });
   return {
     exports,
     render(component, props) { cursor = 0; return (typeof component === "string" ? exports[component] : component)(props); },

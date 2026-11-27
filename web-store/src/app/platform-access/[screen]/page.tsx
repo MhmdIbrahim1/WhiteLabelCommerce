@@ -8,15 +8,13 @@ import { RecoveryPanel } from "@/components/shop/recovery-panel";
 import { continueSignedInLogin } from "@/lib/auth-destination";
 import { safeAuthNext } from "@/lib/auth-flow";
 import { getServerLang } from "@/lib/i18n-server";
-import { settings } from "@/lib/shop";
 
 export const metadata: Metadata = { referrer: "no-referrer", robots: { index: false, follow: false } };
 
 export default async function PlatformAccess({ params, searchParams }: {
   params: Promise<{ screen: string }>; searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const [{ screen }, query, store] = await Promise.all([params, searchParams, settings()]);
-  const lang = await getServerLang(store.uiConfig.defaultLanguage);
+  const [{ screen }, query, lang] = await Promise.all([params, searchParams, getServerLang()]);
   const en = lang === "en";
   const next = safeAuthNext(query.next, "");
   const returnQuery = next ? "?next=" + encodeURIComponent(next) : "";

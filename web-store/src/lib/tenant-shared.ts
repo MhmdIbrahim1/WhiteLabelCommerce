@@ -12,6 +12,7 @@ export const PLATFORM_ORIGIN_HEADER = "x-platform-origin";
 export const REQUEST_ORIGIN_HEADER = "x-wlc-request-origin";
 export const PASSWORD_RECOVERY_HEADER = "x-wlc-password-recovery";
 export const STORE_BASE_PATH_HEADER = "x-store-base-path";
+export const PAGE_LOCALE_HEADER = "x-wlc-page-locale";
 export const STUDIO_LOCALE_HEADER = "x-wlc-studio-locale";
 export const STUDIO_PREVIEW_QUERY = "studioPreview";
 

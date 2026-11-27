@@ -1536,6 +1536,16 @@ details details,
   }
 }
 
+/* The pending glyph occupies the same slot as the globe in both languages. */
+[data-lang-toggle] > svg { flex: none; }
+@media (prefers-reduced-motion: no-preference) {
+  :is([data-motion="on"], [data-motion-enabled="true"]) [data-lang-toggle][aria-busy="true"] > svg {
+    animation: language-refresh 1s linear infinite;
+  }
+  @keyframes language-refresh { to { transform: rotate(1turn); } }
+}
+:is([data-motion="off"], [data-motion-enabled="false"]) [data-lang-toggle][aria-busy="true"] > svg { animation: none; }
+
 /* Phase 7: Bilingual Toggle Pill, Variant Badges & Admin Presets / Specs Editor */
 .lang-toggle-pill {
   display: inline-flex;

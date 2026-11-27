@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { NextRequest } from "next/server.js";
 import * as routing from "../src/lib/host-routing.ts";
+import * as i18n from "../src/lib/i18n.ts";
 import * as tenant from "../src/lib/tenant-shared.ts";
 import * as cartSession from "../src/lib/cart-session.ts";
 import { createCartHeartbeat } from "../src/lib/cart-heartbeat.ts";
@@ -19,6 +20,7 @@ function proxyFixture(t, env, lookup) {
     t.after(() => { if (old === undefined) delete process.env[key]; else process.env[key] = old; });
   }
   const { proxy } = loadSource("proxy.ts", {
+    "@/lib/i18n": i18n,
     "@/lib/host-routing": routing, "@/lib/tenant-shared": tenant, "@/lib/host-resolver": { resolveHostRoute: lookup },
     "@/lib/access": {}, "@supabase/ssr": { createServerClient: () => ({}) },
   });
@@ -26,6 +28,16 @@ function proxyFixture(t, env, lookup) {
     method, headers: { host, ...headers },
   }));
 }
+
+test("proxy forwards a validated URL language and gives only bare platform auth an Arabic default", async t => {
+  const request = proxyFixture(t, { PLATFORM_ROOT_DOMAIN: root, VERCEL_ENV: "production" }, async () => nova);
+  const forwarded = res => res.headers.get("x-middleware-request-" + tenant.PAGE_LOCALE_HEADER);
+  assert.equal(forwarded(await request(root, "/login")), "ar");
+  assert.equal(forwarded(await request(root, "/login", "GET", { cookie: "nova_lang=en" })), null);
+  assert.equal(forwarded(await request(root, "/s/nova-store/login")), null);
+  assert.equal(forwarded(await request(root, "/s/nova-store/login?nova_lang=en")), "en");
+  assert.equal(forwarded(await request(root, "/s/nova-store/login?nova_lang=fr", "GET", { [tenant.PAGE_LOCALE_HEADER]: "en" })), null);
+});
 
 test("proxy serves immutable GET and HEAD assets with zero directory or revision reads", async t => {
   let calls = 0;
