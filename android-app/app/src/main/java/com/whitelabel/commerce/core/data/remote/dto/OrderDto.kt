@@ -33,6 +33,15 @@ data class OrderItemDto(
 }
 
 @Serializable
+internal data class OrderCardPaymentDto(
+    val id: String,
+    val status: String,
+    @SerialName("payment_method") val method: String?,
+    @SerialName("payment_status") val paymentStatus: String,
+    @SerialName("payment_review") val paymentReview: String? = null,
+)
+
+@Serializable
 data class OrderDto(
     val lat: Double? = null,
     val lng: Double? = null,
@@ -54,6 +63,9 @@ data class OrderDto(
     @SerialName("guest_tracking") val guestTracking: Boolean = false,
     @SerialName("created_at") val createdAt: String? = null,
     @SerialName("order_items") val orderItems: List<OrderItemDto?>? = null,
+    @SerialName("reservation_expires_at") val reservationExpiresAt: String? = null,
+    @SerialName("payment_review") val paymentReview: String? = null,
+    @SerialName("discount_amount") val discountAmount: Double = 0.0,
 ) {
     fun toDomainOrNull(): Order? = id?.trim()?.takeIf { it.isNotEmpty() }?.let { orderId ->
         Order(
@@ -74,6 +86,9 @@ data class OrderDto(
             guestTracking = guestTracking,
             createdAt = createdAt.orEmpty(),
             items = orderItems.orEmpty().filterNotNull().map { it.toDomain() },
+            reservationExpiresAt = reservationExpiresAt,
+            paymentReview = paymentReview,
+            discountAmount = discountAmount,
         )
     }
 }
@@ -107,6 +122,8 @@ data class CheckoutRpcParamsDto(
     @SerialName("customer_phone") val customerPhone: String,
     @SerialName("payment") val payment: String,
     @SerialName("lines") val lines: List<CheckoutLineDto>,
+    @SerialName("p_expected_total") val expectedTotal: Double,
+    @SerialName("p_checkout_base") val checkoutBase: String?,
 )
 
 @Serializable
@@ -114,11 +131,23 @@ data class CheckoutResultDto(
     @SerialName("order_number") val orderNumber: String,
     @SerialName("amount") val amount: Double,
     @SerialName("order_currency") val orderCurrency: String,
+    val method: String,
+    @SerialName("pay_status") val paymentStatus: String,
+    @SerialName("fulfillment") val fulfillment: String,
+    @SerialName("expires_at") val expiresAt: String? = null,
+    val created: Boolean,
+    val guest: Boolean,
 ) {
     fun toDomain(): CheckoutResult = CheckoutResult(
         orderNumber = orderNumber,
         amount = amount,
         currency = orderCurrency,
+        method = method,
+        paymentStatus = paymentStatus,
+        fulfillmentStatus = OrderStatus.fromRaw(fulfillment),
+        reservationExpiresAt = expiresAt,
+        created = created,
+        guest = guest,
     )
 }
 

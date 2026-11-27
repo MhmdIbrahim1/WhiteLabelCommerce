@@ -8,12 +8,14 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -25,10 +27,9 @@ import androidx.compose.material.icons.automirrored.rounded.Chat
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Email
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -36,9 +37,9 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -50,6 +51,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import com.whitelabel.commerce.core.designsystem.components.SearchAction
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -62,6 +64,8 @@ import com.whitelabel.commerce.core.data.remote.PhoneNormalizer
 import com.whitelabel.commerce.core.designsystem.LocalBrandColors
 import com.whitelabel.commerce.core.designsystem.components.TicketStatusBadge
 import com.whitelabel.commerce.core.domain.model.SupportTicket
+import com.whitelabel.commerce.core.domain.model.SupportTicketMessage
+import com.whitelabel.commerce.core.domain.model.TicketStatus
 
 private val WhatsAppGreen = Color(0xFF16A34A)
 
@@ -394,7 +398,7 @@ private fun SupportTicketCard(ticket: SupportTicket, locale: String, onClick: ()
                 TicketStatusBadge(status = ticket.status)
             }
 
-            TicketMetadata(content.orderNumber, formatTicketDate(ticket.createdAt, locale))
+            TicketMetadata(content.orderNumber, formatTicketDate(ticket.lastMessageAt.ifBlank { ticket.createdAt }, locale))
             Text(
                 text = content.body,
                 style = MaterialTheme.typography.bodySmall,
@@ -411,7 +415,7 @@ private fun SupportTicketCard(ticket: SupportTicket, locale: String, onClick: ()
 @Composable
 private fun TicketMetadata(number: String?, date: String?) {
     number?.let { Text(localized("الطلب $it", "Order $it"), style = MaterialTheme.typography.labelMedium) }
-    date?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+    date?.let { Text(it, style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"), color = MaterialTheme.colorScheme.onSurfaceVariant) }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -419,7 +423,11 @@ private fun TicketMetadata(number: String?, date: String?) {
 internal fun TicketDetailsScreen(ticketId: String, onBack: () -> Unit, onSearch: () -> Unit, viewModel: SupportViewModel) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val ticket = state.allTickets.firstOrNull { it.id == ticketId }
+    val thread = state.form.thread.takeIf { it.ticketId == ticketId } ?: TicketThreadState()
     LaunchedEffect(ticketId) { viewModel.refreshTickets() }
+    LaunchedEffect(ticketId, ticket?.customerId, ticket?.lastMessageAt, state.currentUserId) {
+        viewModel.loadTicketThread(ticketId)
+    }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -433,31 +441,104 @@ internal fun TicketDetailsScreen(ticketId: String, onBack: () -> Unit, onSearch:
             )
         },
     ) { padding ->
-        Column(
-            Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+        LazyColumn(
+            modifier = Modifier.padding(padding).fillMaxSize().imePadding(),
+            contentPadding = PaddingValues(20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             if (ticket != null) {
-                val content = ticket.presentation()
-                Text(content.subject, style = MaterialTheme.typography.headlineSmall)
-                TicketStatusBadge(status = ticket.status)
-                TicketMetadata(content.orderNumber, formatTicketDate(ticket.createdAt, state.storeSettings.locale))
-                HorizontalDivider()
-                Text(localized("رسالتك", "Your message"), style = MaterialTheme.typography.titleMedium)
-                Text(content.body)
-                if (ticket.adminReply.isNotBlank()) {
-                    HorizontalDivider()
-                    Text(localized("رد فريق الدعم", "Support reply"), style = MaterialTheme.typography.titleMedium)
-                    Text(ticket.adminReply)
+                item {
+                    val content = ticket.presentation()
+                    Text(content.subject, style = MaterialTheme.typography.headlineSmall)
+                    TicketStatusBadge(status = ticket.status)
+                    TicketMetadata(content.orderNumber, formatTicketDate(ticket.createdAt, state.storeSettings.locale))
+                }
+                if (thread.loading && thread.messages.isEmpty()) {
+                    item { CircularProgressIndicator(modifier = Modifier.size(24.dp)) }
+                } else {
+                    items(ticket.conversation(thread.messages), key = { it.id }) { message ->
+                        TicketMessageBubble(message, state.storeSettings.locale)
+                    }
+                }
+                if (thread.loadFailed) {
+                    item {
+                        BannerFeedback(localized("تعذر تحميل المحادثة كاملة.", "The full conversation could not be loaded."))
+                        OutlinedButton(onClick = { viewModel.loadTicketThread(ticketId) }) { Text(localized("إعادة المحاولة", "Retry")) }
+                    }
+                }
+                thread.replyError?.let { error -> item { BannerFeedback(error) } }
+                if (ticket.status == TicketStatus.CLOSED) {
+                    item {
+                        Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.surfaceContainer) {
+                            Text(
+                                localized("تم إغلاق التذكرة — سجل المحادثة متاح للقراءة فقط", "This ticket is closed — conversation history is read-only"),
+                                modifier = Modifier.padding(12.dp),
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                        }
+                    }
+                } else if (ticket.canReply(state.currentUserId) && thread.ticketId == ticketId) {
+                    item {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(
+                                value = thread.draft,
+                                onValueChange = viewModel::onReplyChange,
+                                label = { Text(localized("ردك", "Your reply")) },
+                                enabled = !thread.sending,
+                                minLines = 2,
+                                maxLines = 6,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            Button(onClick = { viewModel.sendTicketReply(ticketId) }, enabled = thread.draft.isNotBlank() && !thread.sending) {
+                                if (thread.sending) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.padding(end = 8.dp).size(18.dp),
+                                        color = LocalContentColor.current,
+                                        strokeWidth = 2.dp,
+                                    )
+                                }
+                                Text(localized("إرسال الرد", "Send reply"))
+                            }
+                        }
+                    }
                 }
             } else if (state.form.isLoadingTickets) {
-                CircularProgressIndicator()
+                item { CircularProgressIndicator() }
             } else {
-                Text(localized("تعذر عرض هذه التذكرة.", "This ticket could not be opened."))
+                item { Text(localized("تعذر عرض هذه التذكرة.", "This ticket could not be opened.")) }
             }
             if (state.form.ticketLoadFailed) {
-                Text(localized("تعذر تحديث التذاكر.", "Tickets could not be refreshed."))
-                OutlinedButton(onClick = viewModel::refreshTickets) { Text(localized("إعادة المحاولة", "Retry")) }
+                item {
+                    Text(localized("تعذر تحديث التذاكر.", "Tickets could not be refreshed."))
+                    OutlinedButton(onClick = viewModel::refreshTickets) { Text(localized("إعادة المحاولة", "Retry")) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TicketMessageBubble(message: SupportTicketMessage, locale: String) {
+    val customer = message.senderRole == "customer"
+    val role = when (message.senderRole) {
+        "customer" -> localized("أنت", "You")
+        "merchant" -> localized("دعم المتجر", "Store support")
+        else -> localized("النظام", "System")
+    }
+    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = if (customer) Alignment.CenterEnd else Alignment.CenterStart) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(0.9f),
+            shape = MaterialTheme.shapes.medium,
+            color = if (customer) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+            contentColor = if (customer) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+            border = if (customer) null else BorderStroke(1.dp, LocalBrandColors.current.hairline),
+        ) {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(role, style = MaterialTheme.typography.labelLarge)
+                Text(message.body, style = MaterialTheme.typography.bodyMedium.copy(textDirection = TextDirection.Content))
+                remember(message.createdAt, locale) { formatTicketDate(message.createdAt, locale) }?.let {
+                    Text(it, style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"))
+                }
             }
         }
     }

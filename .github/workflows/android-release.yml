@@ -173,6 +173,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           STORE_ID: ${{ vars.STORE_ID }}
+          STORE_SLUG: ${{ vars.STORE_SLUG || ((!vars.STORE_ID || vars.STORE_ID == '00000000-0000-0000-0000-000000000001') && 'nova-store') || '' }}
           EMAIL_PASSWORD_RESET_ENABLED: ${{ vars.EMAIL_PASSWORD_RESET_ENABLED || 'false' }}
           WEB_STORE_BASE_URL: ${{ secrets.WEB_STORE_BASE_URL || vars.WEB_STORE_BASE_URL }}
         run: |

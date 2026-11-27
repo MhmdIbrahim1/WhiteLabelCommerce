@@ -278,6 +278,7 @@ jobs:
           EMAIL_PASSWORD_RESET_ENABLED: ${{ vars.EMAIL_PASSWORD_RESET_ENABLED || 'false' }}
           WEB_STORE_BASE_URL: ${{ secrets.WEB_STORE_BASE_URL || vars.WEB_STORE_BASE_URL }}
           STORE_ID_INPUT: ${{ env.SAFE_STORE_ID }}
+          STORE_SLUG_INPUT: ${{ env.SAFE_STORE_SLUG }}
           APP_NAME_INPUT: ${{ env.SAFE_APP_NAME }}
           APP_SUFFIX_INPUT: ${{ env.SAFE_APP_ID_SUFFIX }}
           VERSION_CODE_INPUT: ${{ env.SAFE_VERSION_CODE }}
@@ -286,6 +287,7 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleGithubRelease \
             -PstoreId="$STORE_ID_INPUT" \
+            -PstoreSlug="$STORE_SLUG_INPUT" \
             -PstoreName="$APP_NAME_INPUT" \
             -PappIdSuffix="$APP_SUFFIX_INPUT" \
             -PVERSION_CODE="$VERSION_CODE_INPUT" \

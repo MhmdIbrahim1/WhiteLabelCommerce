@@ -7,10 +7,12 @@ import { loadSource } from "./helpers/load-source.mjs";
 
 const store="00000000-0000-0000-0000-000000000001", id=crypto.randomUUID(), attempt=crypto.randomUUID(), lease=crypto.randomUUID();
 const json=(data,error=null)=>({data,error});
-function initiation({bound=json(true),reserved,proof=true,walletResult={state:"prompt"},onWallet,method="wallet"}={}) {
+function initiation({bound=json(true),reserved,proof=true,walletResult={state:"prompt"},onWallet,method="wallet",
+  owner=null, cookieUser=null, tokens=new Map()}={}) {
   const calls=[];
+  const authChecks=[];
   const rows={
-    orders:{id,store_id:store,status:"pending",total:20,currency:"EGP",guest_tracking:true,payment_method:"paymob_wallet",payment_status:"pending",phone:"01012345678"},
+    orders:{id,store_id:store,user_id:owner,status:"pending",total:20,currency:"EGP",guest_tracking:!owner,payment_method:method==="wallet"?"paymob_wallet":"paymob_card",payment_status:"pending",phone:"01012345678"},
     store_settings:{paymob_enabled:true,paymob_card_enabled:true,paymob_wallet_enabled:true},
     store_payment_secrets:{paymob_api_key:"fixture",paymob_hmac_secret:"fixture-secret",paymob_card_integration_id:"1",paymob_wallet_integration_id:"2",paymob_iframe_id:"3"},
   };
@@ -20,7 +22,10 @@ function initiation({bound=json(true),reserved,proof=true,walletResult={state:"p
       if(name==="bind_paymob_attempt")return bound;return json(true);}
   };
   const {POST}=loadSource("app/api/payments/paymob/initiate/route.ts",{
-    "@/lib/db":{serverDb:()=>({auth:{getUser:async()=>({data:{user:null}})}})},"@/lib/supabase/admin":{adminDb:()=>db},
+    "@/lib/db":{serverDb:()=>({auth:{async getUser(token){
+      authChecks.push(token);
+      return {data:{user:token === undefined ? cookieUser : tokens.get(token) ?? null}};
+    }}})},"@/lib/supabase/admin":{adminDb:()=>db},
     "@/lib/tenant":{resolveActiveStoreOrDefault:()=>({id:store,basePath:"/s/nova-store"})},"@/lib/tenant-shared":tenant,
     "@/lib/order-receipt":{guestOwnsReceipt:async()=>proof},
     "@/lib/paymob":{...paymob,authenticatePaymob:async()=>{calls.push(["auth"]);return "t";},
@@ -28,12 +33,50 @@ function initiation({bound=json(true),reserved,proof=true,walletResult={state:"p
       requestPaymobPaymentKey:async p=>{calls.push(["key",p]);return "k";},
       payPaymobWallet:async()=>{calls.push(["wallet"]);if(onWallet)return onWallet();return walletResult;}},
   });
-  const send=(overrides={})=>POST(new Request("https://shopstage.live/s/nova-store/api/payments/paymob/initiate",{
-    method:"POST",headers:{[tenant.REQUEST_ORIGIN_HEADER]:"https://shopstage.live"},
+  const send=(overrides={},headers={})=>POST(new Request("https://shopstage.live/s/nova-store/api/payments/paymob/initiate",{
+    method:"POST",headers:{[tenant.REQUEST_ORIGIN_HEADER]:"https://shopstage.live",...headers},
     body:JSON.stringify({order_id:id,method,wallet_phone:"01112345678",...overrides}),
   }));
-  return {calls,send};
+  return {calls,send,authChecks};
 }
+
+test("Android bearer sessions can initiate only the signed-in owner's order", async () => {
+  const tokens = new Map([["owner-token", {id:"owner"}], ["shopper-token", {id:"shopper"}]]);
+  for (const [token, status] of [["owner-token", 200], ["shopper-token", 403], ["invalid-token", 403]]) {
+    const h = initiation({method:"card", owner:"owner", tokens});
+    const res = await h.send({customer_phone:"01012345678"}, {Authorization:`Bearer ${token}`});
+    assert.equal(res.status, status);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    assert.deepEqual(h.authChecks, [undefined, token]);
+    if (status === 200) assert.match((await res.json()).redirect_url, /^https:\/\/accept\.paymob\.com\//);
+    else assert.deepEqual(h.calls, []);
+  }
+});
+
+test("a verified cookie session takes precedence over a supplied bearer token", async () => {
+  const h = initiation({method:"card", owner:"owner", cookieUser:{id:"other"}, tokens:new Map([["valid", {id:"owner"}]])});
+  assert.equal((await h.send({}, {Authorization:"Bearer valid"})).status, 403);
+  assert.deepEqual(h.authChecks, [undefined]);
+  assert.deepEqual(h.calls, []);
+});
+
+test("guest card initiation without a receipt requires the order's customer phone", async () => {
+  for (const [phone, status] of [["+201012345678", 200], [undefined, 403], ["01212345678", 403]]) {
+    const h = initiation({method:"card", proof:false});
+    const res = await h.send({customer_phone:phone});
+    assert.equal(res.status, status);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    if (status === 403) assert.deepEqual(h.calls, []);
+  }
+});
+
+test("an ineligible reservation exposes the stable mobile error code before contacting Paymob", async () => {
+  const h = initiation({reserved:json(null,{code:"P0001",message:"order_ineligible"})});
+  const res = await h.send();
+  assert.equal(res.status, 409);
+  assert.equal((await res.json()).code, "order_ineligible");
+  assert.deepEqual(h.calls.map(([name]) => name), ["reserve_paymob_attempt"]);
+});
 
 test("wallet phone and guest ownership are checked before the first gateway request",async()=>{
   const h=initiation({proof:false});

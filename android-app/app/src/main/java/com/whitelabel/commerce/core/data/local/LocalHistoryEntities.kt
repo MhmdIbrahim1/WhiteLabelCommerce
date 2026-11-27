@@ -60,10 +60,14 @@ data class SavedOrderReceiptEntity(
     val status: String = OrderStatus.PENDING.rawValue,
     val createdAt: String,
     val items: List<SavedOrderLineEntity> = emptyList(),
+    val reservationExpiresAt: String? = null,
+    val paymentReview: String? = null,
 ) {
     fun toDomain(): SavedOrderReceipt = SavedOrderReceipt(
         orderNumber = orderNumber,
-            method = method, paymentStatus = paymentStatus, trackingNumber = trackingNumber, carrier = carrier,
+        method = method, paymentStatus = paymentStatus, trackingNumber = trackingNumber, carrier = carrier,
+        reservationExpiresAt = reservationExpiresAt,
+        paymentReview = paymentReview,
         customerName = customerName,
         phone = phone,
         shippingAddress = shippingAddress,
@@ -79,6 +83,8 @@ data class SavedOrderReceiptEntity(
     companion object {
         fun fromDomain(receipt: SavedOrderReceipt): SavedOrderReceiptEntity = SavedOrderReceiptEntity(
             orderNumber = receipt.orderNumber,
+            reservationExpiresAt = receipt.reservationExpiresAt,
+            paymentReview = receipt.paymentReview,
             method = receipt.method, paymentStatus = receipt.paymentStatus, trackingNumber = receipt.trackingNumber, carrier = receipt.carrier,
             customerName = receipt.customerName,
             phone = receipt.phone,

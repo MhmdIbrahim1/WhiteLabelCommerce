@@ -26,4 +26,14 @@ data class SupportTicket(
     val adminReply: String = "",
     val orderId: String? = null,
     val createdAt: String,
+    val priority: String = "normal",
+    val lastMessageAt: String = "",
+)
+
+data class SupportTicketMessage(
+    val id: String,
+    val ticketId: String,
+    val senderRole: String,
+    val body: String,
+    val createdAt: String,
 )

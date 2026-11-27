@@ -232,6 +232,9 @@ fun OrderDetailScreen(
 
                                 PaymentAndShippingSummary(
                                     paymentStatus = order.paymentStatus,
+                                    fulfillmentStatus = order.status,
+                                    reservationExpiresAt = order.reservationExpiresAt,
+                                    paymentReview = order.paymentReview,
                                     method = order.paymentMethod?.rawValue ?: "cod",
                                     carrier = order.carrier,
                                     trackingNumber = order.trackingNumber,
@@ -402,6 +405,12 @@ fun OrderDetailScreen(
                                         formatPrice(order.shippingFee, order.currency, locale)
                                     },
                                 )
+                                if (order.discountAmount > 0.0) {
+                                    SummaryAmountRow(
+                                        label = localized("خصم الكوبون", "Promo discount"),
+                                        value = "-${formatPrice(order.discountAmount, order.currency, locale)}",
+                                    )
+                                }
                                 if (order.walletDiscount > 0.0) {
                                     SummaryAmountRow(
                                         label = localized("خصم المحفظة", "Wallet Credit Used"),

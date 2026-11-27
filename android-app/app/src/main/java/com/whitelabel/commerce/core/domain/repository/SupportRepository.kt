@@ -1,6 +1,7 @@
 package com.whitelabel.commerce.core.domain.repository
 
 import com.whitelabel.commerce.core.domain.model.SupportTicket
+import com.whitelabel.commerce.core.domain.model.SupportTicketMessage
 import kotlinx.coroutines.flow.Flow
 
 interface SupportRepository {
@@ -28,4 +29,8 @@ interface SupportRepository {
      * Returns an empty list for anonymous guests.
      */
     suspend fun getMyTickets(): Result<List<SupportTicket>>
+
+    suspend fun getTicketMessages(ticketId: String): Result<List<SupportTicketMessage>>
+
+    suspend fun sendTicketReply(ticketId: String, body: String): Result<SupportTicketMessage>
 }

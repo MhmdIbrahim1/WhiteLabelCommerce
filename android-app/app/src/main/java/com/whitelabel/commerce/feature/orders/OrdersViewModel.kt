@@ -15,6 +15,7 @@ import com.whitelabel.commerce.core.domain.model.ReturnRequestType
 import com.whitelabel.commerce.core.domain.model.ReturnSubmissionItem
 import com.whitelabel.commerce.core.domain.model.SavedOrderReceipt
 import com.whitelabel.commerce.core.domain.model.StoreSettings
+import com.whitelabel.commerce.core.domain.model.trackingSummary
 import com.whitelabel.commerce.core.domain.repository.AuthRepository
 import com.whitelabel.commerce.core.domain.repository.OrderRepository
 import com.whitelabel.commerce.core.domain.repository.StoreRepository
@@ -58,6 +59,7 @@ data class OrderTrackingFormState(
 sealed interface SwitchToCodOutcome {
     data object Success : SwitchToCodOutcome
     data object RequiresSignIn : SwitchToCodOutcome
+    data object Ineligible : SwitchToCodOutcome
     data object Failure : SwitchToCodOutcome
 }
 
@@ -167,7 +169,7 @@ class OrdersViewModel @Inject constructor(
 
         viewModelScope.launch {
             trackingState.update { it.copy(isTracking = true, trackingError = null) }
-            orderRepository.trackGuestOrder(orderNumber = orderId, customerPhone = phone)
+            trackCustomerOrder(orderNumber = orderId, customerPhone = phone)
                 .onSuccess { result ->
                     trackingState.update {
                         it.copy(
@@ -195,7 +197,7 @@ class OrdersViewModel @Inject constructor(
     fun refreshLocalReceiptStatus(receipt: SavedOrderReceipt) {
         viewModelScope.launch {
             trackingState.update { it.copy(refreshingOrderNumber = receipt.orderNumber) }
-            orderRepository.trackGuestOrder(
+            trackCustomerOrder(
                 orderNumber = receipt.orderNumber,
                 customerPhone = receipt.phone,
             ).onSuccess { result ->
@@ -234,7 +236,28 @@ class OrdersViewModel @Inject constructor(
     suspend fun refreshPayments(receipts: List<SavedOrderReceipt>) {
         // Reconcile only pending device receipts. A background payment refresh must
         // never replace the user's active filter, cursor or already-loaded pages.
-        for (receipt in receipts) orderRepository.trackGuestOrder(receipt.orderNumber, receipt.phone)
+        for (receipt in receipts) {
+            val tracked = trackCustomerOrder(receipt.orderNumber, receipt.phone).getOrNull() ?: continue
+            trackingState.update { state ->
+                state.copy(
+                    trackedResult = if (state.trackedResult?.id == tracked.id) tracked else state.trackedResult,
+                    accountOrders = state.accountOrders.map { row ->
+                        if (row.id != tracked.id) row else row.copy(
+                            status = tracked.status.rawValue, paymentStatus = tracked.paymentStatus,
+                            paymentMethod = tracked.method, paymentReview = tracked.paymentReview,
+                        )
+                    },
+                )
+            }
+        }
+    }
+
+    private suspend fun trackCustomerOrder(orderNumber: String, customerPhone: String): Result<GuestOrderTracking?> {
+        if (authRepository.sessionState.value is AuthSessionState.SignedIn) {
+            val ownedOrder = orderRepository.getOrderDetail(orderNumber).getOrNull()
+            if (ownedOrder != null) return Result.success(ownedOrder.trackingSummary())
+        }
+        return orderRepository.trackGuestOrder(orderNumber, customerPhone)
     }
 
     fun chooseFilter(filter: HistoryFilter) {
@@ -391,10 +414,6 @@ class OrdersViewModel @Inject constructor(
         phone: String,
         onComplete: (SwitchToCodOutcome) -> Unit,
     ) {
-        if (authRepository.sessionState.value !is AuthSessionState.SignedIn) {
-            onComplete(SwitchToCodOutcome.RequiresSignIn)
-            return
-        }
         viewModelScope.launch {
             val result = orderRepository.switchOrderToCod(orderNumber, phone)
             if (result.isSuccess) {
@@ -405,11 +424,11 @@ class OrdersViewModel @Inject constructor(
                 onComplete(SwitchToCodOutcome.Success)
             } else {
                 val raw = result.exceptionOrNull()?.message.orEmpty().lowercase()
-                if ("not_authorized" in raw || "unauthorized" in raw) {
-                    onComplete(SwitchToCodOutcome.RequiresSignIn)
-                } else {
-                    onComplete(SwitchToCodOutcome.Failure)
-                }
+                onComplete(when {
+                    "order_ineligible" in raw || "order_closed" in raw -> SwitchToCodOutcome.Ineligible
+                    "not_authorized" in raw || "unauthorized" in raw -> SwitchToCodOutcome.RequiresSignIn
+                    else -> SwitchToCodOutcome.Failure
+                })
             }
         }
     }
