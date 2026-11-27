@@ -5,19 +5,21 @@ import {
   useCallback,
   useContext,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { showToast } from "@/components/floating-toast";
 import { usePathname } from "next/navigation";
 import { useLanguage } from "@/components/language-provider";
 import { toggleWishlistAction } from "@/app/(shop)/wishlist/actions";
+import { persistWishlistChange, type WishlistToggleResult } from "@/lib/reviews-wishlist";
 
 type WishlistContextValue = {
   isSignedIn: boolean;
   count: number;
   isWishlisted: (productId: string) => boolean;
   isPending: (productId: string) => boolean;
-  toggle: (productId: string) => Promise<boolean>;
+  toggle: (productId: string, operation?: "toggle" | "remove") => Promise<WishlistToggleResult>;
 };
 
 const WishlistContext = createContext<WishlistContextValue>({
@@ -25,7 +27,7 @@ const WishlistContext = createContext<WishlistContextValue>({
   count: 0,
   isWishlisted: () => false,
   isPending: () => false,
-  toggle: async () => false,
+  toggle: async () => ({ ok: false, error: "auth_required" }),
 });
 
 export function WishlistProvider({
@@ -44,6 +46,7 @@ export function WishlistProvider({
   const pathname = usePathname();
   const [ids, setIds] = useState<Set<string>>(() => new Set(initialProductIds));
   const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
+  const inFlight = useRef(new Set<string>());
   const syncKey = `${storeId}:${isSignedIn ? "1" : "0"}:${initialProductIds.join(",")}`;
   const [prevSyncKey, setPrevSyncKey] = useState(syncKey);
   if (prevSyncKey !== syncKey) {
@@ -57,69 +60,33 @@ export function WishlistProvider({
   }, [isEn, pathname]);
 
   const toggle = useCallback(
-    async (productId: string): Promise<boolean> => {
+    async (productId: string, operation: "toggle" | "remove" = "toggle"): Promise<WishlistToggleResult> => {
       if (!isSignedIn) {
         showGuestToast();
-        return false;
+        return { ok: false, requiresAuth: true, error: "auth_required" };
       }
-      if (pendingIds.has(productId)) {
-        return ids.has(productId);
-      }
+      if (inFlight.current.has(productId)) return { ok: false, error: "pending" };
 
       const wasSaved = ids.has(productId);
-      // Optimistic update
-      setIds((prev) => {
-        const next = new Set(prev);
-        if (wasSaved) next.delete(productId);
-        else next.add(productId);
-        return next;
-      });
-      setPendingIds((prev) => {
-        const next = new Set(prev);
-        next.add(productId);
-        return next;
-      });
-
+      inFlight.current.add(productId);
+      setPendingIds(new Set(inFlight.current));
       try {
-        const res = await toggleWishlistAction(productId);
-        if (!res.ok) {
-          // Revert optimistic change
-          setIds((prev) => {
-            const next = new Set(prev);
-            if (wasSaved) next.add(productId);
-            else next.delete(productId);
-            return next;
-          });
-          if (res.requiresAuth) {
-            showGuestToast();
-          }
-          return wasSaved;
-        }
-        const serverSaved = Boolean(res.in_wishlist);
-        setIds((prev) => {
+        const display = (saved: boolean) => setIds(prev => {
           const next = new Set(prev);
-          if (serverSaved) next.add(productId);
+          if (saved) next.add(productId);
           else next.delete(productId);
           return next;
         });
-        return serverSaved;
-      } catch {
-        setIds((prev) => {
-          const next = new Set(prev);
-          if (wasSaved) next.add(productId);
-          else next.delete(productId);
-          return next;
-        });
-        return wasSaved;
+        const result = await persistWishlistChange(wasSaved, operation === "remove" ? false : !wasSaved,
+          display, () => toggleWishlistAction(productId, operation));
+        if (!result.ok && result.requiresAuth) showGuestToast();
+        return result;
       } finally {
-        setPendingIds((prev) => {
-          const next = new Set(prev);
-          next.delete(productId);
-          return next;
-        });
+        inFlight.current.delete(productId);
+        setPendingIds(new Set(inFlight.current));
       }
     },
-    [ids, isSignedIn, pendingIds, showGuestToast],
+    [ids, isSignedIn, showGuestToast],
   );
 
   const value = useMemo<WishlistContextValue>(

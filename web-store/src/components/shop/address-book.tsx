@@ -30,6 +30,7 @@ export function AddressBook({ storeId, initial, profile, checkout = false, signe
   const [draft, setDraft] = useState<DeliveryAddress>(checkout && first ? first : blank);
   const [editor, setEditor] = useState(checkout && !first);
   const [editing, setEditing] = useState<string>();
+  const defaultLocked = rows.some(row => row.id === editing && row.is_default);
   const [working, setWorking] = useState(false);
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   function setNotice(message: string, kind: "error" | "info" | "success" = "info") {
@@ -183,7 +184,11 @@ export function AddressBook({ storeId, initial, profile, checkout = false, signe
       {field("street", en ? "Street" : "الشارع",240,true)}
       <div className="address-details">{field("building",en ? "Building" : "العمارة",40)}{field("floor",en ? "Floor" : "الدور",20)}{field("apartment",en ? "Apartment" : "الشقة",20)}</div>
       {field("landmark",en ? "Nearby landmark" : "أقرب معلم",100)}
-      {signedIn && <><label className="address-check"><input type="checkbox" checked={draft.is_default} onChange={e=>update("is_default",e.target.checked)}/>{en ? "Use as default" : "استخدام كافتراضي"}</label>
+      {signedIn && <><label className="address-check"><input type="checkbox" checked={defaultLocked || draft.is_default}
+        disabled={defaultLocked} aria-describedby={defaultLocked ? "address-default-help" : undefined}
+        onChange={e=>update("is_default",e.target.checked)}/>{en ? "Use as default" : "استخدام كافتراضي"}</label>
+        {defaultLocked && <small id="address-default-help">{en ? "Choose “Set default” on another address to switch."
+          : "لتغيير العنوان الافتراضي، اختر «تعيين كافتراضي» على عنوان آخر."}</small>}
         <button type="button" onClick={() => mutate(editing ? "edit" : "add",editing || (draftId.current ||= crypto.randomUUID()))}>{en ? "Save address" : "حفظ العنوان"}</button></>}
       {!checkout && <button type="button" onClick={()=>setEditor(false)}>{en ? "Cancel" : "إلغاء"}</button>}
     </fieldset>}

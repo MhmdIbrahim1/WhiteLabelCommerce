@@ -43,17 +43,18 @@ export function WishlistGrid({
   const { lang } = useLanguage();
   const isEn = lang === "en";
   const ArrowIcon = isEn ? ArrowRight : ArrowLeft;
-  const { toggle } = useWishlist();
+  const { toggle, isPending } = useWishlist();
 
   const [items, setItems] = useState<WishlistCardProduct[]>(initialProducts);
-  const [removingIds, setRemovingIds] = useState<Set<string>>(() => new Set());
+  const [failedIds, setFailedIds] = useState<Set<string>>(() => new Set());
 
   async function handleRemove(productId: string) {
-    setRemovingIds((prev) => new Set(prev).add(productId));
-    setTimeout(() => {
+    const result = await toggle(productId, "remove");
+    if (result.ok && !result.in_wishlist) {
       setItems((prev) => prev.filter((p) => p.id !== productId));
-    }, 180);
-    await toggle(productId);
+    } else if (result.ok || result.error !== "pending") {
+      setFailedIds(prev => new Set(prev).add(productId));
+    }
   }
 
   if (items.length === 0) {
@@ -84,14 +85,15 @@ export function WishlistGrid({
       {items.map((p, idx) => {
         const title = localizedText(lang, p.name, p.name_en);
         const detailHref = storeHref(basePath, "/products/" + p.id);
-        const isRemoving = removingIds.has(p.id);
+        const isRemoving = isPending(p.id);
         const reviewCount = Number(p.review_count ?? 0);
         const avgRating = Number(p.avg_rating ?? 0);
 
         return (
           <article
             key={p.id}
-            className={`tile shop-animate ${isRemoving ? "wishlist-card-removing" : ""}`}
+            className="tile shop-animate"
+            aria-busy={isRemoving}
             style={{ animationDelay: `${Math.min(idx, 7) * 40}ms` }}
           >
             <div className="tile-media">
@@ -114,6 +116,7 @@ export function WishlistGrid({
               <button
                 type="button"
                 className="wishlist-heart-btn is-saved"
+                disabled={isRemoving}
                 aria-label={isEn ? "Remove from wishlist" : "إزالة من المفضلة"}
                 onClick={() => void handleRemove(p.id)}
               >
@@ -147,6 +150,12 @@ export function WishlistGrid({
               <div className="wishlist-card-cta">
                 <Buy p={p} basePath={basePath} />
               </div>
+              {failedIds.has(p.id) && <div>
+                <p role="alert">{isEn ? "Couldn’t remove this item from your wishlist." : "تعذرت إزالة هذا المنتج من المفضلة."}</p>
+                <button type="button" disabled={isRemoving} onClick={() => void handleRemove(p.id)}>
+                  {isEn ? "Retry removal" : "إعادة محاولة الإزالة"}
+                </button>
+              </div>}
             </div>
           </article>
         );

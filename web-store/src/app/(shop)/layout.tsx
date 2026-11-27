@@ -163,8 +163,8 @@ export default async function Layout({
         <div data-storefront-overlays="" />
   </>;
   const platform = previewLang ? await getPublishedTheme() : null;
-  return <CartTenantProvider storeId={s.storeId} defaultMaxOrderQty={s.defaultMaxOrderQty}>
-    <WishlistProvider storeId={s.storeId} initialProductIds={initialWishlistIds} isSignedIn={Boolean(authUser)}>
+  return <CartTenantProvider key={s.storeId} storeId={s.storeId} slug={s.slug} defaultMaxOrderQty={s.defaultMaxOrderQty}>
+    <WishlistProvider key={authUser?.id ?? "guest"} storeId={s.storeId} initialProductIds={initialWishlistIds} isSignedIn={Boolean(authUser)}>
       {platform && previewLang ? <StudioPreview slug={s.slug} lang={previewLang} card={brand.presets.productCard}
         base={s.previewBase}
         gates={{ motion_enabled: platform.motion_enabled, sticky_cta_enabled: platform.sticky_cta_enabled }}>{content}</StudioPreview> :

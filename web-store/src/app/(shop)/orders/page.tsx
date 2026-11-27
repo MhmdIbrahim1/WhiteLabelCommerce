@@ -22,7 +22,7 @@ export default async function Orders({ searchParams }: PageProps<"/orders">) {
   const last = page.at(-1);
   const next = rows.length > pageSize && last ? "/orders?"+new URLSearchParams({filter,before:last.created_at,id:last.id}) : null;
   return <section className="orders-hub"><h1>{t(lang,"myOrdersTitle")}</h1>
-    <OrdersPaymentSync paymentCallback={typeof params.payment === "string" ? params.payment : ""}
+    <OrdersPaymentSync guest={!user} paymentCallback={typeof params.payment === "string" ? params.payment : ""}
       callbackOrder={typeof params.order === "string" ? params.order : ""} placedCod={params.placed === "cod"}
       placedWallet={params.placed === "wallet"} paidOrderIds={page.filter(o=>o.payment_status==="paid").map(o=>o.id)} />
     {user ? <OrderCards rows={page} filter={filter} basePath={s.basePath} next={next} /> : <section className="panel">

@@ -561,14 +561,14 @@ export function Timeline({
 }
 
 export function GuestTracking() {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const [state, action, busy] = useActionState(track, {});
   return (
     <section className="panel order-panel">
       <h2>{t("guestTrackTitle")}</h2>
       <form action={action}>
         <label>
-          {t("orderNumberLabel")}
+          {lang === "en" ? "Tracking reference" : "رقم تتبع الطلب"}
           <input
             name="number"
             dir="ltr"

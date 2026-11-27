@@ -4,7 +4,6 @@ import type { Product } from "@/lib/shop";
 import type { StorefrontPreset } from "@/lib/storefront-presets";
 import type { Lang } from "@/lib/i18n";
 import { storeHref } from "@/lib/tenant-shared";
-import { filterActiveFlashDeals } from "@/lib/flash-sale";
 import { Grid } from "./cards";
 
 export function FlashDealsSection({
@@ -20,9 +19,7 @@ export function FlashDealsSection({
   basePath?: string;
   preset: StorefrontPreset;
 }) {
-  const activeDeals = filterActiveFlashDeals(products).slice(0, 8);
-
-  if (activeDeals.length === 0) {
+  if (products.length === 0) {
     return null;
   }
 
@@ -52,7 +49,7 @@ export function FlashDealsSection({
       </div>
       <Grid
         preset={preset}
-        rows={activeDeals}
+        rows={products}
         currency={currency}
         lang={lang}
         basePath={basePath}

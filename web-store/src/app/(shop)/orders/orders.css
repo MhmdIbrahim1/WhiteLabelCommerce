@@ -23,3 +23,16 @@
   .invoice-heading { display:block; margin-bottom:1.2rem; }
   .order-detail-summary-panel { border:0; box-shadow:none; }
 }
+.receipt-tracking-reference {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .5rem;
+  min-inline-size: 0;
+}
+.receipt-tracking-reference bdi {
+  overflow-wrap: anywhere;
+  user-select: all;
+  unicode-bidi: isolate;
+  font-variant-numeric: tabular-nums;
+}

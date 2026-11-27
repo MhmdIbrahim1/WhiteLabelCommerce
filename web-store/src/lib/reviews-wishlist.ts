@@ -39,13 +39,24 @@ export type ReviewEligibility = {
   existing_review: ProductReview | null;
 };
 
-export type WishlistToggleResult = {
-  ok: boolean;
-  requiresAuth?: boolean;
-  in_wishlist?: boolean;
-  wishlist_count?: number;
-  error?: string;
-};
+export type WishlistToggleResult =
+  | { ok: true; in_wishlist: boolean; wishlist_count?: number }
+  | { ok: false; requiresAuth?: boolean; error: string };
+
+export async function persistWishlistChange(
+  wasSaved: boolean, desired: boolean, display: (saved: boolean) => void,
+  persist: () => Promise<WishlistToggleResult>,
+): Promise<WishlistToggleResult> {
+  display(desired);
+  let result: WishlistToggleResult;
+  try {
+    result = await persist();
+  } catch {
+    result = { ok: false, error: "wishlist_unavailable" };
+  }
+  display(result.ok ? result.in_wishlist : wasSaved);
+  return result;
+}
 
 export type RatingDistributionRow = {
   stars: number;

@@ -1,5 +1,5 @@
 import { serverDb } from "@/lib/db";
-import { resolveActiveStoreOrDefault } from "@/lib/tenant";
+import { STORE_ID_HEADER } from "@/lib/tenant-shared";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -86,6 +86,7 @@ async function runRpcWithTransientRetry<T extends { error: RpcError | null }>(
 
 export async function POST(req: Request) {
   let body: {
+    storeId?: unknown;
     action?: unknown;
     session_key?: unknown;
     items?: unknown;
@@ -107,6 +108,11 @@ export async function POST(req: Request) {
       },
       { status: 400 },
     );
+  }
+
+  const storeId = req.headers.get(STORE_ID_HEADER);
+  if (!storeId || body?.storeId !== storeId) {
+    return Response.json({ ok: false, error: { category: "forbidden", code: "store_mismatch", retryable: false } }, { status: 403 });
   }
 
   const action =
@@ -133,10 +139,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const [db, store] = await Promise.all([
-      serverDb(),
-      resolveActiveStoreOrDefault(),
-    ]);
+    const db = await serverDb();
 
     if (action === "recover") {
       const orderId =
@@ -145,7 +148,7 @@ export async function POST(req: Request) {
           : null;
       const result = await runRpcWithTransientRetry(() =>
         db.rpc("mark_abandoned_cart_recovered", {
-          p_store_id: store.id,
+          p_store_id: storeId,
           p_session_key: sessionKey.length >= 24 ? sessionKey : null,
           p_order_id: orderId,
         }),
@@ -176,7 +179,7 @@ export async function POST(req: Request) {
 
     const result = await runRpcWithTransientRetry(() =>
       db.rpc("upsert_abandoned_cart", {
-        p_store_id: store.id,
+        p_store_id: storeId,
         p_session_key: sessionKey,
         p_items: items,
         p_subtotal: Math.round(subtotal * 100) / 100,

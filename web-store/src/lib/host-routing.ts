@@ -95,11 +95,27 @@ export async function resolveRequestHost(hostname: string, root: string, allowLo
   return registered ? { host: domain, registered } : { host: "platform" as const };
 }
 
-export function platformOrigin(host: Authority, root: string) {
-  if (isLocalHost(host.hostname)) {
-    return "http://localhost" + host.authority.slice(host.hostname.length);
+function localPlatformOrigin(host: Authority) {
+  return "http://localhost" + host.authority.slice(host.hostname.length);
+}
+
+export function isVercelDeployment(env = process.env) {
+  return env.VERCEL === "1" || env.VERCEL_ENV === "preview" || env.VERCEL_ENV === "production";
+}
+
+export function platformOrigin(host: Authority, root: string, classification: RouteKey | "platform" = "platform",
+  env = process.env): string | null {
+  if (isLocalHost(host.hostname) && !isVercelDeployment(env) && env.NODE_ENV !== "production") {
+    return localPlatformOrigin(host);
   }
-  return root === "localhost" ? "http://localhost:3000" : "https://" + root;
+  if (!isLocalHost(root)) return "https://" + root;
+  if (env.VERCEL_ENV !== "preview") return null;
+
+  // Only a host already classified as the platform may supply the request origin.
+  if (classification === "platform" && host.hostname.endsWith(".vercel.app")) return "https://" + host.hostname;
+  const deployment = normalizeHost(env.VERCEL_URL ?? null);
+  return deployment && deployment.hostname === deployment.authority && deployment.hostname.endsWith(".vercel.app") &&
+    deployment.hostname !== host.hostname ? "https://" + deployment.hostname : null;
 }
 
 export function subdomainOrigin(slug: string, platform: string) {
@@ -110,7 +126,9 @@ export function subdomainOrigin(slug: string, platform: string) {
 
 export function publicStoreOrigin(route: StoreRoute, platform: string, root: string) {
   const primary = route.primaryDomain && customDomain(route.primaryDomain, root);
-  return primary ? "https://" + primary : subdomainOrigin(route.slug, platform);
+  if (primary) return "https://" + primary;
+  if (root === "localhost" && !isLocalHost(new URL(platform).hostname)) return platform + "/s/" + route.slug;
+  return subdomainOrigin(route.slug, platform);
 }
 
 export function resolveMerchantStorefrontUrl(slug: string, primaryDomain: string | null, requestOrigin: string | null,
@@ -130,10 +148,10 @@ export function resolveMerchantStorefrontUrl(slug: string, primaryDomain: string
   if (!isLocalHost(host.hostname)) return request.origin + path;
 
   // With only a loopback origin on a deployment, let the browser supply its public origin.
-  if (env.VERCEL === "1" || env.VERCEL_ENV === "preview" || env.VERCEL_ENV === "production" || env.NODE_ENV === "production") {
+  if (isVercelDeployment(env) || env.NODE_ENV === "production") {
     return path;
   }
-  return subdomainOrigin(slug, platformOrigin(host, "localhost"));
+  return subdomainOrigin(slug, localPlatformOrigin(host));
 }
 
 export function storefrontUrlLabel(href: string) {
