@@ -11,6 +11,8 @@ import com.whitelabel.commerce.core.data.remote.runSuspendCatching
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.Json
 
+internal val enrolledUserKey = stringPreferencesKey("${BuildConfig.STORE_ID}_enrolled_user")
+
 /**
  * Tenant-scoped persistent [SessionManager] backed by Jetpack DataStore so Supabase Auth
  * sessions survive app restarts cleanly and remain isolated per [BuildConfig.STORE_ID].
@@ -26,6 +28,7 @@ class DataStoreSessionManager(
         val encoded = json.encodeToString(UserSession.serializer(), session)
         dataStore.edit { prefs ->
             prefs[sessionKey] = PrivatePreferences.encrypt(sessionKey.name, encoded)
+            if (prefs[enrolledUserKey] != session.user?.id) prefs.remove(enrolledUserKey)
         }
     }
 
@@ -39,6 +42,7 @@ class DataStoreSessionManager(
     override suspend fun deleteSession() {
         dataStore.edit { prefs ->
             prefs.remove(sessionKey)
+            prefs.remove(enrolledUserKey)
         }
     }
 }

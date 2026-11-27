@@ -38,10 +38,8 @@ sealed interface AuthSessionState {
         val userId: String,
         val email: String,
         val profile: CustomerProfile = CustomerProfile(email = email),
+        val enrolled: Boolean = false,
+        val membershipResolved: Boolean = false,
+        val membershipError: String? = null,
     ) : AuthSessionState
-}
-
-enum class SignUpOutcome {
-    SIGNED_IN,
-    NEEDS_EMAIL_CONFIRMATION,
 }

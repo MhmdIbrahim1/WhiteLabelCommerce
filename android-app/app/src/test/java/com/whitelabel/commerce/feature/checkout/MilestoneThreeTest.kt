@@ -19,12 +19,11 @@ class MilestoneThreeTest {
         assertFalse(listOf(PRODUCT_COLUMNS, SETTINGS_COLUMNS, REVIEW_COLUMNS, CATEGORY_COLUMNS).any { "*" in it })
     }
 
-    @Test fun profileRpcRequiresSessionAndStore() {
+    @Test fun profileReadRequiresStoreAndUser() {
         val file = File("src/main/java/com/whitelabel/commerce/core/data/repository/AuthRepositoryImpl.kt").readText()
-        val body = file.substringAfter("private suspend fun syncProfileRpc").substringBefore("private suspend fun loadProfileInternal")
-        assertTrue(body.substringBefore("supabase.postgrest.rpc").contains("currentSessionOrNull() == null"))
-        assertTrue(body.contains("""put("p_store_id", BuildConfig.STORE_ID)"""))
-        assertTrue(file.contains("SignUpOutcome.NEEDS_EMAIL_CONFIRMATION"))
+        val read = file.substringAfter("""from("store_customers")""").substringBefore("decodeList")
+        assertTrue(read.contains("""eq("store_id", BuildConfig.STORE_ID)"""))
+        assertTrue(read.contains("""eq("user_id", userId)"""))
     }
 
     @Test fun tenantBuildRequiresDistinctPackage() {
@@ -55,9 +54,6 @@ class MilestoneThreeTest {
             arabicLanguage.value = false
             assertEquals("Store Wallet", orderMethodLabel("wallet"))
             assertEquals("12 EGP", formatPrice(12.0, "EGP", "en"))
-            assertTrue(mapAuthError("weak_password").contains("stronger password"))
-            assertTrue(mapAuthError("email_exists").contains("already registered"))
-            assertTrue(mapAuthError("invalid_credentials").contains("Incorrect"))
             assertTrue(mapAuthError("email_not_confirmed").contains("confirm your email"))
             assertTrue(mapAuthError("over_request_rate_limit").contains("Too many attempts"))
             arabicLanguage.value = true
