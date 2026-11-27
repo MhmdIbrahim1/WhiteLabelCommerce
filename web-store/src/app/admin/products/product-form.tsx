@@ -13,6 +13,9 @@ import { toDateTimeLocalValue } from "@/lib/flash-sale";
 import { localizedText } from "@/lib/i18n";
 import { useLanguage } from "@/components/language-provider";
 import { variantKey, type Variant } from "@/lib/variant-stock";
+import { photo } from "@/lib/product-photo";
+import type { ProductStudioDraft } from "@/lib/openai-studio";
+import { ProductPhotoStudio, type StudioAllowances } from "./product-photo-studio";
 import { saveProduct } from "../mutations";
 
 export type AdminCategoryItem = {
@@ -78,12 +81,18 @@ export function AdminProductForm({
   query,
   page,
   status = "",
+  storeId,
+  aiEnabled,
+  allowances,
 }: {
   p?: AdminProductItem;
   categories: AdminCategoryItem[];
   query: string;
   page: number;
   status?: string;
+  storeId: string;
+  aiEnabled: boolean;
+  allowances: StudioAllowances;
 }) {
   const { lang } = useLanguage();
   const isEn = lang === "en";
@@ -106,13 +115,39 @@ export function AdminProductForm({
   const [sizesValue, setSizesValue] = useState(
     (p?.sizes ?? []).join(isEn ? ", " : "، "),
   );
-  const [colorsValue, setColorsValue] = useState(
-    (p?.colors ?? []).join(isEn ? ", " : "، "),
-  );
-  const [specs, setSpecs] = useState<ProductSpec[]>(() =>
-    normalizeSpecs(p?.specifications),
-  );
-  const [activePreset, setActivePreset] = useState<string | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [editor, setEditor] = useState(() => {
+    const fields = {
+      name: p?.name ?? "", name_en: p?.name_en ?? "", slug: p?.slug ?? "",
+      category_id: p?.category_id || categories[0]?.id || "",
+      description: p?.description ?? "", description_en: p?.description_en ?? "",
+      colorsValue: (p?.colors ?? []).join(isEn ? ", " : "، "),
+      specs: normalizeSpecs(p?.specifications), activePreset: null as string | null,
+    };
+    return { fields, undo: null as typeof fields | null };
+  });
+  const { fields, undo } = editor;
+  const { colorsValue, specs, activePreset } = fields;
+  function editFields(changes: Partial<typeof fields>) {
+    setEditor(prev => ({ ...prev, fields: { ...prev.fields, ...changes } }));
+  }
+  function applyDraft(draft: ProductStudioDraft) {
+    const detected = isEn ? draft.colors_en : draft.colors_ar;
+    // Read the current fields at completion so Undo includes edits made while the request was running.
+    setEditor(({ fields: current }) => ({
+      undo: current,
+      fields: {
+        name: draft.name_ar, name_en: draft.name_en, slug: draft.slug,
+        category_id: categories.find(c => c.id === draft.category_id)?.id ?? current.category_id,
+        description: draft.description_ar, description_en: draft.description_en,
+        colorsValue: current.colorsValue.trim() ? current.colorsValue : detected.join(isEn ? ", " : "، "),
+        specs: draft.specifications, activePreset: null,
+      },
+    }));
+  }
+  function undoDraft() {
+    setEditor(prev => prev.undo ? { fields: prev.undo, undo: null } : prev);
+  }
 
   const regularNum = Number(priceValue);
   const flashNum = flashPriceValue.trim() ? Number(flashPriceValue) : NaN;
@@ -185,11 +220,10 @@ export function AdminProductForm({
   const applyPreset = (preset: AdminCategoryPreset) => {
     const sep = isEn ? ", " : "، ";
     setSizesValue(preset.sizes.join(sep));
-    setColorsValue(
-      preset.colors.map((c) => (isEn ? c.label_en : c.label)).join(sep),
-    );
-    setSpecs(preset.specs.map((row) => ({ ...row })));
-    setActivePreset(preset.id);
+    editFields({
+      colorsValue: preset.colors.map((c) => (isEn ? c.label_en : c.label)).join(sep),
+      specs: preset.specs.map(row => ({ ...row })), activePreset: preset.id,
+    });
   };
 
   const toggleColorSwatch = (label: string) => {
@@ -198,7 +232,7 @@ export function AdminProductForm({
     const next = exists
       ? current.filter((c) => c !== label)
       : [...current, label];
-    setColorsValue(next.join(isEn ? ", " : "، "));
+    editFields({ colorsValue: next.join(isEn ? ", " : "، ") });
   };
 
   const updateSpec = (
@@ -206,20 +240,15 @@ export function AdminProductForm({
     field: keyof ProductSpec,
     value: string,
   ) => {
-    setSpecs((prev) =>
-      prev.map((row, i) => (i === idx ? { ...row, [field]: value } : row)),
-    );
+    editFields({ specs: specs.map((row, i) => i === idx ? { ...row, [field]: value } : row) });
   };
 
   const addSpecRow = () => {
-    setSpecs((prev) => [
-      ...prev,
-      { key_ar: "", key_en: "", value_ar: "", value_en: "" },
-    ]);
+    editFields({ specs: [...specs, { key_ar: "", key_en: "", value_ar: "", value_en: "" }] });
   };
 
   const removeSpecRow = (idx: number) => {
-    setSpecs((prev) => prev.filter((_, i) => i !== idx));
+    editFields({ specs: specs.filter((_, i) => i !== idx) });
   };
 
   const serializedSpecs = JSON.stringify(
@@ -231,13 +260,16 @@ export function AdminProductForm({
   );
 
   return (
-    <form action={saveProduct} className="fields">
+    <form action={saveProduct} className="fields" onSubmit={event => { if (photoBusy) event.preventDefault(); }}>
       <input type="hidden" name="id" value={p?.id ?? ""} />
       <input type="hidden" name="q" value={query} />
       <input type="hidden" name="page" value={page} />
       <input type="hidden" name="status" value={status} />
       <input type="hidden" name="previous_image" value={p?.image_path ?? ""} />
       <input type="hidden" name="specifications" value={serializedSpecs} />
+
+      <ProductPhotoStudio storeId={storeId} en={isEn} existingImage={photo(p?.image_path ?? null)} aiEnabled={aiEnabled}
+        allowances={allowances} onBusyChange={setPhotoBusy} onDraft={applyDraft} onUndo={undoDraft} canUndo={Boolean(undo)} />
 
       <div className="wide admin-presets-bar">
         <div className="admin-presets-head">
@@ -276,7 +308,7 @@ export function AdminProductForm({
 
       <label>
         {isEn ? "Product Name (Arabic)" : "اسم المنتج (عربي)"}
-        <input name="name" lang="ar" dir="rtl" defaultValue={p?.name} required />
+        <input name="name" lang="ar" dir="rtl" value={fields.name} onChange={e => editFields({ name: e.target.value })} required />
       </label>
       <label>
         {isEn ? "Product Name (English · Optional)" : "اسم المنتج (إنجليزي · اختياري)"}
@@ -284,17 +316,17 @@ export function AdminProductForm({
           name="name_en"
           lang="en"
           dir="ltr"
-          defaultValue={p?.name_en ?? ""}
+          value={fields.name_en} onChange={e => editFields({ name_en: e.target.value })}
           placeholder={isEn ? "e.g. Luxury Chronograph Watch" : "مثال: ساعة كرونوغراف فاخرة"}
         />
       </label>
       <label>
         {isEn ? "URL Slug" : "الرابط المختصر"}
-        <input name="slug" dir="ltr" defaultValue={p?.slug} required />
+        <input name="slug" dir="ltr" value={fields.slug} onChange={e => editFields({ slug: e.target.value })} required />
       </label>
       <label>
         {isEn ? "Category" : "الفئة"}
-        <select name="category_id" defaultValue={p?.category_id} required>
+        <select name="category_id" value={fields.category_id} onChange={e => editFields({ category_id: e.target.value })} required>
           {categories.map((c) => (
             <option key={c.id} value={c.id}>
               {localizedText(lang, c.name, c.name_en)}
@@ -498,7 +530,7 @@ export function AdminProductForm({
         <input
           name="colors"
           value={colorsValue}
-          onChange={(e) => setColorsValue(e.target.value)}
+          onChange={(e) => editFields({ colorsValue: e.target.value })}
           placeholder={isEn ? "White, Black, Navy" : "أبيض، أسود، كحلي"}
         />
       </label>
@@ -552,7 +584,7 @@ export function AdminProductForm({
 
       <label className="wide">
         {isEn ? "Description (Arabic)" : "الوصف (عربي)"}
-        <textarea name="description" lang="ar" dir="rtl" defaultValue={p?.description} />
+        <textarea name="description" lang="ar" dir="rtl" value={fields.description} onChange={e => editFields({ description: e.target.value })} />
       </label>
       <label className="wide">
         {isEn ? "Description (English · Optional)" : "الوصف (إنجليزي · اختياري)"}
@@ -560,7 +592,7 @@ export function AdminProductForm({
           name="description_en"
           lang="en"
           dir="ltr"
-          defaultValue={p?.description_en ?? ""}
+          value={fields.description_en} onChange={e => editFields({ description_en: e.target.value })}
           placeholder={
             isEn
               ? "Detailed product description in English..."
@@ -639,14 +671,6 @@ export function AdminProductForm({
         )}
       </div>
 
-      <label>
-        {isEn ? "Product Image · up to 5 MB" : "صورة المنتج · حتى ٥ م.ب"}
-        <input
-          type="file"
-          name="image"
-          accept="image/png,image/jpeg,image/webp"
-        />
-      </label>
       <label className="wide">
         {isEn ? "Additional image URLs (one per line, in display order)" : "روابط الصور الإضافية (رابط في كل سطر حسب ترتيب العرض)"}
         <textarea name="image_paths" dir="ltr" defaultValue={(p?.image_paths ?? []).join("\n")} />
@@ -655,7 +679,7 @@ export function AdminProductForm({
         <input type="checkbox" name="is_active" defaultChecked={p?.is_active} />{" "}
         {isEn ? "Publish product" : "نشر المنتج"}
       </label>
-      <SubmitButton disabled={flashPriceInvalid || flashWindowInvalid || flashMissingEnd}>
+      <SubmitButton disabled={photoBusy || flashPriceInvalid || flashWindowInvalid || flashMissingEnd}>
         {isEn ? "Save Product" : "حفظ المنتج"}
       </SubmitButton>
     </form>

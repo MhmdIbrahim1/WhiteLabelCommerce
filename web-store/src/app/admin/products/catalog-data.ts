@@ -3,8 +3,8 @@ import { checked, requireAdmin } from "@/lib/db";
 import { adminDb } from "@/lib/supabase/admin";
 import type { AdminCategoryItem, AdminProductItem } from "./product-form";
 
-export async function catalogCategories() {
-  const { db, storeId } = await requireAdmin("manage_products");
+export async function catalogCategories(context?: Awaited<ReturnType<typeof requireAdmin>>) {
+  const { db, storeId } = context ?? await requireAdmin("manage_products");
   const categories: AdminCategoryItem[] = [];
   for (let offset = 0; ; offset += 200) {
     const batch = checked(await db.from("categories").select("id,name,name_en,slug")

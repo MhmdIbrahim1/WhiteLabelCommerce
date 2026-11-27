@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { annualSavings, cycleName, limitLabel, limitReached, parsePlan, parseSubscription, quotaFailure,
   quotaKeys, quotaMessage, resolveEntitlements, statusNames } from "../src/lib/billing.ts";
 
-const defaults = { max_staff_members: 1, max_products: 50, max_monthly_orders: 100, max_monthly_apk_builds: 2, custom_domains_enabled: false };
+const defaults = { max_staff_members: 1, max_products: 50, max_monthly_orders: 100, max_monthly_apk_builds: 2,
+  max_monthly_ai_autofills: 5, max_monthly_ai_studio_images: 2, custom_domains_enabled: false };
 function planForm() {
   const form = new FormData();
   for (const [key, value] of Object.entries({
@@ -29,7 +30,7 @@ test("inherited limits immediately follow the catalog, including an unlimited pl
 test("a store can set a zero cap, override to unlimited, and turn off an included domain", () => {
   const pro = { ...defaults, custom_domains_enabled: true };
   const overrides = { max_products: null, max_monthly_orders: 0, custom_domains_enabled: false };
-  assert.deepEqual(resolveEntitlements(pro, overrides), { ...overrides, max_monthly_apk_builds: 2, max_staff_members: 1 });
+  assert.deepEqual(resolveEntitlements(pro, overrides), { ...defaults, ...overrides });
   assert.equal(resolveEntitlements({ ...pro, max_products: 500 }, overrides).max_products, null);
   assert.equal(pro.max_products, 50);
 });
@@ -70,6 +71,18 @@ test("subscription editor serializes inheritance as absence, preserving false, z
   form.set("max_products_mode", "inherit"); form.set("custom_domains_enabled", "enabled");
   assert.deepEqual(parseSubscription(form).p_overrides, { max_monthly_orders: 0, custom_domains_enabled: true });
 });
+test("plan and subscription editors preserve distinct AI caps including zero and unlimited", () => {
+  const plan = parsePlan(planForm());
+  assert.equal(plan.max_monthly_ai_autofills, 5);
+  assert.equal(plan.max_monthly_ai_studio_images, 2);
+  const form = subscriptionForm();
+  form.set("max_monthly_ai_studio_images_mode", "unlimited");
+  form.set("max_monthly_ai_autofills_mode", "custom");
+  form.set("max_monthly_ai_autofills", "0");
+  assert.deepEqual(parseSubscription(form).p_overrides, { max_monthly_ai_autofills: 0, max_monthly_ai_studio_images: null });
+  form.set("max_monthly_ai_autofills", "-1");
+  assert.throws(() => parseSubscription(form), /max_monthly_ai_autofills/);
+});
 test("subscription validation checks dates and requires a trial end for trialing stores", () => {
   const form = subscriptionForm();
   assert.equal(parseSubscription(form).p_trial_end, null);
@@ -87,7 +100,7 @@ test("annual savings are actual EGP savings against twelve monthly payments", ()
   }
 });
 test("PostgREST details and the mobile API response map to the same structured error", () => {
-  for (const resource of ["products", "orders", "apk_builds", "custom_domains"]) {
+  for (const resource of ["products", "orders", "apk_builds", "custom_domains", "ai_autofills", "ai_studio_images"]) {
     const code = resource === "custom_domains" ? "feature_not_in_plan" : "plan_limit_reached";
     const detail = { code, resource, current: 2, limit: resource === "custom_domains" ? 0 : 2 };
     assert.deepEqual(quotaFailure({ message: code, details: JSON.stringify(detail) }), detail);

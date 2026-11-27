@@ -3,7 +3,7 @@ begin read only;
 do $unit$
 declare
   plan public.saas_plans;
-  base jsonb := '{"max_products":50,"max_monthly_orders":100,"max_monthly_apk_builds":2,"max_staff_members":1,"custom_domains_enabled":true}';
+  base jsonb := '{"max_products":50,"max_monthly_orders":100,"max_monthly_apk_builds":2,"max_staff_members":1,"max_monthly_ai_autofills":5,"max_monthly_ai_studio_images":2,"custom_domains_enabled":true}';
   changed jsonb := '{"max_products":null,"max_monthly_orders":0,"custom_domains_enabled":false}';
   bad jsonb;
   detail text;
