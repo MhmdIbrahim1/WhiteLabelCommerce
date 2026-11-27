@@ -1,250 +1,105 @@
-import { SubmitButton } from "@/components/submit-button";
 import Link from "next/link";
 import Image from "next/image";
-import { Package, Plus, Zap } from "lucide-react";
+import { ArrowRight, Package, Plus } from "lucide-react";
 import { checked, requireAdmin } from "@/lib/db";
 import { getResourceAllowance } from "@/lib/billing-data";
 import { limitLabel, limitReached } from "@/lib/billing";
 import { QuotaPrompt } from "@/components/quota-prompt";
-import { adminDb } from "@/lib/supabase/admin";
-import { money } from "@/lib/brand";
+import brand, { money } from "@/lib/brand";
 import { photo, searchPattern } from "@/lib/shop";
-import {
-  getFlashSavingsPercent,
-  isFlashSaleActive,
-  resolveEffectivePrice,
-} from "@/lib/flash-sale";
-import { localizedText, t } from "@/lib/i18n";
+import { getFlashSavingsPercent, isFlashSaleActive, resolveEffectivePrice } from "@/lib/flash-sale";
+import { localizedText } from "@/lib/i18n";
 import { getServerLang } from "@/lib/i18n-server";
 import { pagination } from "@/lib/workflow";
-import { saveCategory, deleteCategory, deleteProduct } from "../mutations";
-import { Empty, Notice, Pager } from "../ui";
-import {
-  AdminProductForm,
-  type AdminCategoryItem,
-  type AdminProductItem,
-} from "./product-form";
+import { directoryHref, isRecordId, searchText } from "@/lib/workspace-directory";
+import { DataCell, DirectoryFilters, DirectoryPager, StatusDot, WorkspaceEmpty, WorkspaceHeading, WorkspaceTable } from "@/components/workspace-data";
+import { DirectoryDrawer, InspectRow } from "@/components/workspace-drawer";
+import { Notice } from "../ui";
+import { catalogCategories, productColumns } from "./catalog-data";
+import { CategoryPanel } from "./category-panel";
+import { QuickEditor } from "./quick-editor";
 
-export default async function Products({
-  searchParams,
-}: PageProps<"/admin/products">) {
-  const [params, lang, { db, storeId, permissions }] = await Promise.all([
-    searchParams,
-    getServerLang(),
-    requireAdmin("manage_products"),
-  ]);
-  const secureDb = adminDb();
+const path = "/admin/products";
+
+function Thumbnail({ image }: { image: string | null }) {
+  const src = photo(image);
+  return <span className="ws-thumb">{src ? <Image src={src} unoptimized width={64} height={72} alt="" /> : <Package size={19} />}</span>;
+}
+
+export default async function Products({ searchParams }: PageProps<"/admin/products">) {
+  const [params, lang, { db, storeId, permissions }] = await Promise.all([searchParams, getServerLang(), requireAdmin("manage_products")]);
+  const en = lang === "en";
+  const q = searchText(params.q);
+  const status = params.status === "active" || params.status === "draft" ? params.status : "";
   const { from, to, page } = pagination(params.page);
-  const q = typeof params.q === "string" ? params.q.trim().slice(0, 100) : "";
-  const base = q ? "/admin/products?" + new URLSearchParams({ q }) : "/admin/products";
-  let query = secureDb
-    .from("products")
-    .select(
-      "id,name,name_en,slug,description,description_en,price,cost_price,old_price,flash_sale_price,flash_sale_starts_at,flash_sale_ends_at,stock,max_order_qty,category_id,sizes,colors,color_images,product_variants(color,size,stock),image_path,image_paths,specifications,is_active",
-      { count: "exact" },
-    )
-    .eq("store_id", storeId).eq("product_variants.listed", true);
+  const listHref = directoryHref(path, { q, status, page });
+  const editorHref = (id: string) => path + "/" + id + listHref.slice(path.length);
+  const inspect = isRecordId(params.inspect) ? params.inspect : null;
+  let query = db.from("products").select(productColumns, { count: "exact" }).eq("store_id", storeId);
+  if (status) query = query.eq("is_active", status === "active");
   if (q) {
     const pattern = JSON.stringify(searchPattern(q));
-    query = query.or(["name", "name_en", "slug"].map((field) => field + ".ilike." + pattern).join(","));
+    query = query.or(["name", "name_en", "slug"].map(field => field + ".ilike." + pattern).join(","));
   }
-  const [productResult, billing] = await Promise.all([
-    query.order("name").order("id").range(from, to),
-    getResourceAllowance(storeId, "products"),
+  const [result, billing, categories, selectedResult, settings] = await Promise.all([
+    query.order("name").order("id").range(from, to), getResourceAllowance(storeId, "products"), catalogCategories(),
+    inspect ? db.from("products").select(`${productColumns},product_variants(color)`).eq("store_id", storeId)
+      .eq("product_variants.listed", true).eq("id", inspect).maybeSingle() : null,
+    db.from("store_settings").select("currency").eq("store_id", storeId).maybeSingle(),
   ]);
-  const products: AdminProductItem[] = checked(productResult);
-  const cap = billing.cap;
-  const atLimit = limitReached(billing.used, cap);
+  const products = checked(result);
+  const selected = selectedResult?.error ? checked(selectedResult) : selectedResult?.data;
+  const category = categories.find(c => c.id === selected?.category_id);
+  const currency = settings.data?.currency || brand.currency;
   const denied = params.result === "plan_limit_reached" || params.result === "limit_reached";
-  const categories: AdminCategoryItem[] = [];
-  for (let offset = 0; ; offset += 200) {
-    const batch = checked(
-      await db
-        .from("categories")
-        .select("id,name,name_en,slug")
-        .eq("store_id", storeId)
-        .order("name")
-        .order("id")
-        .range(offset, offset + 199),
-    );
-    categories.push(...batch);
-    if (batch.length < 200) break;
-  }
-
-  return (
-    <>
-      <div className="row" style={{ flexWrap: "wrap", gap: "0.75rem", marginBottom: "0.75rem" }}>
-        <h1 style={{ marginBottom: 0 }}>{t(lang, "adminCatalogHeading")}</h1>
-        <span
-          style={{
-            fontSize: "0.84rem",
-            fontWeight: 700,
-            padding: "0.3rem 0.75rem",
-            borderRadius: "999px",
-            background: atLimit
-              ? "rgba(220, 38, 38, 0.1)"
-              : "color-mix(in srgb, var(--primary) 10%, transparent)",
-            color: atLimit ? "var(--ws-danger)" : "var(--primary)",
-          }}
-        >
-          {lang === "en" ? "Active products" : "المنتجات المنشورة"} · <bdi dir="ltr">{limitLabel(billing.used, lang)} / {limitLabel(cap, lang)}</bdi>
-        </span>
-      </div>
-      {(atLimit || denied) && <QuotaPrompt canViewBilling={Boolean(permissions.manage_billing)} resource="products" lang={lang} />}
-      {!denied && <Notice result={params.result} />}
-      <details className="card">
-        <summary>
-          {t(lang, "adminManageCategories")} <span>{categories.length}</span>
-        </summary>
-        <form action={saveCategory} className="inline">
-          <label>
-            {t(lang, "adminCategoryNameAr")}
-            <input name="name" required />
-          </label>
-          <label>
-            {t(lang, "adminCategoryNameEn")}
-            <input
-              name="name_en"
-              dir="ltr"
-              placeholder={
-                lang === "en" ? "e.g. Men's Fashion" : "مثال: أزياء رجالي"
-              }
-            />
-          </label>
-          <label>
-            {t(lang, "adminSlug")}
-            <input name="slug" dir="ltr" required />
-          </label>
-          <SubmitButton>{t(lang, "adminAddBtn")}</SubmitButton>
-        </form>
-        {categories.map((c) => (
-          <details key={c.id}>
-            <summary>{localizedText(lang, c.name, c.name_en)}</summary>
-            <form className="inline" action={saveCategory}>
-              <input type="hidden" name="id" value={c.id} />
-              <label>
-                {t(lang, "adminCategoryNameAr")}
-                <input name="name" defaultValue={c.name} required />
-              </label>
-              <label>
-                {t(lang, "adminCategoryNameEn")}
-                <input
-                  name="name_en"
-                  dir="ltr"
-                  defaultValue={c.name_en ?? ""}
-                />
-              </label>
-              <label>
-                {t(lang, "adminSlug")}
-                <input name="slug" dir="ltr" defaultValue={c.slug} required />
-              </label>
-              <SubmitButton>{t(lang, "adminSaveBtn")}</SubmitButton>
-              <SubmitButton className="danger" formAction={deleteCategory}>
-                {t(lang, "adminDeleteCategory")}
-              </SubmitButton>
-            </form>
-          </details>
-        ))}
-      </details>
-      <details className="card">
-        <summary>
-          <span className="with-icon">
-            <Plus size={18} /> {t(lang, "adminAddProduct")}
-          </span>
-        </summary>
-        {categories.length ? (
-          <AdminProductForm categories={categories} query={q} page={page} />
-        ) : (
-          <p>{lang === "en" ? "Add a category first." : "أضف فئة أولاً."}</p>
-        )}
-      </details>
-      <section className="card">
-        <h2>{t(lang, "adminProductsDirectory")}</h2>
-        <form action="/admin/products" className="inline">
-          <label>{lang === "en" ? "Product name or slug" : "اسم المنتج أو الرابط المختصر"}
-            <input type="search" name="q" maxLength={100} defaultValue={q} dir="auto" />
-          </label>
-          <SubmitButton>{lang === "en" ? "Search" : "بحث"}</SubmitButton>
-          {q && <Link href="/admin/products">{lang === "en" ? "Clear search" : "مسح البحث"}</Link>}
-        </form>
-        {!products.length && (
-          <Empty>
-            {q ? t(lang, "noMatchingProducts") : lang === "en" ? "No products yet." : "لا توجد منتجات."}
-          </Empty>
-        )}
-        {products.map((p) => {
-          const flashActive = isFlashSaleActive(p);
-          const flashPct = getFlashSavingsPercent(p);
-          const effPrice = resolveEffectivePrice(p);
-          return (
-            <details key={p.id}>
-              <summary>
-                <span className="with-icon">
-                  {p.image_path ? (
-                    <Image
-                      unoptimized
-                      width={48}
-                      height={48}
-                      className="thumb"
-                      alt=""
-                      src={photo(p.image_path) ?? ""}
-                    />
-                  ) : (
-                    <Package size={24} />
-                  )}{" "}
-                  <span>{localizedText(lang, p.name, p.name_en)}</span>
-                  {flashActive && (
-                    <span className="admin-flash-pill">
-                      <Zap size={12} aria-hidden="true" />
-                      <span>
-                        {lang === "en"
-                          ? `Flash${flashPct ? ` -${flashPct}%` : ""}`
-                          : `عرض مؤقت${flashPct ? ` -${flashPct}٪` : ""}`}
-                      </span>
-                    </span>
-                  )}
-                </span>
-                <small>
-                  {flashActive ? (
-                    <>
-                      <strong className="admin-flash-price-text">
-                        <bdi dir="ltr">{money(effPrice, undefined, lang)}</bdi>
-                      </strong>{" "}
-                      <del><bdi dir="ltr">{money(p.price, undefined, lang)}</bdi></del>
-                    </>
-                  ) : (
-                    <bdi dir="ltr">{money(p.price, undefined, lang)}</bdi>
-                  )}
-                  {Number(p.cost_price ?? 0) > 0
-                    ? <> · {t(lang, "adminCost")} <bdi dir="ltr">{money(Number(p.cost_price), undefined, lang)}</bdi></>
-                    : ""}{" "}
-                  · {t(lang, "adminStock")} <bdi dir="ltr">{p.stock}</bdi> ·{" "}
-                  {p.is_active
-                    ? t(lang, "adminPublished")
-                    : t(lang, "adminDraft")}
-                </small>
-              </summary>
-              <AdminProductForm p={p} categories={categories} query={q} page={page} />
-              <details>
-                <summary>{t(lang, "adminDeleteProduct")}</summary>
-                <form action={deleteProduct}>
-                  <input type="hidden" name="q" value={q} />
-                  <input type="hidden" name="page" value={page} />
-                  <input type="hidden" name="id" value={p.id} />
-                  <SubmitButton className="danger">
-                    {t(lang, "adminConfirmDelete")}
-                  </SubmitButton>
-                </form>
-              </details>
-            </details>
-          );
-        })}
-        <Pager
-          page={page}
-          base={base}
-          count={productResult.count ?? 0}
-        />
-      </section>
-    </>
-  );
+  const canViewBilling = Boolean(permissions.manage_billing);
+  const active = en ? "Active" : "منشور";
+  const draft = en ? "Draft" : "مسودة";
+  const add = en ? "Add product" : "إضافة منتج";
+  const columns = en ? ["Product", "Price", "Stock", "Status", "Inspect"] : ["المنتج", "السعر", "المخزون", "الحالة", "معاينة"];
+  return <div className="ws-page">
+    <WorkspaceHeading title={en ? "Products" : "المنتجات"} description={<>{en ? "Published products" : "المنتجات المنشورة"} · <bdi dir="ltr">{limitLabel(billing.used, lang)} / {limitLabel(billing.cap, lang)}</bdi></>}>
+      <Link className="ws-button" href={directoryHref(path, { q, status, page, categories: true }) + "#categories"}>{en ? "Categories" : "الفئات"}</Link>
+      <Link className="ws-primary" href={editorHref("new")}><Plus size={16} />{add}</Link>
+    </WorkspaceHeading>
+    {(denied || limitReached(billing.used, billing.cap)) && <QuotaPrompt canViewBilling={canViewBilling} resource="products" lang={lang} />}
+    {!denied && <Notice result={params.result} />}
+    <section className="ws-sheet ws-product-sheet">
+      <DirectoryFilters path={path} query={q} status={status} lang={lang} choices={[["active", active], ["draft", draft]]}
+        placeholder={en ? "Search by name or product slug" : "ابحث باسم المنتج أو رابطه المختصر"} />
+      {products.length ? <WorkspaceTable columns={columns} caption={en ? "Product catalog" : "دليل المنتجات"}>
+        {products.map(p => {
+          const title = localizedText(lang, p.name, p.name_en);
+          const href = directoryHref(path, { q, status, page, inspect: p.id });
+          return <InspectRow key={p.id} href={href}>
+            <DataCell><Link className="ws-record" href={href} replace scroll={false} prefetch={false} id={"inspect-" + p.id} aria-haspopup="dialog">
+              <Thumbnail image={p.image_path} /><span className="ws-cell-stack"><strong dir="auto">{title}</strong><small><bdi dir="ltr">{p.slug}</bdi></small></span></Link></DataCell>
+            <DataCell label={columns[1]}><div className="ws-cell-stack"><strong><bdi dir="ltr">{money(resolveEffectivePrice(p), currency, lang)}</bdi></strong>
+              {isFlashSaleActive(p) && <small><del><bdi dir="ltr">{money(p.price, currency, lang)}</bdi></del> · {en ? "Sale" : "عرض"} <bdi dir="ltr">−{getFlashSavingsPercent(p)}%</bdi></small>}</div></DataCell>
+            <DataCell label={columns[2]}><bdi dir="ltr">{p.stock}</bdi></DataCell>
+            <DataCell label={columns[3]}><StatusDot status={p.is_active ? "active" : "draft"}>{p.is_active ? active : draft}</StatusDot></DataCell>
+            <DataCell><Link className="ws-icon-button" href={href} replace scroll={false} prefetch={false} aria-haspopup="dialog" aria-label={columns[4] + " · " + title}>
+              <ArrowRight className="pt-directional" size={16} /></Link></DataCell>
+          </InspectRow>;
+        })}</WorkspaceTable> : <WorkspaceEmpty title={q || status || page > 1 ? (en ? "No products in this view" : "لا توجد منتجات في هذه القائمة") : en ? "Your catalog starts here" : "ابدأ بإضافة أول منتج"}
+          action={q || status || page > 1 ? <Link className="ws-button" href={path}>{en ? "View all products" : "عرض كل المنتجات"}</Link> :
+            <Link className="ws-primary" href={editorHref("new")}>{add}</Link>}>
+          {q || status || page > 1 ? (en ? "Try another name or clear the filters." : "جرّب اسماً آخر أو امسح عوامل التصفية.") :
+            en ? "Add a product with a photo, price and opening stock." : "أضف صورة المنتج وسعره والكمية المتاحة للبيع."}</WorkspaceEmpty>}
+      <DirectoryPager path={path} count={result.count ?? 0} page={page} q={q} status={status} lang={lang} />
+    </section>
+    <CategoryPanel categories={categories} lang={lang} expanded={params.categories === "1"} />
+    {inspect && <DirectoryDrawer key={storeId + inspect} listHref={listHref} recordId={inspect} title={en ? "Product details" : "تفاصيل المنتج"}
+      subtitle={selected && <bdi dir="ltr">{selected.slug}</bdi>}>
+      {selected ? <><section className="ws-stack"><div className="ws-record"><Thumbnail image={selected.image_path} />
+        <div className="ws-cell-stack"><h3 dir="auto">{localizedText(lang, selected.name, selected.name_en)}</h3>
+          <StatusDot status={selected.is_active ? "active" : "draft"}>{selected.is_active ? active : draft}</StatusDot></div></div>
+        <dl className="ws-facts"><div><dt>{en ? "Category" : "الفئة"}</dt><dd>{category ? localizedText(lang, category.name, category.name_en) : "—"}</dd></div>
+          <div><dt>{en ? "Selling price" : "سعر البيع"}</dt><dd><bdi dir="ltr">{money(resolveEffectivePrice(selected), currency, lang)}</bdi></dd></div></dl></section>
+        <section><QuickEditor product={{ id: selected.id, name: selected.name, name_en: selected.name_en, price: selected.price, stock: selected.stock,
+          is_active: selected.is_active, hasVariants: selected.product_variants.length > 0 }} editorHref={editorHref(selected.id)} storeId={storeId}
+          lang={lang} currency={currency} canViewBilling={canViewBilling} /></section></> :
+        <p role="status">{en ? "This product is no longer in this store." : "لم يعد هذا المنتج ضمن كتالوج المتجر."}</p>}
+    </DirectoryDrawer>}
+  </div>;
 }

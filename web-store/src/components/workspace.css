@@ -1,5 +1,6 @@
 @import "./workspace-dashboard.css";
 @import "./workspace-interiors.css";
+@import "./workspace-data.css";
 
 .ws-surface {
   --ink: var(--pt-ink);
@@ -11,15 +12,12 @@
   --primary: var(--ws-link);
   --secondary: var(--ws-link);
   --radius: var(--pt-radius);
-  --ws-warn: #825715;
-  --ws-info: #375d81;
   --ws-pad: clamp(1rem, 3vw, 2.75rem);
   min-block-size: 100svh;
   background: var(--ws-canvas);
   color: var(--ink);
   accent-color: var(--ws-link);
 }
-.ws-surface[data-mode="dark"] { --ws-warn: #dbba80; --ws-info: #9bbfdf; }
 .ws-surface:lang(ar) { line-height: 1.78; }
 .ws-surface :is(h1,h2,h3):lang(ar) { line-height: 1.4; }
 .ws-surface :is(button,input,select,textarea) { font-family: inherit; }

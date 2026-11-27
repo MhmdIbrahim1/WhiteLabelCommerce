@@ -65,8 +65,9 @@ export function TemplateGallery({ active }: { active: TemplateId }) {
   const { lang } = useLanguage();
   const isEn = lang === "en";
   return (
-    <section className="card">
-      <h2>{isEn ? "Store Templates" : "قوالب تصميم المتجر"}</h2>
+    <section className="ws-box">
+      <h2>{isEn ? "Storefront appearance" : "مظهر واجهة المتجر"}</h2>
+      <p>{isEn ? "Choose a template to apply its colors and layout to the storefront." : "اختر قالباً لتطبيق ألوانه وتخطيطه على واجهة المتجر."}</p>
       <form action={applyTemplate}>
         <Choices active={active} />
       </form>

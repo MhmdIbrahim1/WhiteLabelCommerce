@@ -39,6 +39,8 @@ import type { ProductReview } from "@/lib/reviews-wishlist";
 import { resolveEffectivePrice } from "@/lib/flash-sale";
 import { normalizeSpecs } from "@/lib/specs";
 import { nextOrder, nextTicket, pagination } from "@/lib/workflow";
+import { directoryHref, isRecordId } from "@/lib/workspace-directory";
+import { numberField, quickProductChange } from "@/lib/catalog-quick-edit";
 import { safeRelativePath, validateImageMagicBytes } from "@/lib/security";
 
 const catalog = "/admin/products";
@@ -76,15 +78,6 @@ export async function switchAdminStore(nextStoreId: string): Promise<{ ok: boole
   revalidatePath("/admin", "layout");
   return { ok: true };
 }
-function numberField(value: string, integer = false) {
-  const n = Number(value);
-  return value &&
-    Number.isFinite(n) &&
-    n >= 0 &&
-    (!integer || Number.isSafeInteger(n))
-    ? n
-    : null;
-}
 export async function saveCategory(f: FormData) {
   const { db, storeId } = await requireAdmin("manage_products"),
     id = text(f, "id");
@@ -115,12 +108,10 @@ export async function deleteCategory(f: FormData) {
   finish(catalog, !result.error);
 }
 function productListDestination(form: FormData) {
-  const params = new URLSearchParams();
   const q = text(form, "q").slice(0, 100);
+  const status = text(form, "status");
   const { page } = pagination(text(form, "page"));
-  if (q) params.set("q", q);
-  if (page > 1) params.set("page", String(page));
-  return params.size ? catalog + "?" + params : catalog;
+  return directoryHref(catalog, { q, page, status: status === "active" || status === "draft" ? status : "" });
 }
 
 function orderLimitField(form: FormData, name: string, destination: string) {
@@ -307,34 +298,49 @@ export async function saveProduct(f: FormData) {
     finish(destination, false, "plan_limit_reached");
   }
   if (!result.error && id) {
-    if (previousStock !== null && previousStock <= 0 && stock > 0) {
-      void notifyBackInStock(id, storeId);
-      void notifyWishlistProductAlert({
-        storeId,
-        productId: id,
-        kind: "restock",
-      });
-    }
     const nextEffectivePrice = resolveEffectivePrice({
       price,
       flash_sale_price: flashSalePrice,
       flash_sale_starts_at: flashSaleStartsAt,
       flash_sale_ends_at: flashSaleEndsAt,
     });
-    if (
-      previousEffectivePrice !== null &&
-      nextEffectivePrice < previousEffectivePrice
-    ) {
-      void notifyWishlistProductAlert({
-        storeId,
-        productId: id,
-        kind: "price_drop",
-        oldPrice: previousEffectivePrice,
-        newPrice: nextEffectivePrice,
-      });
-    }
+    notifyCatalogChanges(storeId, id, previousStock, stock, previousEffectivePrice, nextEffectivePrice);
   }
   finish(destination, !result.error);
+}
+
+function notifyCatalogChanges(storeId: string, id: string, beforeStock: number | null, stock: number,
+  beforePrice: number | null, price: number) {
+  if (beforeStock !== null && beforeStock <= 0 && stock > 0) {
+    void notifyBackInStock(id, storeId);
+    void notifyWishlistProductAlert({ storeId, productId: id, kind: "restock" });
+  }
+  if (beforePrice !== null && price < beforePrice) {
+    void notifyWishlistProductAlert({ storeId, productId: id, kind: "price_drop", oldPrice: beforePrice, newPrice: price });
+  }
+}
+
+export async function quickSaveProduct(expectedStore: string, id: string, form: FormData) {
+  const { db, storeId } = await requireAdmin("manage_products");
+  if (expectedStore !== storeId || !isRecordId(id)) return "changed";
+  const { data: current, error } = await db.from("products")
+    .select("stock,price,flash_sale_price,flash_sale_starts_at,flash_sale_ends_at,product_variants(color,size,stock)")
+    .eq("store_id", storeId).eq("id", id).eq("product_variants.listed", true).maybeSingle();
+  if (error || !current) return "changed";
+  const variants = current.product_variants;
+  const change = quickProductChange(current, form);
+  if (typeof change === "string") return change;
+  // The existing RPC merges only supplied fields into its locked row and checks the stock snapshot.
+  const saved = await db.rpc("save_catalog_product", {
+    p_store: storeId, p_id: id, p_fields: change.fields,
+    p_variants: variants, p_original_variants: variants, p_original_stock: current.stock, p_previous_image: null,
+  });
+  if (quotaFailure(saved.error)?.resource === "products") return "quota";
+  if (saved.error) return saved.error.message === "inventory_changed" ? "inventory_changed" : "invalid";
+  notifyCatalogChanges(storeId, id, current.stock, change.stock, resolveEffectivePrice(current), resolveEffectivePrice({ ...current, price: change.price }));
+  revalidatePath("/admin", "layout");
+  revalidatePath("/", "layout");
+  return "saved";
 }
 export async function deleteProduct(f: FormData) {
   const destination = productListDestination(f);
@@ -359,15 +365,17 @@ export async function deleteProduct(f: FormData) {
   finish(destination, !result.error);
 }
 export async function updateOrder(f: FormData) {
+  const id = text(f, "id");
+  const destination = text(f, "return_to") === "/admin/orders" ? "/admin/orders" : "/admin/orders/" + encodeURIComponent(id);
+  finish(destination, await applyOrderUpdate(f));
+}
+
+async function applyOrderUpdate(f: FormData, expectedStore?: string) {
   const { db, storeId } = await requireAdmin("manage_orders"),
     id = text(f, "id"),
     prev = text(f, "previous"),
-    status = text(f, "status"),
-    returnTo = text(f, "return_to");
-  const destination =
-    returnTo === "/admin/orders"
-      ? "/admin/orders"
-      : "/admin/orders/" + encodeURIComponent(id);
+    status = text(f, "status");
+  if (expectedStore && storeId !== expectedStore) return false;
 
   const allowSameShippedEdit = prev === "shipped" && status === "shipped";
   if (
@@ -375,7 +383,7 @@ export async function updateOrder(f: FormData) {
     !Object.hasOwn(nextOrder, prev) ||
     (!allowSameShippedEdit && !nextOrder[prev].includes(status))
   ) {
-    finish(destination, false);
+    return false;
   }
 
   const updatePayload: Record<string, unknown> = { status };
@@ -395,7 +403,7 @@ export async function updateOrder(f: FormData) {
     const courierNote = text(f, "courier_note");
 
     if (rawTrackingUrl && !isSafeHttpUrl(rawTrackingUrl)) {
-      finish(destination, false);
+      return false;
     }
 
     const carrierLabel = resolveCarrierLabel(carrierPreset, customCarrier);
@@ -495,14 +503,18 @@ export async function updateOrder(f: FormData) {
     revalidatePath("/products");
     revalidatePath("/");
   }
-  finish(destination, !result.error);
+  return !result.error;
 }
 
 export async function ensureDeliveryToken(f: FormData) {
+  const id = text(f, "id");
+  finish(id ? "/admin/orders/" + encodeURIComponent(id) : "/admin/orders", await issueDeliveryToken(f));
+}
+
+async function issueDeliveryToken(f: FormData, expectedStore?: string) {
   const { db, storeId } = await requireAdmin("manage_orders"),
     id = text(f, "id");
-  const destination = "/admin/orders/" + encodeURIComponent(id);
-  if (!id) finish("/admin/orders", false);
+  if (!id || (expectedStore && expectedStore !== storeId)) return false;
   const token = randomBytes(24).toString("hex");
   const result = await db
     .from("orders")
@@ -512,7 +524,16 @@ export async function ensureDeliveryToken(f: FormData) {
     .is("delivery_token", null)
     .select("id")
     .maybeSingle();
-  finish(destination, !result.error);
+  return !result.error;
+}
+
+export async function saveOrderInDrawer(storeId: string, action: "status" | "token", form: FormData) {
+  if (!isRecordId(storeId) || !isRecordId(text(form, "id"))) return false;
+  const ok = action === "status" ? await applyOrderUpdate(form, storeId) :
+    action === "token" ? await issueDeliveryToken(form, storeId) : false;
+  revalidatePath("/admin/orders");
+  if (ok) revalidatePath("/", "layout");
+  return ok;
 }
 export async function updateTicket(f: FormData) {
   const { db, storeId } = await requireAdmin("manage_customers"),

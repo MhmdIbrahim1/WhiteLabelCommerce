@@ -18,7 +18,7 @@ import {
   findCarrierPreset,
 } from "@/lib/shipping";
 import { useLanguage } from "@/components/language-provider";
-import { updateOrder, ensureDeliveryToken } from "../mutations";
+import { updateOrder, ensureDeliveryToken, saveOrderInDrawer } from "../mutations";
 
 export function OrderStatusForm({
   orderId,
@@ -32,6 +32,7 @@ export function OrderStatusForm({
   shippingAddress,
   phone,
   totalLabel,
+  drawerStore,
 }: {
   orderId: string;
   currentStatus: string;
@@ -44,15 +45,23 @@ export function OrderStatusForm({
   shippingAddress: string;
   phone: string | null;
   totalLabel: string;
+  drawerStore?: string;
 }) {
   const { lang } = useLanguage();
   const isEn = lang === "en";
   const initialPreset = findCarrierPreset(shippingCarrier ?? "");
   const allOptions =
     currentStatus === "shipped" ? ["shipped", ...options] : options;
-  const [selectedStatus, setSelectedStatus] = useState(
+  const [draftStatus, setSelectedStatus] = useState(
     options[0] ?? currentStatus,
   );
+  const selectedStatus = allOptions.includes(draftStatus) ? draftStatus : options[0] ?? currentStatus;
+  const [feedback, setFeedback] = useState<"saved" | "error" | null>(null);
+  async function submitInline(action: "status" | "token", data: FormData) {
+    setFeedback(null);
+    try { setFeedback(await saveOrderInDrawer(drawerStore!, action, data) ? "saved" : "error"); }
+    catch { setFeedback("error"); }
+  }
   const [carrierPreset, setCarrierPreset] = useState<string>(
     initialPreset
       ? initialPreset.key
@@ -104,7 +113,7 @@ export function OrderStatusForm({
   return (
     <div className="stack" style={{ gap: "1.15rem" }}>
       {allOptions.length > 0 && (
-        <form className="order-fulfillment-form" action={updateOrder}>
+        <form className="order-fulfillment-form" onChange={() => setFeedback(null)} action={drawerStore ? submitInline.bind(null, "status") : updateOrder}>
           <input type="hidden" name="id" value={orderId} />
           <input type="hidden" name="previous" value={currentStatus} />
           <input
@@ -153,8 +162,8 @@ export function OrderStatusForm({
               <h3>
                 <Truck size={17} />{" "}
                 {isEn
-                  ? "Zero-Contract Shipping & Tracking Details"
-                  : "بيانات الشحن والتتبع (بدون تعاقد خارجي)"}
+                  ? "Shipment details"
+                  : "بيانات الشحنة"}
               </h3>
               <div className="fields">
                 <label>
@@ -215,8 +224,8 @@ export function OrderStatusForm({
                   />
                   {!manualUrl && previewAutoUrl && (
                     <small className="auto-url-hint" dir="ltr">
-                      <Link2 size={13} /> {isEn ? "Auto:" : "تلقائي:"}{" "}
-                      {previewAutoUrl}
+                      <Link2 size={13} /> {isEn ? "Tracking link" : "رابط التتبع"}{" "}
+                      <bdi dir="ltr">{previewAutoUrl}</bdi>
                     </small>
                   )}
                 </label>
@@ -258,8 +267,8 @@ export function OrderStatusForm({
             <div>
               <strong>
                 {isEn
-                  ? "One-Tap Courier Delivery Confirmation Link"
-                  : "رابط تأكيد التسليم بضغطة واحدة للمندوب"}
+                  ? "Courier confirmation link"
+                  : "رابط تأكيد التسليم للمندوب"}
               </strong>
               <p>
                 {isEn
@@ -272,7 +281,7 @@ export function OrderStatusForm({
           {deliveryToken ? (
             <div className="delivery-link-actions">
               <code className="code delivery-url-code" dir="ltr">
-                /delivery/{deliveryToken}
+                <bdi dir="ltr">/delivery/{deliveryToken}</bdi>
               </code>
               <div className="inline">
                 <button
@@ -309,7 +318,7 @@ export function OrderStatusForm({
               </div>
             </div>
           ) : (
-            <form action={ensureDeliveryToken} style={{ marginTop: "0.5rem" }}>
+            <form action={drawerStore ? submitInline.bind(null, "token") : ensureDeliveryToken} style={{ marginBlockStart: "0.5rem" }}>
               <input type="hidden" name="id" value={orderId} />
               <SubmitButton type="submit" className="btn-outline-admin">
                 <Link2 size={15} />{" "}
@@ -321,6 +330,9 @@ export function OrderStatusForm({
           )}
         </div>
       )}
+      {feedback && <p role="status" className={feedback === "saved" ? "ws-feedback" : "ws-field-error"}>{feedback === "saved"
+        ? (isEn ? "Order updated." : "تم تحديث الطلب.")
+        : (isEn ? "Couldn’t save. Check the latest order status and shipping details." : "تعذّر الحفظ. راجع حالة الطلب الحالية وبيانات الشحن.")}</p>}
     </div>
   );
 }

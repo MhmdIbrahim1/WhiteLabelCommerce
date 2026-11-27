@@ -3,17 +3,12 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  CheckCircle2,
   Download,
   ExternalLink,
   RefreshCw,
-  AlertTriangle,
   Rocket,
-  Clock,
-  XCircle,
   X,
   QrCode,
-  ShieldCheck,
   Search,
   Heart,
   Bell,
@@ -38,7 +33,8 @@ import {
   resolveEffectivePrice,
 } from "@/lib/flash-sale";
 import { generateQrSvg } from "@/lib/qr-svg";
-import { limitReached, quotaFailure } from "@/lib/billing";
+import { limitLabel, limitReached, quotaFailure } from "@/lib/billing";
+import { DataCell, StatusDot, WorkspaceEmpty, WorkspaceHeading, WorkspaceTable } from "@/components/workspace-data";
 import { QuotaPrompt } from "@/components/quota-prompt";
 import type { StoreAppBuildRow } from "@/app/api/admin/mobile-builds/route";
 
@@ -354,7 +350,7 @@ function AndroidPhoneMockup({
                     {heroBadge}
                   </span>
                 )}
-                <strong style={{ fontSize: "0.92rem", lineHeight: 1.25 }}>
+                <strong style={{ fontSize: "0.92rem", lineHeight: isEn ? 1.25 : 1.36 }}>
                   {heroTitle}
                 </strong>
                 {heroSubtitle && (
@@ -362,7 +358,7 @@ function AndroidPhoneMockup({
                     style={{
                       fontSize: "0.66rem",
                       opacity: 0.9,
-                      lineHeight: 1.35,
+                      lineHeight: isEn ? 1.35 : 1.78,
                       display: "-webkit-box",
                       WebkitLineClamp: 2,
                       WebkitBoxOrient: "vertical",
@@ -529,7 +525,7 @@ function AndroidPhoneMockup({
                           fontSize: "0.68rem",
                           fontWeight: 700,
                           color: ink,
-                          lineHeight: 1.25,
+                          lineHeight: isEn ? 1.25 : 1.36,
                           display: "-webkit-box",
                           WebkitLineClamp: 1,
                           WebkitBoxOrient: "vertical",
@@ -546,7 +542,7 @@ function AndroidPhoneMockup({
                           gap: "4px",
                         }}
                       >
-                        <div style={{ display: "grid", lineHeight: 1.15 }}>
+                        <div style={{ display: "grid", lineHeight: isEn ? 1.3 : 1.78 }}>
                           <span
                             style={{
                               fontSize: "0.68rem",
@@ -748,6 +744,7 @@ export function MobileAppStudio({
   unlocked,
   isSuperAdmin,
   canViewBilling,
+  canCustomize,
   githubConfigured,
   initialBuilds,
   initialQuota,
@@ -757,6 +754,7 @@ export function MobileAppStudio({
   unlocked: boolean;
   isSuperAdmin: boolean;
   canViewBilling: boolean;
+  canCustomize: boolean;
   githubConfigured: boolean;
   initialBuilds: StoreAppBuildRow[];
   initialQuota: { current: number; limit: number | null };
@@ -958,8 +956,8 @@ export function MobileAppStudio({
       setBanner({
         kind: "ok",
         text: isEn
-          ? "APK build queued! GitHub Actions is compiling your custom Android app now (typically 3–5 minutes)."
-          : "تم إرسال طلب بناء التطبيق بنجاح! يقوم الخادم الآن بتجهيز ملف APK الخاص بمتجرك (يستغرق عادةً 3–5 دقائق).",
+          ? "Build queued. Follow its progress in build history."
+          : "أُضيف التطبيق إلى قائمة البناء. تابع تقدّمه في سجل الإصدارات.",
       });
     } catch {
       setBanner({
@@ -973,851 +971,85 @@ export function MobileAppStudio({
     }
   };
 
+  const copy = (english: string, arabic: string) => isEn ? english : arabic;
   const planLabel = localizedText(lang, store.planNameAr, store.planNameEn);
-
-  const PreviewControlsBar = (
-    <div
-      style={{
-        width: "100%",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: "0.5rem",
-        flexWrap: "wrap",
-      }}
-    >
-      <div role="group" className="ws-preview-modes" aria-label={isEn ? "Preview theme mode" : "مظهر المعاينة"}>
-        <button type="button" aria-pressed={!previewDarkMode} onClick={() => setPreviewDarkMode(false)}><Sun size={14}/>{isEn ? "Light" : "فاتح"}</button>
-        <button type="button" aria-pressed={previewDarkMode} onClick={() => setPreviewDarkMode(true)}><Moon size={14}/>{isEn ? "Dark" : "داكن"}</button>
-      </div>
-
-      <Link
-        href="/admin/customizer"
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: "0.32rem",
-          fontSize: "0.75rem",
-          fontWeight: 700,
-          color: "var(--ws-link)",
-          textDecoration: "none",
-          padding: "0.32rem 0.65rem",
-          borderRadius: "999px",
-          background: "var(--card)",
-          border: "1px solid var(--line)",
-        }}
-      >
-        <Palette size={13} />
-        <span>
-          {isEn
-            ? "Edit Design in Customizer"
-            : "تعديل التصميم في استوديو المظهر"}
-        </span>
-      </Link>
-    </div>
-  );
-
-  if (!unlocked || builderDisabled) {
-    return <section className="card">
-      <h1>{isEn ? "Android Mobile App Studio" : "استوديو تطبيق أندرويد"}</h1>
-      <QuotaPrompt canViewBilling={canViewBilling} resource="apk_builds" lang={lang} disabled />
-      {PreviewControlsBar}
-      <AndroidPhoneMockup appName={appName} iconUrl={iconUrl} store={store} preview={preview}
-        isEn={isEn} darkMode={previewDarkMode} locked />
-      {store.supportEmail && <a href={"mailto:" + store.supportEmail}>{isEn ? "Contact support" : "تواصل مع الدعم"}</a>}
-    </section>;
-  }
-  const latestSucceeded = builds.find(
-    (b) => b.status === "succeeded" && b.apk_download_url,
-  );
-
-  const statusMeta = (status: StoreAppBuildRow["status"]) => {
-    if (status === "succeeded") {
-      return {
-        label: isEn ? "Ready" : "جاهز للتحميل",
-        bg: "var(--card)",
-        fg: "var(--ws-good)",
-        border: "var(--line)",
-        Icon: CheckCircle2,
-      };
-    }
-    if (status === "failed") {
-      return {
-        label: isEn ? "Failed" : "فشل البناء",
-        bg: "var(--card)",
-        fg: "var(--ws-danger)",
-        border: "var(--line)",
-        Icon: XCircle,
-      };
-    }
-    if (status === "building") {
-      return {
-        label: isEn ? "Building..." : "جارٍ البناء...",
-        bg: "var(--card)",
-        fg: "var(--ws-info)",
-        border: "var(--line)",
-        Icon: RefreshCw,
-      };
-    }
-    return {
-      label: isEn ? "Queued" : "في الانتظار",
-      bg: "var(--card)",
-      fg: "var(--ws-warn)",
-      border: "var(--line)",
-      Icon: Clock,
-    };
-  };
-
-  return (
-    <div style={{ display: "grid", gap: "1.4rem", minWidth: 0 }}>
-      {/* Header */}
-      <div
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: "0.75rem",
-        }}
-      >
-        <div>
-          <h1 style={{ margin: 0, fontSize: "1.55rem", fontWeight: 800 }}>
-            {isEn ? "Android Mobile App Studio" : "استوديو تطبيق الموبايل (APK)"}
-          </h1>
-          <p
-            style={{
-              margin: "0.3rem 0 0",
-              color: "var(--muted)",
-              fontSize: "0.9rem",
-            }}
-          >
-            {isEn
-              ? "Customize your branded Android app name & icon and generate a ready-to-install APK connected directly to your store."
-              : "خصّص اسم وأيقونة تطبيق متجرك وأنشئ ملف APK جاهز للتثبيت ومرتبط مباشرةً بمتجرك."}
-          </p>
-        </div>
-
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-          <span
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "0.35rem",
-              fontSize: "0.78rem",
-              fontWeight: 700,
-              padding: "0.35rem 0.78rem",
-              borderRadius: "999px",
-              background: "var(--card)",
-              color: "var(--ws-good)",
-              border: "1px solid var(--line)",
-            }}
-          >
-            <ShieldCheck size={14} />
-            {planLabel} · {isEn ? "Unlocked" : "مفعّل"}
-          </span>
-        </div>
-      </div>
-
+  const locked = !unlocked || builderDisabled;
+  const latest = builds.find(b => b.status === "succeeded" && b.apk_download_url);
+  const buildLabels = { queued: copy("Queued", "في الانتظار"), building: copy("Building", "قيد البناء"),
+    succeeded: copy("Ready to download", "جاهز للتحميل"), failed: copy("Failed", "تعذّر البناء") };
+  const cols = isEn ? ["Release", "Created", "Status", "Files"] : ["الإصدار", "تاريخ الإنشاء", "الحالة", "الملفات"];
+  const previewCard = <section className="ws-box ws-studio-preview">
+    <div className="ws-section-line"><h2>{copy("App preview", "معاينة التطبيق")}</h2>
+      <div role="group" className="ws-preview-modes" aria-label={copy("Preview theme", "مظهر المعاينة")}>
+        <button type="button" aria-pressed={!previewDarkMode} onClick={() => setPreviewDarkMode(false)}><Sun size={14}/>{copy("Light", "فاتح")}</button>
+        <button type="button" aria-pressed={previewDarkMode} onClick={() => setPreviewDarkMode(true)}><Moon size={14}/>{copy("Dark", "داكن")}</button>
+      </div></div>
+    <AndroidPhoneMockup appName={appName} iconUrl={iconUrl} store={store} preview={preview} isEn={isEn} darkMode={previewDarkMode} locked={locked} />
+    {canCustomize && <Link href="/admin/customizer" className="ws-text-link"><Palette size={14}/>{copy("Edit storefront design", "تعديل تصميم المتجر")}</Link>}
+    {!locked && latest?.apk_download_url && <QrCodeCard url={latest.apk_download_url} isEn={isEn} />}
+  </section>;
+  return <div className="ws-page ws-studio" style={{ minWidth: 0, overflowWrap: "anywhere" }}>
+    <WorkspaceHeading title={copy("Android app studio", "استوديو تطبيق أندرويد")}
+      description={copy("Choose the name and icon customers see when they install your store’s app.", "اختر الاسم والأيقونة اللذين يراهما عملاؤك عند تثبيت تطبيق متجرك.")}>
+      <span className="ws-role">{planLabel}</span></WorkspaceHeading>
+    {locked ? <><QuotaPrompt canViewBilling={canViewBilling} resource="apk_builds" lang={lang} disabled />{previewCard}
+      {store.supportEmail && <a className="ws-text-link" href={"mailto:" + store.supportEmail}>{copy("Contact support", "تواصل مع الدعم")}</a>}</> : <>
       {limitReached(quota.current, quota.limit) && <QuotaPrompt canViewBilling={canViewBilling} resource="apk_builds" lang={lang} usage={quota} />}
-      {!githubConfigured && (
-        <div
-          role="status"
-          style={{
-            display: "flex",
-            alignItems: "flex-start",
-            gap: "0.65rem",
-            padding: "0.9rem 1.05rem",
-            borderRadius: "var(--pt-radius)",
-            border: isSuperAdmin ? "1px solid var(--line)" : "1px solid var(--ws-control-line)",
-            background: isSuperAdmin ? "var(--card)" : "var(--card)",
-            color: isSuperAdmin ? "var(--ws-warn)" : "var(--ink)",
-            fontSize: "0.86rem",
-          }}
-        >
-          <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: "2px" }} />
-          <div style={{ minWidth: 0, overflowWrap: "anywhere" }}>
-            {isSuperAdmin ? (
-              <>
-                <strong>
-                  {isEn
-                    ? "GitHub Actions Cloud Builder not connected on this server yet."
-                    : "خادم البناء السحابي (GitHub Actions) غير مربوط بعد على هذه البيئة."}
-                </strong>
-                <div style={{ marginTop: "0.2rem", opacity: 0.9 }}>
-                  {isEn
-                    ? "Set GITHUB_ACTIONS_TOKEN, GITHUB_REPO_OWNER, and GITHUB_REPO_NAME in web-store/.env.local to enable 1-click cloud APK builds."
-                    : "أضف GITHUB_ACTIONS_TOKEN و GITHUB_REPO_OWNER و GITHUB_REPO_NAME في web-store/.env.local لتفعيل البناء السحابي التلقائي."}
-                </div>
-              </>
-            ) : (
-              <strong>
-                {isEn
-                  ? "Cloud APK builder is currently being provisioned. Please check back shortly."
-                  : "خدمة بناء التطبيق قيد التجهيز حالياً. يرجى المحاولة مرة أخرى قريباً."}
-              </strong>
-            )}
-          </div>
-        </div>
-      )}
-
-      {banner && (
-        <div
-          role="status"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: "0.75rem",
-            padding: "0.85rem 1rem",
-            borderRadius: "var(--pt-radius)",
-            fontSize: "0.88rem",
-            fontWeight: 600,
-            border:
-              banner.kind === "ok"
-                ? "1px solid var(--line)"
-                : banner.kind === "warn"
-                  ? "1px solid var(--line)"
-                  : "1px solid var(--line)",
-            background:
-              banner.kind === "ok"
-                ? "var(--card)"
-                : banner.kind === "warn"
-                  ? "var(--card)"
-                  : "var(--card)",
-            color:
-              banner.kind === "ok"
-                ? "var(--ws-good)"
-                : banner.kind === "warn"
-                  ? "var(--ws-warn)"
-                  : "var(--ws-danger)",
-          }}
-        >
-          <span>{banner.text}</span>
-          <button
-            type="button"
-            onClick={() => setBanner(null)}
-            style={{
-              background: "transparent",
-              color: "inherit",
-              padding: "0.2rem",
-            }}
-            aria-label="Dismiss"
-          >
-            <X size={15} />
-          </button>
-        </div>
-      )}
-
-      {/* Main Split: Configuration Form + Real Customizer-Synced Phone Preview */}
-      <section
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 300px), 1fr))",
-          gap: "1.5rem",
-          alignItems: "start",
-          minWidth: 0,
-        }}
-      >
-        {/* Config Card */}
-        <form
-          onSubmit={handleTriggerBuild}
-          style={{
-            background: "var(--surface)",
-            borderRadius: "var(--pt-card-radius)",
-            border: "1px solid var(--line)",
-            padding: "1.4rem",
-            display: "grid",
-            gap: "1rem",
-            marginTop: 0,
-            minWidth: 0,
-          }}
-        >
-          <h2 style={{ margin: 0, fontSize: "1.08rem", fontWeight: 800 }}>
-            {isEn
-              ? "App Identity & Build Settings"
-              : "هوية التطبيق وإعدادات البناء"}
-          </h2>
-
-          <label style={{ display: "grid", gap: "0.35rem" }}>
-            <span style={{ fontSize: "0.84rem", fontWeight: 700 }}>
-              {isEn ? "App Display Name" : "اسم التطبيق على الهاتف"}
-            </span>
-            <input
-              type="text"
-              required
-              minLength={2}
-              maxLength={60}
-              value={appName}
-              onChange={(e) => setAppName(e.target.value)}
-              placeholder={isEn ? "e.g. Velvet Boutique" : "مثال: متجر فيلفيت"}
-            />
-          </label>
-
-          {/* Direct Device App Icon Uploader Card */}
-          <div style={{ display: "grid", gap: "0.55rem" }}>
-            <span style={{ fontSize: "0.84rem", fontWeight: 700 }}>
-              {isEn ? "App Launcher Icon" : "أيقونة التطبيق"}
-            </span>
-            <div
-              style={{
-                borderRadius: "var(--pt-radius)",
-                border: "1px solid var(--line)",
-                background: "var(--card)",
-                padding: "0.9rem",
-                display: "grid",
-                gap: "0.75rem",
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.9rem",
-                  flexWrap: "wrap",
-                }}
-              >
-                <div
-                  style={{
-                    width: "64px",
-                    height: "64px",
-                    borderRadius: "16px",
-                    overflow: "hidden",
-                    background: safeHex(store.primaryColor, "#0f172a"),
-                    color: safeHex(store.primaryText, "#ffffff"),
-                    display: "grid",
-                    placeItems: "center",
-                    fontSize: "1.45rem",
-                    fontWeight: 800,
-                    border: "1px solid rgba(15, 23, 42, 0.1)",
-                    flexShrink: 0,
-                    
-                  }}
-                >
-                  {iconUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={iconUrl}
-                      alt={appName || "App icon"}
-                      style={{
-                        width: "100%",
-                        height: "100%",
-                        objectFit: "cover",
-                      }}
-                    />
-                  ) : (
-                    <span>{(appName || "S").slice(0, 1).toUpperCase()}</span>
-                  )}
-                </div>
-
-                <div
-                  style={{
-                    flex: 1,
-                    minWidth: "min(100%, 180px)",
-                    display: "grid",
-                    gap: "0.45rem",
-                  }}
-                >
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp"
-                    onChange={handleIconFileChange}
-                    style={{ display: "none" }}
-                    aria-label={
-                      isEn
-                        ? "Upload app icon from device"
-                        : "رفع أيقونة التطبيق من الجهاز"
-                    }
-                  />
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "0.45rem",
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    <button
-                      type="button"
-                      disabled={uploadingIcon}
-                      onClick={() => fileInputRef.current?.click()}
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "0.4rem",
-                        padding: "0.52rem 0.9rem",
-                        borderRadius: "var(--pt-radius)",
-                        background: "var(--pt-fill)",
-                        color: "var(--pt-on-fill)",
-                        fontSize: "0.82rem",
-                        fontWeight: 700,
-                      }}
-                    >
-                      <Upload size={14} />
-                      <span>
-                        {uploadingIcon
-                          ? isEn
-                            ? "Uploading…"
-                            : "جارٍ الرفع…"
-                          : isEn
-                            ? "Upload from Device"
-                            : "رفع صورة من الجهاز"}
-                      </span>
-                    </button>
-
-                    {iconUrl && (
-                      <button
-                        type="button"
-                        disabled={uploadingIcon}
-                        onClick={() => void handleRemoveIcon()}
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: "0.3rem",
-                          padding: "0.5rem 0.72rem",
-                          borderRadius: "var(--pt-radius)",
-                          background: "var(--surface)",
-                          color: "var(--ws-danger)",
-                          border: "1px solid var(--line)",
-                          fontSize: "0.78rem",
-                          fontWeight: 650,
-                        }}
-                      >
-                        <Trash2 size={13} />
-                        <span>{isEn ? "Remove" : "إزالة"}</span>
-                      </button>
-                    )}
-                  </div>
-                  <small style={{ color: "var(--muted)", fontSize: "0.74rem" }}>
-                    {isEn
-                      ? "PNG, JPG, or WEBP · 512×512 square recommended · Max 2 MB"
-                      : "PNG أو JPG أو WEBP · يُفضّل 512×512 مربعة · الحد الأقصى 2 ميجابايت"}
-                  </small>
-                </div>
-              </div>
-
-              {iconFeedback && (
-                <div
-                  role="status"
-                  style={{
-                    fontSize: "0.78rem",
-                    fontWeight: 600,
-                    padding: "0.45rem 0.65rem",
-                    borderRadius: "var(--pt-radius)",
-                    background:
-                      iconFeedback.kind === "ok" ? "var(--card)" : "var(--card)",
-                    color: iconFeedback.kind === "ok" ? "var(--ws-good)" : "var(--ws-danger)",
-                    border:
-                      iconFeedback.kind === "ok"
-                        ? "1px solid var(--line)"
-                        : "1px solid var(--line)",
-                  }}
-                >
-                  {iconFeedback.text}
-                </div>
-              )}
-
-              <div>
-                <button
-                  type="button"
-                  onClick={() => setShowUrlInput((v) => !v)}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: "0.35rem",
-                    background: "transparent",
-                    color: "var(--muted)",
-                    padding: "0.15rem 0",
-                    fontSize: "0.76rem",
-                    fontWeight: 650,
-                  }}
-                >
-                  <Link2 size={13} />
-                  <span>
-                    {showUrlInput
-                      ? isEn
-                        ? "Hide direct image URL"
-                        : "إخفاء رابط الصورة المباشر"
-                      : isEn
-                        ? "Or paste image URL"
-                        : "أو استخدام رابط مباشر"}
-                  </span>
-                </button>
-
-                {showUrlInput && (
-                  <input
-                    type="url"
-                    dir="ltr"
-                    value={iconUrl}
-                    onChange={(e) => {
-                      setIconUrl(e.target.value);
-                      setUploadedIconPath(null);
-                      setIconFeedback(null);
-                    }}
-                    placeholder="https://.../logo.png"
-                    style={{ marginTop: "0.45rem", background: "var(--surface)" }}
-                  />
-                )}
-              </div>
+      {!githubConfigured && <div role="status" className="ws-feedback ws-studio-warn">
+        {isSuperAdmin ? <>{copy("Connect GitHub Actions to enable cloud builds.", "اربط GitHub Actions لتفعيل البناء السحابي.")}
+          <small>{copy("Set ", "اضبط ")}<bdi dir="ltr">GITHUB_ACTIONS_TOKEN · GITHUB_REPO_OWNER · GITHUB_REPO_NAME</bdi>
+            {copy(" in ", " في ")}<bdi dir="ltr">web-store/.env.local</bdi></small></> :
+          copy("The build service is being set up. Check back shortly.", "يجري إعداد خدمة بناء التطبيق. حاول مجدداً بعد قليل.")}</div>}
+      {banner && <div role="status" className={"ws-feedback ws-section-line" + (banner.kind === "err" ? " ws-error" : banner.kind === "warn" ? " ws-studio-warn" : "")}>
+        {banner.text}<button type="button" className="ws-icon-button" onClick={() => setBanner(null)} aria-label={copy("Dismiss", "إغلاق")}><X size={15}/></button></div>}
+      <div className="ws-studio-grid">
+        <section className="ws-box ws-stack"><h2>{copy("App identity", "هوية التطبيق")}</h2>
+          <form className="ws-form" onSubmit={handleTriggerBuild}>
+            <label>{copy("App name", "اسم التطبيق على الهاتف")}<input id="app-name" type="text" dir="auto" required minLength={2} maxLength={60}
+              value={appName} onChange={e => setAppName(e.target.value)} /></label>
+            <div className="ws-stack ws-rule"><h3>{copy("App icon", "أيقونة التطبيق")}</h3>
+              <div className="ws-icon-upload"><span className="ws-launcher-icon" style={{ background: store.primaryColor, color: store.primaryText }}>
+                {iconUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={iconUrl} alt="" width={60} height={60} />
+                ) : appName.slice(0, 1).toUpperCase()}</span>
+                <div className="ws-actions"><input ref={fileInputRef} type="file" hidden accept="image/png,image/jpeg,image/webp" onChange={handleIconFileChange} />
+                  <button className="ws-button" type="button" disabled={uploadingIcon} onClick={() => fileInputRef.current?.click()}><Upload size={15}/>
+                    {uploadingIcon ? copy("Uploading…", "جارٍ الرفع…") : copy("Upload icon", "رفع أيقونة")}</button>
+                  {iconUrl && <button className="ws-button" type="button" disabled={uploadingIcon} onClick={() => void handleRemoveIcon()}><Trash2 size={14}/>{copy("Remove", "إزالة")}</button>}</div></div>
+              <small>{copy("Use a square PNG, JPG or WebP up to 2 MB. A 512 × 512 image works well.", "اختر صورة مربعة بصيغة PNG أو JPG أو WebP بحجم أقصاه ٢ م.ب. المقاس المفضّل ٥١٢ × ٥١٢.")}</small>
+              {iconFeedback && <p role="status" className={iconFeedback.kind === "err" ? "ws-field-error" : "ws-feedback"}>{iconFeedback.text}</p>}
+              <button type="button" className="ws-button" aria-expanded={showUrlInput} onClick={() => setShowUrlInput(!showUrlInput)}><Link2 size={14}/>
+                {showUrlInput ? copy("Hide image address", "إخفاء عنوان الصورة") : copy("Use an image address", "استخدام رابط صورة")}</button>
+              {showUrlInput && <label>{copy("Icon URL", "رابط الأيقونة")}<input type="url" dir="ltr" value={iconUrl}
+                onChange={e => { setIconUrl(e.target.value); setUploadedIconPath(null); setIconFeedback(null); }} /></label>}
             </div>
-          </div>
-
-          <div
-            style={{
-              borderRadius: "var(--pt-radius)",
-              background: "var(--card)",
-              border: "1px solid var(--line)",
-              padding: "0.85rem",
-              display: "grid",
-              gap: "0.45rem",
-              fontSize: "0.8rem",
-              minWidth: 0,
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                alignItems: "baseline",
-                justifyContent: "space-between",
-                gap: "0.35rem 0.5rem",
-                minWidth: 0,
-              }}
-            >
-              <span style={{ color: "var(--muted)", fontWeight: 600 }}>
-                {isEn ? "Android Package ID" : "معرّف الحزمة (Package ID)"}
-              </span>
-              <code
-                dir="ltr"
-                style={{
-                  fontWeight: 700,
-                  color: "var(--ink)",
-                  overflowWrap: "anywhere",
-                  maxWidth: "100%",
-                }}
-              >
-                {store.packageId}
-              </code>
-            </div>
-            <div
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                alignItems: "baseline",
-                justifyContent: "space-between",
-                gap: "0.35rem 0.5rem",
-                minWidth: 0,
-              }}
-            >
-              <span style={{ color: "var(--muted)", fontWeight: 600 }}>
-                {isEn ? "Tenant Store ID" : "معرّف المتجر"}
-              </span>
-              <code
-                dir="ltr"
-                style={{
-                  fontSize: "0.74rem",
-                  color: "var(--muted)",
-                  overflowWrap: "anywhere",
-                  maxWidth: "100%",
-                }}
-              >
-                {store.storeId.slice(0, 8)}…{store.storeId.slice(-4)}
-              </code>
-            </div>
-          </div>
-
-          <button
-            type="submit"
-            disabled={submitting || hasActiveBuild}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: "0.5rem",
-              padding: "0.85rem 1.2rem",
-              borderRadius: "var(--pt-radius)",
-              background: "var(--pt-fill)",
-              color: "var(--pt-on-fill)",
-              fontWeight: 700,
-              fontSize: "0.94rem",
-            }}
-          >
-            <Rocket size={17} />
-            <span>
-              {submitting
-                ? isEn
-                  ? "Starting Build…"
-                  : "جارٍ إرسال الطلب…"
-                : hasActiveBuild
-                  ? isEn
-                    ? "Build In Progress…"
-                    : "يوجد بناء قيد التنفيذ…"
-                  : isEn
-                    ? "Build APK Now"
-                    : "بناء ملف APK الآن"}
-            </span>
-          </button>
-        </form>
-
-        {/* Live Customizer-Synced Android Preview + Latest QR */}
-        <div
-          style={{
-            background: "var(--surface)",
-            borderRadius: "var(--pt-card-radius)",
-            border: "1px solid var(--line)",
-            padding: "1.25rem",
-            display: "grid",
-            gap: "0.95rem",
-            justifyItems: "center",
-            minWidth: 0,
-          }}
-        >
-          {PreviewControlsBar}
-          <AndroidPhoneMockup
-            appName={appName}
-            iconUrl={iconUrl}
-            store={store}
-            preview={preview}
-            isEn={isEn}
-            darkMode={previewDarkMode}
-          />
-          {latestSucceeded?.apk_download_url && (
-            <QrCodeCard url={latestSucceeded.apk_download_url} isEn={isEn} />
-          )}
-        </div>
+            <dl className="ws-facts ws-rule"><div><dt>{copy("Android package", "حزمة أندرويد")}</dt><dd><bdi dir="ltr">{store.packageId}</bdi></dd></div>
+              <div><dt>{copy("Store ID", "معرّف المتجر")}</dt><dd><bdi dir="ltr">{store.storeId}</bdi></dd></div>
+              <div><dt>{copy("Builds this month", "إصدارات هذا الشهر")}</dt><dd><bdi dir="ltr">{limitLabel(quota.current, lang)} / {limitLabel(quota.limit, lang)}</bdi></dd></div></dl>
+            <button className="ws-primary" type="submit" disabled={submitting || hasActiveBuild}><Rocket size={16}/>
+              {submitting ? copy("Starting build…", "جارٍ بدء البناء…") : hasActiveBuild ? copy("Build in progress", "البناء جارٍ") : copy("Build APK", "بناء ملف APK")}</button>
+          </form>
+        </section>{previewCard}
+      </div>
+      <section className="ws-sheet"><div className="ws-section-head"><div><h2>{copy("Build history", "سجل الإصدارات")}</h2>
+        {hasActiveBuild && <p>{copy("Updates every 10 seconds while a build is running.", "تتحدّث الحالة كل عشر ثوانٍ أثناء البناء.")}</p>}</div>
+        <button className="ws-button" type="button" disabled={refreshing} onClick={() => void fetchBuilds(true)}><RefreshCw size={14}/>
+          {refreshing ? copy("Refreshing…", "جارٍ التحديث…") : copy("Refresh", "تحديث")}</button></div>
+        {builds.length ? <WorkspaceTable columns={cols} caption={copy("Android releases", "إصدارات أندرويد")}>{builds.map(b => <tr role="row" key={b.id}>
+          <DataCell><div className="ws-cell-stack"><strong dir="auto">{b.app_name}</strong><small><bdi dir="ltr">v{b.version_name} (#{b.version_code})</bdi></small>
+            <small><bdi dir="ltr">{b.package_id}</bdi></small></div></DataCell>
+          <DataCell label={cols[1]}><bdi dir="ltr">{date(b.created_at, lang)}</bdi></DataCell>
+          <DataCell label={cols[2]}><StatusDot status={b.status}>{buildLabels[b.status]}</StatusDot>
+            {b.status === "failed" && <small className="ws-block">{copy("Try another build or contact support.", "أعد البناء أو تواصل مع الدعم.")}</small>}</DataCell>
+          <DataCell label={cols[3]}><div className="ws-actions">
+            {b.apk_download_url && b.status === "succeeded" && <a className="ws-button" href={b.apk_download_url} target="_blank" rel="noreferrer"><Download size={14}/>{copy("Download APK", "تحميل APK")}</a>}
+            {b.github_run_url && <a className="ws-text-link" href={b.github_run_url} target="_blank" rel="noreferrer"><ExternalLink size={14}/>{copy("Build log", "تفاصيل البناء")}</a>}
+            {!b.github_run_url && !(b.apk_download_url && b.status === "succeeded") && "—"}</div></DataCell>
+        </tr>)}</WorkspaceTable> : <WorkspaceEmpty title={copy("Your first release starts here", "ابدأ بإصدار تطبيقك الأول")}
+          action={<a className="ws-button" href="#app-name">{copy("Set up your app", "إعداد التطبيق")}</a>}>
+          {copy("Once a build finishes, its installation file will be available here.", "بعد اكتمال البناء، ستجد ملف التثبيت هنا.")}</WorkspaceEmpty>}
       </section>
-
-      {/* Build History */}
-      <section
-        style={{
-          background: "var(--surface)",
-          borderRadius: "var(--pt-card-radius)",
-          border: "1px solid var(--line)",
-          padding: "1.4rem",
-          display: "grid",
-          gap: "1rem",
-          minWidth: 0,
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: "0.75rem",
-          }}
-        >
-          <div>
-            <h2 style={{ margin: 0, fontSize: "1.08rem", fontWeight: 800 }}>
-              {isEn ? "Build History" : "سجل إصدارات التطبيق"}
-            </h2>
-            {hasActiveBuild && (
-              <p
-                style={{
-                  margin: "0.2rem 0 0",
-                  fontSize: "0.78rem",
-                  color: "var(--ws-link)",
-                }}
-              >
-                {isEn
-                  ? "Auto-refreshing every 10 seconds while build is running…"
-                  : "يتم التحديث تلقائياً كل 10 ثوانٍ أثناء بناء التطبيق…"}
-              </p>
-            )}
-          </div>
-          <button
-            type="button"
-            disabled={refreshing}
-            onClick={() => void fetchBuilds(true)}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "0.4rem",
-              background: "var(--card)",
-              color: "var(--ink)",
-              border: "1px solid var(--ws-control-line)",
-              padding: "0.45rem 0.8rem",
-              borderRadius: "var(--pt-radius)",
-              fontSize: "0.8rem",
-              fontWeight: 650,
-            }}
-          >
-            <RefreshCw size={14} />
-            <span>{isEn ? "Refresh" : "تحديث"}</span>
-          </button>
-        </div>
-
-        {builds.length === 0 ? (
-          <div
-            style={{
-              textAlign: "center",
-              padding: "2rem 1rem",
-              borderRadius: "var(--pt-radius)",
-              background: "var(--card)",
-              border: "1px dashed var(--ws-control-line)",
-              color: "var(--muted)",
-              fontSize: "0.88rem",
-            }}
-          >
-            {isEn
-              ? 'No APK builds yet. Click "Build APK Now" above to compile your store\'s first Android app.'
-              : 'لم يتم بناء أي نسخة APK بعد. اضغط على «بناء ملف APK الآن» لإنشاء أول تطبيق لمتجرك.'}
-          </div>
-        ) : (
-          <div style={{ display: "grid", gap: "0.75rem" }}>
-            {builds.map((b) => {
-              const meta = statusMeta(b.status);
-              const StatusIcon = meta.Icon;
-              return (
-                <article
-                  key={b.id}
-                  style={{
-                    borderRadius: "var(--pt-radius)",
-                    border: "1px solid var(--line)",
-                    padding: "1rem",
-                    display: "flex",
-                    flexWrap: "wrap",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: "0.85rem",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "grid",
-                      gap: "0.3rem",
-                      minWidth: "min(100%, 200px)",
-                      flex: 1,
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "0.5rem",
-                        flexWrap: "wrap",
-                      }}
-                    >
-                      <strong style={{ fontSize: "0.95rem" }}>
-                        {b.app_name}
-                      </strong>
-                      <span
-                        dir="ltr"
-                        style={{
-                          fontSize: "0.75rem",
-                          fontWeight: 700,
-                          color: "var(--muted)",
-                          background: "var(--card)",
-                          padding: "0.12rem 0.5rem",
-                          borderRadius: "999px",
-                        }}
-                      >
-                        v{b.version_name} (#{b.version_code})
-                      </span>
-                      <span
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: "0.3rem",
-                          fontSize: "0.74rem",
-                          fontWeight: 700,
-                          padding: "0.16rem 0.58rem",
-                          borderRadius: "999px",
-                          background: meta.bg,
-                          color: meta.fg,
-                          border: `1px solid ${meta.border}`,
-                        }}
-                      >
-                        <StatusIcon size={12} />
-                        {meta.label}
-                      </span>
-                    </div>
-                    <div
-                      style={{
-                        fontSize: "0.76rem",
-                        color: "var(--muted)",
-                        display: "flex",
-                        gap: "0.75rem",
-                        flexWrap: "wrap",
-                      }}
-                    >
-                      <span dir="ltr" style={{ overflowWrap: "anywhere" }}>{b.package_id}</span>
-                      <span>{date(b.created_at, lang)}</span>
-                    </div>
-                    {b.status === "failed" && (
-                      <div
-                        style={{
-                          fontSize: "0.78rem",
-                          color: "var(--ws-danger)",
-                          marginTop: "0.2rem",
-                        }}
-                      >
-                        {isEn ? "The build failed. Please try again or contact support." : "تعذر إكمال البناء. حاول مرة أخرى أو تواصل مع الدعم."}
-                      </div>
-                    )}
-                  </div>
-
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "0.5rem",
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    {b.apk_download_url && b.status === "succeeded" && (
-                      <a
-                        href={b.apk_download_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: "0.4rem",
-                          padding: "0.5rem 0.9rem",
-                          borderRadius: "var(--pt-radius)",
-                          background: "var(--pt-fill)",
-                          color: "var(--pt-on-fill)",
-                          fontSize: "0.82rem",
-                          fontWeight: 700,
-                          textDecoration: "none",
-                        }}
-                      >
-                        <Download size={14} />
-                        <span>{isEn ? "Download APK" : "تحميل APK"}</span>
-                      </a>
-                    )}
-                    {b.github_run_url && (
-                      <a
-                        href={b.github_run_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: "0.35rem",
-                          padding: "0.48rem 0.78rem",
-                          borderRadius: "var(--pt-radius)",
-                          border: "1px solid var(--ws-control-line)",
-                          background: "var(--surface)",
-                          color: "var(--ink)",
-                          fontSize: "0.78rem",
-                          fontWeight: 650,
-                          textDecoration: "none",
-                        }}
-                      >
-                        <ExternalLink size={13} />
-                        <span>{isEn ? "Build Log" : "سجل البناء"}</span>
-                      </a>
-                    )}
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        )}
-      </section>
-    </div>
-  );
+    </>}
+  </div>;
 }

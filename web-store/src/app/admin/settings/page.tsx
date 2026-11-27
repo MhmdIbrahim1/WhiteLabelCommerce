@@ -1,5 +1,5 @@
 import { SubmitButton } from "@/components/submit-button";
-import { ShieldCheck, Wallet } from "lucide-react";
+import { StatusDot, WorkspaceHeading } from "@/components/workspace-data";
 import { checked, requireAdmin } from "@/lib/db";
 import {
   savePaymentSettings,
@@ -72,386 +72,69 @@ export default async function Settings({
   const hasApiKey = Boolean(secretRow?.paymob_api_key?.trim());
   const hasHmacSecret = Boolean(secretRow?.paymob_hmac_secret?.trim());
 
-  return (
-    <>
-      <OnboardingStepMarker
-        storeId={storeId}
-        step="settingsDone"
-        active={params.result === "ok"}
-      />
-      <h1>{isEn ? "Store Settings" : "إعدادات المتجر"}</h1>
-      <Notice result={params.result} />
-      {permissions.manage_domains && <DomainSettings storeId={storeId} slug={activeStore.slug} en={isEn} />}
-      <TemplateGallery
-        active={
-          isTemplate(s.theme_template) ? s.theme_template : "modern-minimal"
-        }
-      />
-
-      {/* Payment Gateways (Multi-tenant Paymob + COD) */}
-      <section className="card">
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: "0.75rem",
-            flexWrap: "wrap",
-            marginBottom: "0.5rem",
-          }}
-        >
-          <h2 style={{ margin: 0 }}>
-            {isEn ? "Payment Gateways" : "بوابات الدفع"}
-          </h2>
-          <span
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "0.35rem",
-              fontSize: "0.8rem",
-              fontWeight: 600,
-              color: "var(--ws-good)",
-              background: "var(--card)",
-              padding: "0.25rem 0.65rem",
-              borderRadius: "999px",
-            }}
-          >
-            <ShieldCheck size={14} />
-            {isEn ? "Tenant-Isolated Credentials" : "بيانات معزولة ومؤمّنة للمتجر"}
-          </span>
-        </div>
-        <p style={{ marginTop: 0, opacity: 0.78, fontSize: "0.9rem" }}>
-          {isEn
-            ? "Enable Cash on Delivery and Paymob online payments (Visa / Mastercard & Egyptian Mobile Wallets). Saved secret keys are never returned to the browser."
-            : "فعّل الدفع عند الاستلام والدفع الإلكتروني عبر باي موب (البطاقات البنكية والمحافظ الإلكترونية المصرية). المفاتيح السرية المحفوظة لا تُعرض في المتصفح أبداً."}
-        </p>
-
-        <form className="fields" action={savePaymentSettings}>
-          <label className="check">
-            <input
-              type="checkbox"
-              name="cod_enabled"
-              defaultChecked={s.cod_enabled ?? true}
-            />{" "}
-            {isEn ? "Enable Cash on Delivery (COD)" : "تفعيل الدفع عند الاستلام"}
-          </label>
-          <label className="check">
-            <input
-              type="checkbox"
-              name="paymob_enabled"
-              defaultChecked={s.paymob_enabled ?? false}
-            />{" "}
-            {isEn
-              ? "Enable Paymob Online Gateway"
-              : "تفعيل بوابة الدفع الإلكتروني باي موب"}
-          </label>
-          <label className="check">
-            <input
-              type="checkbox"
-              name="paymob_card_enabled"
-              defaultChecked={s.paymob_card_enabled ?? false}
-            />{" "}
-            {isEn
-              ? "Accept Visa / Mastercard (Card Iframe)"
-              : "قبول البطاقات البنكية (فيزا / ماستركارد)"}
-          </label>
-          <label className="check">
-            <input
-              type="checkbox"
-              name="paymob_wallet_enabled"
-              defaultChecked={s.paymob_wallet_enabled ?? false}
-            />{" "}
-            {isEn
-              ? "Accept Egyptian Mobile Wallets"
-              : "قبول المحافظ الإلكترونية المصرية"}
-          </label>
-
-          <label className="wide">
-            <span
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: "0.5rem",
-                flexWrap: "wrap",
-              }}
-            >
-              <span>{isEn ? "Paymob API Key" : "مفتاح واجهة برمجة باي موب"}</span>
-              {hasApiKey && (
-                <small
-                  style={{
-                    color: "var(--ws-good)",
-                    fontWeight: 700,
-                    background: "var(--card)",
-                    padding: "0.15rem 0.55rem",
-                    borderRadius: "999px",
-                  }}
-                >
-                  {isEn ? "Configured ••••••" : "محفوظ ومشفّر ••••••"}
-                </small>
-              )}
-            </span>
-            <input
-              type="password"
-              name="paymob_api_key"
-              dir="ltr"
-              autoComplete="new-password"
-              defaultValue=""
-              placeholder={
-                hasApiKey
-                  ? isEn
-                    ? "Leave blank to keep existing secret key"
-                    : "اتركه فارغاً للإبقاء على المفتاح المحفوظ"
-                  : isEn
-                    ? "Enter Paymob API Key"
-                    : "أدخل مفتاح واجهة باي موب"
-              }
-            />
-          </label>
-
-          <label className="wide">
-            <span
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: "0.5rem",
-                flexWrap: "wrap",
-              }}
-            >
-              <span>
-                {isEn ? "Paymob HMAC Secret" : "مفتاح التوقيع السري لباي موب"}
-              </span>
-              {hasHmacSecret && (
-                <small
-                  style={{
-                    color: "var(--ws-good)",
-                    fontWeight: 700,
-                    background: "var(--card)",
-                    padding: "0.15rem 0.55rem",
-                    borderRadius: "999px",
-                  }}
-                >
-                  {isEn ? "Configured ••••••" : "محفوظ ومشفّر ••••••"}
-                </small>
-              )}
-            </span>
-            <input
-              type="password"
-              name="paymob_hmac_secret"
-              dir="ltr"
-              autoComplete="new-password"
-              defaultValue=""
-              placeholder={
-                hasHmacSecret
-                  ? isEn
-                    ? "Leave blank to keep existing HMAC secret"
-                    : "اتركه فارغاً للإبقاء على مفتاح التوقيع المحفوظ"
-                  : isEn
-                    ? "Enter Paymob HMAC Secret"
-                    : "أدخل مفتاح التوقيع السري"
-              }
-            />
-          </label>
-
-          <label>
-            {isEn ? "Card Integration ID" : "معرّف ربط البطاقات البنكية"}
-            <input
-              type="text"
-              name="paymob_card_integration_id"
-              dir="ltr"
-              defaultValue={secretRow?.paymob_card_integration_id ?? ""}
-              placeholder={isEn ? "e.g. 6075764" : "مثال: 6075764"}
-            />
-          </label>
-
-          <label>
-            {isEn ? "Wallet Integration ID" : "معرّف ربط المحافظ الإلكترونية"}
-            <input
-              type="text"
-              name="paymob_wallet_integration_id"
-              dir="ltr"
-              defaultValue={secretRow?.paymob_wallet_integration_id ?? ""}
-              placeholder={isEn ? "e.g. 6075775" : "مثال: 6075775"}
-            />
-          </label>
-
-          <label>
-            {isEn ? "Card Iframe ID" : "معرّف نافذة دفع البطاقة"}
-            <input
-              type="text"
-              name="paymob_iframe_id"
-              dir="ltr"
-              defaultValue={secretRow?.paymob_iframe_id ?? ""}
-              placeholder={isEn ? "e.g. 1102311" : "مثال: 1102311"}
-            />
-          </label>
-
-          <div className="wide">
-            <SubmitButton>
-              {isEn ? "Save Payment Gateways" : "حفظ إعدادات بوابات الدفع"}
-            </SubmitButton>
-          </div>
-        </form>
-      </section>
-
-      {/* Free Shipping & Cashback Wallet Settings */}
-      <section className="card">
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: "0.75rem",
-            flexWrap: "wrap",
-            marginBottom: "0.5rem",
-          }}
-        >
-          <h2
-            style={{
-              margin: 0,
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "0.45rem",
-            }}
-          >
-            <Wallet size={19} />
-            {isEn
-              ? "Free Shipping & Cashback Wallet"
-              : "الشحن المجاني ومحفظة الكاش باك"}
-          </h2>
-        </div>
-        <p style={{ marginTop: 0, opacity: 0.78, fontSize: "0.9rem" }}>
-          {isEn
-            ? "Boost average order value with a live free-shipping progress bar in the cart and reward repeat buyers with automatic cashback credit on delivered orders."
-            : "ارفع متوسط قيمة الطلب عبر شريط التقدم للشحن المجاني في السلة، وكافئ عملاءك بكاش باك تلقائي يُضاف لمحفظتهم عند اكتمال كل طلب."}
-        </p>
-
-        <form className="fields" action={saveWalletIncentiveSettings}>
-          <label className="check">
-            <input
-              type="checkbox"
-              name="cart_incentive_enabled"
-              defaultChecked={s.cart_incentive_enabled ?? true}
-            />{" "}
-            {isEn
-              ? "Enable Free-Shipping Cart Progress Bar"
-              : "تفعيل شريط التقدم للشحن المجاني في السلة"}
-          </label>
-
-          <label className="check">
-            <input
-              type="checkbox"
-              name="cashback_enabled"
-              defaultChecked={s.cashback_enabled ?? true}
-            />{" "}
-            {isEn
-              ? "Enable Automatic Cashback Wallet"
-              : "تفعيل نظام الكاش باك التلقائي للمحفظة"}
-          </label>
-
-          <label>
-            {isEn
-              ? `Free Shipping Threshold (${s.currency})`
-              : `الحد الأدنى للشحن المجاني (${s.currency})`}
-            <input
-              type="number"
-              name="free_shipping_threshold"
-              min="0"
-              step="1"
-              defaultValue={s.free_shipping_threshold ?? 1000}
-              required
-            />
-          </label>
-
-          <label>
-            {isEn
-              ? "Cashback Percentage (% · 0–50)"
-              : "نسبة الكاش باك (% · من 0 إلى 50)"}
-            <input
-              type="number"
-              name="cashback_percentage"
-              min="0"
-              max="50"
-              step="0.5"
-              defaultValue={s.cashback_percentage ?? 5}
-              required
-            />
-          </label>
-
-          <div className="wide">
-            <SubmitButton>
-              {isEn
-                ? "Save Free Shipping & Wallet Settings"
-                : "حفظ إعدادات الشحن المجاني والمحفظة"}
-            </SubmitButton>
-          </div>
-        </form>
-      </section>
-
-      <section className="card">
-        <h2>{isEn ? "Store Details" : "بيانات المتجر"}</h2>
-        <form className="fields" action={saveSettings}>
-          <label>
-            {isEn ? "Store Name" : "اسم المتجر"}
-            <input name="store_name" defaultValue={s.store_name} required />
-          </label>
-          <label>
-            {isEn
-              ? `Shipping Fee (${s.currency})`
-              : `رسوم الشحن (${s.currency})`}
-            <input
-              type="number"
-              name="shipping_fee"
-              min="0"
-              step=".01"
-              defaultValue={s.shipping_fee}
-              required
-            />
-          </label>
-          <label>
-            {isEn ? "Default quantity limit per product per order" : "الحد الافتراضي لكمية المنتج في الطلب"}
-            <input type="number" name="default_max_order_qty" min={1} max={2147483647} step={1}
-              defaultValue={s.default_max_order_qty ?? ""} />
-            <small>{isEn ? "Leave blank to use available stock." : "اتركه فارغاً لاستخدام المخزون المتاح."}</small>
-          </label>
-          <label>
-            {isEn ? "WhatsApp Number" : "رقم واتساب"}
-            <input
-              type="tel"
-              dir="ltr"
-              name="whatsapp_number"
-              defaultValue={s.whatsapp_number}
-            />
-          </label>
-          <label>
-            {isEn
-              ? "Return Window (Days · 0 = Unlimited)"
-              : "نافذة الإرجاع (بالأيام · 0 = بدون حد)"}
-            <input
-              type="number"
-              name="return_window_days"
-              min="0"
-              max="365"
-              step="1"
-              defaultValue={s.return_window_days ?? 14}
-              required
-            />
-          </label>
-          <label className="wide">
-            {isEn
-              ? "Hero Banner Image URLs · one HTTPS URL per line"
-              : "روابط صور البانرات · رابط آمن في كل سطر"}
-            <textarea
-              name="banners"
-              dir="ltr"
-              rows={5}
-              defaultValue={s.banners.join("\n")}
-            />
-          </label>
-          <SubmitButton>{isEn ? "Save Settings" : "حفظ الإعدادات"}</SubmitButton>
-        </form>
-      </section>
-    </>
-  );
+  const label = (english: string, arabic: string) => isEn ? english : arabic;
+  return <div className="ws-page ws-settings-page">
+    <OnboardingStepMarker storeId={storeId} step="settingsDone" active={params.result === "ok"} />
+    <WorkspaceHeading title={label("Store settings", "إعدادات المتجر")} description={label("Manage the details your customers see at checkout and in your storefront.", "اضبط تفاصيل المتجر التي يراها عملاؤك أثناء التسوّق وعند الدفع.")} />
+    <Notice result={params.result} />
+    <nav className="ws-settings-nav" aria-label={label("Settings sections", "أقسام الإعدادات")}>
+      <a href="#general">{label("Store details", "بيانات المتجر")}</a><a href="#payments">{label("Payments", "الدفع")}</a>
+      <a href="#rewards">{label("Shipping and rewards", "الشحن والمكافآت")}</a><a href="#templates">{label("Appearance", "المظهر")}</a>
+      {permissions.manage_domains && <a href="#domains">{label("Domains", "النطاقات")}</a>}
+    </nav>
+    <section className="ws-box" id="general"><h2>{label("Store details", "بيانات المتجر")}</h2>
+      <form className="fields" action={saveSettings}>
+        <label>{label("Store name", "اسم المتجر")}<input name="store_name" dir="auto" defaultValue={s.store_name} required /></label>
+        <label>{label("WhatsApp number", "رقم واتساب")}<input type="tel" dir="ltr" name="whatsapp_number" defaultValue={s.whatsapp_number} /></label>
+        <label><span>{label("Delivery fee", "رسوم التوصيل")} (<bdi dir="ltr">{s.currency}</bdi>)</span>
+          <input type="number" dir="ltr" name="shipping_fee" min="0" step=".01" defaultValue={s.shipping_fee} required /></label>
+        <label>{label("Return window in days", "مهلة الإرجاع بالأيام")}<input type="number" dir="ltr" name="return_window_days" min="0" max="365" step="1"
+          defaultValue={s.return_window_days ?? 14} required /><small>{label("Enter 0 for unlimited returns.", "أدخل صفراً لترك مهلة الإرجاع مفتوحة.")}</small></label>
+        <label>{label("Quantity limit per product per order", "الحد الأقصى لكمية المنتج في الطلب")}<input type="number" dir="ltr" name="default_max_order_qty" min="1" max="2147483647" step="1"
+          defaultValue={s.default_max_order_qty ?? ""} /><small>{label("Leave blank to use available stock.", "اترك الحقل فارغاً للسماح بالكمية المتاحة في المخزون.")}</small></label>
+        <label className="wide">{label("Homepage banner images", "صور واجهة المتجر")}<textarea name="banners" dir="ltr" rows={3} defaultValue={s.banners.join("\n")} />
+          <small>{label("Enter one HTTPS image address per line, in display order.", "أدخل رابط صورة آمن في كل سطر بحسب ترتيب العرض.")}</small></label>
+        <div className="wide ws-rule"><SubmitButton className="ws-primary">{label("Save store details", "حفظ بيانات المتجر")}</SubmitButton></div>
+      </form>
+    </section>
+    <section className="ws-box" id="payments"><h2>{label("Payment methods", "طرق الدفع")}</h2>
+      <p>{label("Choose how customers can pay. Paymob accepts bank cards and Egyptian mobile wallets.", "اختر طرق الدفع المتاحة لعملائك. تدعم باي موب البطاقات البنكية والمحافظ الإلكترونية المصرية.")}</p>
+      <form className="fields" action={savePaymentSettings}>
+        {([
+          ["cod_enabled", label("Cash on delivery", "الدفع عند الاستلام"), s.cod_enabled ?? true],
+          ["paymob_enabled", label("Paymob online payments", "الدفع الإلكتروني عبر باي موب"), s.paymob_enabled ?? false],
+          ["paymob_card_enabled", label("Bank cards", "البطاقات البنكية"), s.paymob_card_enabled ?? false],
+          ["paymob_wallet_enabled", label("Egyptian mobile wallets", "المحافظ الإلكترونية المصرية"), s.paymob_wallet_enabled ?? false],
+        ] as const).map(([name, title, enabled]) => <label className="check" key={name}><input type="checkbox" name={name} defaultChecked={enabled} />{title}</label>)}
+        <div className="wide ws-rule"><h3>{label("Paymob credentials", "بيانات الربط مع باي موب")}</h3>
+          <small>{label("Leave a saved key blank to keep using it.", "اترك حقل المفتاح المحفوظ فارغاً لمواصلة استخدامه.")}</small></div>
+        {([
+          ["paymob_api_key", label("API key", "مفتاح الواجهة البرمجية"), hasApiKey],
+          ["paymob_hmac_secret", label("HMAC secret", "مفتاح توقيع HMAC"), hasHmacSecret],
+        ] as const).map(([name, title, saved]) => <label key={name}><span className="ws-section-line">{title}
+          {saved && <StatusDot status="verified">{label("Saved", "محفوظ")}</StatusDot>}</span>
+          <input type="password" name={name} dir="ltr" autoComplete="new-password" defaultValue="" /></label>)}
+        {([
+          ["paymob_card_integration_id", label("Card integration ID", "معرّف ربط البطاقات")],
+          ["paymob_wallet_integration_id", label("Wallet integration ID", "معرّف ربط المحافظ")],
+          ["paymob_iframe_id", label("Payment iframe ID", "معرّف نافذة الدفع")],
+        ] as const).map(([name, title]) => <label key={name}>{title}<input name={name} dir="ltr" defaultValue={secretRow?.[name] ?? ""} /></label>)}
+        <div className="wide ws-rule"><SubmitButton className="ws-primary">{label("Save payment methods", "حفظ طرق الدفع")}</SubmitButton></div>
+      </form>
+    </section>
+    <section className="ws-box" id="rewards"><h2>{label("Shipping and rewards", "الشحن والمكافآت")}</h2>
+      <p>{label("Set the spend needed for free shipping and the cashback credited after delivery.", "حدّد المبلغ المطلوب للشحن المجاني ونسبة الرصيد الذي يُضاف إلى محفظة العميل بعد التسليم.")}</p>
+      <form className="fields" action={saveWalletIncentiveSettings}>
+        <label className="check"><input type="checkbox" name="cart_incentive_enabled" defaultChecked={s.cart_incentive_enabled ?? true} />{label("Show free-shipping progress in the cart", "عرض المبلغ المتبقي للشحن المجاني في السلة")}</label>
+        <label className="check"><input type="checkbox" name="cashback_enabled" defaultChecked={s.cashback_enabled ?? true} />{label("Credit cashback automatically", "إضافة الرصيد تلقائياً إلى المحفظة")}</label>
+        <label><span>{label("Free-shipping threshold", "الحد الأدنى للشحن المجاني")} (<bdi dir="ltr">{s.currency}</bdi>)</span>
+          <input type="number" name="free_shipping_threshold" dir="ltr" min="0" step="1" defaultValue={s.free_shipping_threshold ?? 1000} required /></label>
+        <label>{label("Cashback percentage", "نسبة الرصيد المسترد")}<input type="number" name="cashback_percentage" dir="ltr" min="0" max="50" step="0.5"
+          defaultValue={s.cashback_percentage ?? 5} required /><small><bdi dir="ltr">0–50%</bdi></small></label>
+        <div className="wide ws-rule"><SubmitButton className="ws-primary">{label("Save shipping and rewards", "حفظ الشحن والمكافآت")}</SubmitButton></div>
+      </form>
+    </section>
+    <div id="templates"><TemplateGallery active={isTemplate(s.theme_template) ? s.theme_template : "modern-minimal"} /></div>
+    {permissions.manage_domains && <div id="domains"><DomainSettings storeId={storeId} slug={activeStore.slug} en={isEn} /></div>}
+  </div>;
 }

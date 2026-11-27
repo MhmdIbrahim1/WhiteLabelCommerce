@@ -188,6 +188,7 @@ export default async function AdminMobileAppPage() {
         products: previewProducts,
       }}
       unlocked={unlocked}
+      canCustomize={Boolean(permissions.manage_settings)}
       canViewBilling={Boolean(permissions.manage_billing)}
       isSuperAdmin={isSuperAdmin}
       githubConfigured={githubConfigured}

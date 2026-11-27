@@ -5,6 +5,7 @@ import { date, money } from "@/lib/brand";
 import { orderStatusLabel, ticketStatusLabel, t } from "@/lib/i18n";
 import { getServerLang } from "@/lib/i18n-server";
 import { pageSize } from "@/lib/workflow";
+import { StatusDot } from "@/components/workspace-data";
 
 export function Empty({ children }: { children: React.ReactNode }) {
   return (
@@ -21,7 +22,7 @@ export async function Status({ value }: { value: string }) {
     orderStatusLabel(value, lang) !== value
       ? orderStatusLabel(value, lang)
       : ticketStatusLabel(value, lang);
-  return <span className={"badge " + value}>{label}</span>;
+  return <StatusDot status={value}>{label}</StatusDot>;
 }
 
 export async function Notice({ result }: { result?: string | string[] }) {
@@ -82,7 +83,7 @@ export async function OrderTable({ rows }: { rows: Order[] }) {
   return <ul className="ws-order-list">{rows.map(o => <li key={o.id}>
     <Link href={"/admin/orders/" + o.id}><span className="ws-order-id"><bdi dir="ltr">#{o.id.slice(0, 8)}</bdi>
       <small><bdi dir="ltr">{date(o.created_at, lang)}</bdi></small></span>
-      <span className="ws-status" data-status={o.status}>{orderStatusLabel(o.status, lang)}</span>
+      <StatusDot status={o.status}>{orderStatusLabel(o.status, lang)}</StatusDot>
       <strong><bdi dir="ltr">{money(o.total, o.currency, lang)}</bdi></strong>
     </Link></li>)}</ul>;
 }

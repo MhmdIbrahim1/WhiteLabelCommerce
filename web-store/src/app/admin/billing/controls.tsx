@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition, type FormEvent, type ReactNode } from "react";
+import { useEffect, useId, useState, useTransition, type FormEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { cycleName, cycles, limitLabel, quotaKeys, quotaResources, resourceName, statusNames, subscriptionStatuses,
   type Plan, type QuotaKey, type Subscription } from "@/lib/billing";
@@ -19,19 +20,43 @@ const messages: Record<SaveResult, Record<Lang, string>> = {
 function Editor({ lang, save, children, label }: { lang: Lang; save: (f: FormData) => Promise<SaveResult>; children: ReactNode; label: string }) {
   const [feedback, setFeedback] = useState<SaveResult | null>(null);
   const [pending, start] = useTransition();
+  const [issue, setIssue] = useState<{ input: HTMLInputElement | HTMLTextAreaElement; message: string } | null>(null);
+  const issueId = useId();
+  useEffect(() => {
+    if (!issue) return;
+    const { input } = issue;
+    input.setAttribute("aria-invalid", "true");
+    input.setAttribute("aria-describedby", issueId);
+    input.focus();
+    return () => { input.removeAttribute("aria-invalid"); input.removeAttribute("aria-describedby"); };
+  }, [issue, issueId]);
   const router = useRouter();
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (feedback === "conflict" || pending) return;
+    const input = [...event.currentTarget.elements].find((el): el is HTMLInputElement | HTMLTextAreaElement =>
+      (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) && el.willValidate &&
+      (!el.validity.valid || (el.required && !el.value.trim())));
+    if (input) {
+      const en = lang === "en";
+      const message = input.validity.badInput || input.validity.stepMismatch ? (en ? "Enter a whole number." : "أدخل عدداً صحيحاً.") :
+        input.validity.rangeUnderflow || input.validity.rangeOverflow ? (en ? "Enter a number within the allowed range." : "أدخل قيمة ضمن النطاق المسموح.") :
+        (en ? "Complete this field before saving." : "أكمل هذا الحقل قبل الحفظ.");
+      setIssue({ input, message });
+      return;
+    }
     const data = new FormData(event.currentTarget);
     setFeedback(null);
     start(async () => {
       try { setFeedback(await save(data)); } catch { setFeedback("unavailable"); }
     });
   }
-  return <form onSubmit={submit} onChange={() => setFeedback(null)}><fieldset disabled={pending} className="billing-fields">{children}</fieldset>
-    <footer><button type="submit" disabled={pending}>{pending ? (lang === "en" ? "Saving…" : "جارٍ الحفظ…") : label}</button>
-      <span role="status">{feedback && messages[feedback][lang]}</span>
-      {feedback === "conflict" && <button type="button" onClick={() => { setFeedback(null); router.refresh(); }}>
+  return <form noValidate onSubmit={submit} onChange={() => { setIssue(null); if (feedback !== "conflict") setFeedback(null); }}>
+    <fieldset disabled={pending} className="billing-fields">{children}</fieldset>
+    {issue?.input.parentElement && createPortal(<small id={issueId} role="alert" className="ws-field-error">{issue.message}</small>, issue.input.parentElement)}
+    <footer><button className="ws-primary" type="submit" disabled={pending || feedback === "conflict"}>{pending ? (lang === "en" ? "Saving…" : "جارٍ الحفظ…") : label}</button>
+      <span role="status" className={feedback && feedback !== "saved" ? "ws-field-error" : undefined}>{feedback && messages[feedback][lang]}</span>
+      {feedback === "conflict" && <button className="ws-button" type="button" onClick={() => { start(() => router.refresh()); setFeedback(null); }}>
         {lang === "en" ? "Reload values" : "تحميل القيم"}</button>}</footer>
   </form>;
 }
@@ -61,9 +86,9 @@ function PlanFields({ plan, lang }: { plan: Plan; lang: Lang }) {
   return <><input type="hidden" name="code" value={plan.code} />
     <div className="billing-form-grid">{(["ar", "en"] as const).map(language => <div key={language} className="billing-field-group">
       <label>{language === "en" ? (en ? "English name" : "الاسم بالإنجليزية") : (en ? "Arabic name" : "الاسم بالعربية")}
-        <input dir={language === "en" ? "ltr" : "rtl"} name={"name_" + language} required maxLength={100} defaultValue={plan[language === "en" ? "name_en" : "name_ar"]} /></label>
+        <input lang={language} dir={language === "en" ? "ltr" : "rtl"} name={"name_" + language} required maxLength={100} defaultValue={plan[language === "en" ? "name_en" : "name_ar"]} /></label>
       <label>{language === "en" ? (en ? "English description" : "الوصف بالإنجليزية") : (en ? "Arabic description" : "الوصف بالعربية")}
-        <textarea dir={language === "en" ? "ltr" : "rtl"} name={"description_" + language} required maxLength={1000}
+        <textarea lang={language} dir={language === "en" ? "ltr" : "rtl"} name={"description_" + language} required maxLength={1000}
           defaultValue={plan[language === "en" ? "description_en" : "description_ar"]} rows={2} /></label>
     </div>)}</div>
     <div className="billing-form-grid">
@@ -97,7 +122,8 @@ function SubscriptionFields({ sub, plans, lang }: { sub: Subscription; plans: Pl
     <label>{en ? "Trial end date (UTC)" : "آخر يوم للتجربة (UTC)"}<input type="date" name="trial_end" required={status === "trialing"}
       defaultValue={sub.trial_ends_at?.slice(0, 10) ?? ""} /></label>
   </div>
-    <h3>{en ? "Store overrides" : "حدود خاصة بالمتجر"}</h3>
+    <div className="ws-rule"><h3>{en ? "Store overrides" : "حدود خاصة بالمتجر"}</h3>
+      <small>{en ? "Keep the plan allowance or choose a limit for this store." : "استخدم حد الباقة أو اختر حدّاً خاصاً بهذا المتجر."}</small></div>
     <div className="billing-quota-grid">{quotaKeys.map(key =>
       <QuotaField key={key} field={key} value={sub.quota_overrides[key]} planLimit={plan[key]} lang={lang} override />)}</div>
     <label>{resourceName("custom_domains", lang)}<select name="custom_domains_enabled" defaultValue={domain === undefined ? "inherit" : domain ? "enabled" : "disabled"}>

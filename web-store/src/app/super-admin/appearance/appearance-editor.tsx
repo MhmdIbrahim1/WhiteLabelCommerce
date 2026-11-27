@@ -5,6 +5,7 @@ import { useState, type CSSProperties, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, ArrowRight, Check, Eye, RotateCcw } from "lucide-react";
 import { PlatformBrand } from "@/components/platform-brand";
+import { WorkspaceHeading } from "@/components/workspace-data";
 import { langDir, type Lang } from "@/lib/i18n";
 import { applyPreset, copyLimits, defaultTheme, fontPairs, parsePlatformTheme, presetOptions, presets,
   radii, resolveTheme, type PlatformTheme } from "@/lib/platform-theme";
@@ -58,16 +59,16 @@ export function AppearanceEditor({ initial, lang }: { initial: PlatformTheme; la
   }
 
   return <main className="appearance" lang={lang} dir={langDir(lang)}>
-    <div className="appearance-wrap">
+    <div className="ws-page ws-platform-page">
       <nav className="appearance-nav">
         <Link href="/super-admin"><ArrowLeft className="pt-directional" size={17} />{en ? "Platform controls" : "إدارة المنصة"}</Link>
       </nav>
-      <h1>{en ? "Platform Appearance" : "مظهر المنصة"}</h1>
-      <p>{en ? "Set the homepage design and the colors, type and corners shared across workspaces." : "خصّص الصفحة الرئيسية وحدّد الألوان والخطوط والزوايا المشتركة بين لوحات المتاجر."}</p>
+      <WorkspaceHeading title={en ? "Platform appearance" : "مظهر المنصة"}
+        description={en ? "Choose the homepage design and the colors, type and corners shared by merchant workspaces." : "اختر مظهر الصفحة الرئيسية والألوان والخطوط والزوايا المشتركة بين لوحات المتاجر."} />
       <div className="appearance-grid">
         <form onSubmit={publish}>
           <fieldset disabled={busy}>
-            <legend>{en ? "Theme preset" : "قالب المظهر"}</legend>
+            <legend>{en ? "Visual identity" : "الهوية البصرية"}</legend>
             <div className="appearance-presets">
               {presets.map(id => {
                 const p = presetOptions[id];
@@ -88,7 +89,7 @@ export function AppearanceEditor({ initial, lang }: { initial: PlatformTheme; la
                   <input id="hex" dir="ltr" value={draft.accent_color} pattern="#[0-9a-fA-F]{6}" required maxLength={7}
                     aria-invalid={!validColor} aria-describedby={validColor ? undefined : "accent-error"}
                     onChange={e => edit({ accent_color: e.target.value.toUpperCase() })} /></div>
-                {!validColor && <small id="accent-error">{en ? "Enter a six-digit hex color, such as " : "اكتب لوناً سداسياً مثل "}<bdi dir="ltr">#93472E</bdi></small>}
+                {!validColor && <small className="ws-field-error" id="accent-error">{en ? "Enter a six-digit hex color, such as " : "اكتب لوناً سداسياً مثل "}<bdi dir="ltr">#93472E</bdi></small>}
               </div>
               <label>{en ? "Corner radius" : "استدارة الزوايا"}
                 <select value={draft.radius_scale} onChange={e => edit({ radius_scale: e.target.value as PlatformTheme["radius_scale"] })}>
@@ -103,7 +104,7 @@ export function AppearanceEditor({ initial, lang }: { initial: PlatformTheme; la
             </div>
           </fieldset>
           <fieldset disabled={busy}>
-            <legend>{en ? "Hero copy" : "نص الواجهة الرئيسية"}</legend>
+            <legend>{en ? "Homepage introduction" : "مقدمة الصفحة الرئيسية"}</legend>
             <div className="appearance-fields">
               {fields.map(key => {
                 const ar = key.endsWith("_ar");
@@ -111,28 +112,30 @@ export function AppearanceEditor({ initial, lang }: { initial: PlatformTheme; la
                 const label = en ? (title ? "Headline" : "Description") : (title ? "العنوان" : "الوصف");
                 return <label key={key}>{label} · {ar ? "العربية" : "English"}
                   <textarea lang={ar ? "ar" : "en"} dir={ar ? "rtl" : "ltr"} rows={title ? 2 : 4}
-                    required maxLength={copyLimits[key]} value={draft[key]} onChange={e => edit({ [key]: e.target.value })} />
+                    required aria-invalid={!draft[key].trim()} aria-describedby={!draft[key].trim() ? key + "-error" : undefined}
+                    maxLength={copyLimits[key]} value={draft[key]} onChange={e => edit({ [key]: e.target.value })} />
+                  {!draft[key].trim() && <small className="ws-field-error" id={key + "-error"}>{en ? "Add text to publish this introduction." : "أضف النص قبل نشر المقدمة."}</small>}
                 </label>;
               })}
             </div>
           </fieldset>
           <fieldset disabled={busy}>
             <legend>{en ? "Homepage behavior" : "تفاعل الصفحة"}</legend>
-            <label className="appearance-toggle"><span>{en ? "Float the start dock while scrolling" : "إظهار شريط البدء العائم عند التمرير"}</span>
+            <label className="appearance-toggle"><span>{en ? "Keep the signup button visible while scrolling" : "إبقاء زر التسجيل ظاهراً أثناء التمرير"}</span>
               <input type="checkbox" role="switch" checked={draft.sticky_cta_enabled} onChange={e => edit({ sticky_cta_enabled: e.target.checked })} /></label>
             <label className="appearance-toggle"><span>{en ? "Animate the mosaic and previews" : "تحريك صور الواجهة ومعاينات المتاجر"}</span>
               <input type="checkbox" role="switch" checked={draft.motion_enabled} onChange={e => edit({ motion_enabled: e.target.checked })} /></label>
           </fieldset>
           <div className="appearance-actions">
-            <button className="pt-action" type="submit" disabled={busy || !dirty || !parsePlatformTheme(draft) || status === "conflict"}>
+            <button className="ws-primary" type="submit" disabled={busy || !dirty || !parsePlatformTheme(draft) || status === "conflict"}>
               {busy ? messages.saving : en ? "Publish appearance" : "نشر المظهر"}
             </button>
-            <button className="appearance-plain" type="button" disabled={busy}
+            <button className="ws-button" type="button" disabled={busy}
               onClick={() => edit({ ...defaultTheme, revision: saved.revision })}><RotateCcw size={15} />
               {en ? "Reset to defaults" : "استعادة الإعدادات الافتراضية"}</button>
           </div>
-          <div role="status" className="appearance-status">{messages[status]}
-            {status === "conflict" && <button type="button" className="appearance-plain" onClick={() => window.location.reload()}>
+          <div role="status" className="appearance-status" data-status={status}>{messages[status]}
+            {status === "conflict" && <button type="button" className="ws-button" onClick={() => window.location.reload()}>
               {en ? "Load published version" : "تحميل النسخة المنشورة"}</button>}
           </div>
         </form>

@@ -77,11 +77,13 @@ export function AdminProductForm({
   categories,
   query,
   page,
+  status = "",
 }: {
   p?: AdminProductItem;
   categories: AdminCategoryItem[];
   query: string;
   page: number;
+  status?: string;
 }) {
   const { lang } = useLanguage();
   const isEn = lang === "en";
@@ -233,6 +235,7 @@ export function AdminProductForm({
       <input type="hidden" name="id" value={p?.id ?? ""} />
       <input type="hidden" name="q" value={query} />
       <input type="hidden" name="page" value={page} />
+      <input type="hidden" name="status" value={status} />
       <input type="hidden" name="previous_image" value={p?.image_path ?? ""} />
       <input type="hidden" name="specifications" value={serializedSpecs} />
 
@@ -242,14 +245,14 @@ export function AdminProductForm({
             <Sparkles size={15} />
             <strong>
               {isEn
-                ? "1-Click Category Variant & Spec Presets"
-                : "قوالب الفئات السريعة (مقاسات + ألوان + مواصفات)"}
+                ? "Product presets"
+                : "قوالب مواصفات المنتج"}
             </strong>
           </span>
           <small>
             {isEn
-              ? "Auto-fills sizes, color swatches & technical specs"
-              : "تملأ المقاسات والألوان وجدول المواصفات الفنية بنقرة واحدة"}
+              ? "Choose a category to fill in sizes, colors and specifications."
+              : "اختر فئة لتعبئة المقاسات والألوان والمواصفات."}
           </small>
         </div>
         <div className="admin-presets-grid">
@@ -260,6 +263,7 @@ export function AdminProductForm({
                 key={preset.id}
                 type="button"
                 className={`admin-preset-btn ${active ? "is-active" : ""}`}
+                aria-pressed={active}
                 onClick={() => applyPreset(preset)}
               >
                 {active && <Check size={14} />}
@@ -272,12 +276,13 @@ export function AdminProductForm({
 
       <label>
         {isEn ? "Product Name (Arabic)" : "اسم المنتج (عربي)"}
-        <input name="name" defaultValue={p?.name} required />
+        <input name="name" lang="ar" dir="rtl" defaultValue={p?.name} required />
       </label>
       <label>
         {isEn ? "Product Name (English · Optional)" : "اسم المنتج (إنجليزي · اختياري)"}
         <input
           name="name_en"
+          lang="en"
           dir="ltr"
           defaultValue={p?.name_en ?? ""}
           placeholder={isEn ? "e.g. Luxury Chronograph Watch" : "مثال: ساعة كرونوغراف فاخرة"}
@@ -328,7 +333,7 @@ export function AdminProductForm({
       </label>
       <label>
         {isEn
-          ? "Wholesale Cost Price (for Net Profit)"
+          ? "Unit cost for profit reports"
           : "تكلفة المنتج (لحساب صافي الربح)"}
         <input
           type="number"
@@ -339,7 +344,7 @@ export function AdminProductForm({
         />
       </label>
       <label>
-        {isEn ? "Compare-at Old Price" : "السعر السابق"}
+        {isEn ? "Previous price" : "السعر السابق"}
         <input
           type="number"
           name="old_price"
@@ -361,16 +366,16 @@ export function AdminProductForm({
           {flashPreviewPct !== null ? (
             <span className="admin-flash-pill">
               <Zap size={11} aria-hidden="true" />
-              <span dir="ltr">
+              <bdi dir="ltr">
                 -{flashPreviewPct}
                 {isEn ? "%" : "٪"}
-              </span>
+              </bdi>
             </span>
           ) : (
             <small>
               {isEn
-                ? "Optional timed discount with live countdown"
-                : "خصم مؤقت اختياري مع عدّاد تنازلي حي"}
+                ? "Set a discount and choose when it ends."
+                : "حدّد سعر العرض وموعد انتهائه."}
             </small>
           )}
         </summary>
@@ -547,12 +552,13 @@ export function AdminProductForm({
 
       <label className="wide">
         {isEn ? "Description (Arabic)" : "الوصف (عربي)"}
-        <textarea name="description" defaultValue={p?.description} />
+        <textarea name="description" lang="ar" dir="rtl" defaultValue={p?.description} />
       </label>
       <label className="wide">
         {isEn ? "Description (English · Optional)" : "الوصف (إنجليزي · اختياري)"}
         <textarea
           name="description_en"
+          lang="en"
           dir="ltr"
           defaultValue={p?.description_en ?? ""}
           placeholder={
@@ -591,7 +597,7 @@ export function AdminProductForm({
               <div key={idx} className="admin-spec-row">
                 <input
                   type="text"
-                  value={row.key_ar}
+                  value={row.key_ar} dir="rtl" lang="ar"
                   onChange={(e) => updateSpec(idx, "key_ar", e.target.value)}
                   placeholder={isEn ? "Key (Arabic)" : "الخاصية (عربي)"}
                   aria-label={isEn ? "Specification key Arabic" : "الخاصية بالعربية"}
@@ -599,14 +605,14 @@ export function AdminProductForm({
                 <input
                   type="text"
                   dir="ltr"
-                  value={row.key_en}
+                  value={row.key_en} lang="en"
                   onChange={(e) => updateSpec(idx, "key_en", e.target.value)}
                   placeholder={isEn ? "Key (English)" : "الخاصية (إنجليزي)"}
                   aria-label={isEn ? "Specification key English" : "الخاصية بالإنجليزية"}
                 />
                 <input
                   type="text"
-                  value={row.value_ar}
+                  value={row.value_ar} dir="rtl" lang="ar"
                   onChange={(e) => updateSpec(idx, "value_ar", e.target.value)}
                   placeholder={isEn ? "Value (Arabic)" : "القيمة (عربي)"}
                   aria-label={isEn ? "Specification value Arabic" : "القيمة بالعربية"}
@@ -614,7 +620,7 @@ export function AdminProductForm({
                 <input
                   type="text"
                   dir="ltr"
-                  value={row.value_en}
+                  value={row.value_en} lang="en"
                   onChange={(e) => updateSpec(idx, "value_en", e.target.value)}
                   placeholder={isEn ? "Value (English)" : "القيمة (إنجليزي)"}
                   aria-label={isEn ? "Specification value English" : "القيمة بالإنجليزية"}

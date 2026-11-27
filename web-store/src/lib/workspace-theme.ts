@@ -14,8 +14,8 @@ export function workspacePreferenceCookie(value: unknown, secure: boolean) {
 }
 
 const palettes = {
-  light: { canvas: "#F6F6F7", surface: "#FFFFFF", subtle: "#F4F4F5", line: "#DADBDD", ink: "#111315", muted: "#565B63", good: "#296044", danger: "#963D38" },
-  dark: { canvas: "#0B0C0E", surface: "#121418", subtle: "#1C1F24", line: "#23262D", ink: "#F1F2F3", muted: "#B2B7C0", good: "#A7D5B4", danger: "#F0ACA5" },
+  light: { canvas: "#F6F6F7", surface: "#FFFFFF", subtle: "#F4F4F5", line: "#DADBDD", ink: "#111315", muted: "#565B63", good: "#296044", danger: "#963D38", warn: "#825715", info: "#375D81" },
+  dark: { canvas: "#0B0C0E", surface: "#121418", subtle: "#1C1F24", line: "#23262D", ink: "#F1F2F3", muted: "#B2B7C0", good: "#A7D5B4", danger: "#F0ACA5", warn: "#DBBA80", info: "#9BBFDF" },
 };
 
 export function resolveWorkspaceTokens(theme: PlatformTheme, mode: WorkspaceMode) {
@@ -26,6 +26,7 @@ export function resolveWorkspaceTokens(theme: PlatformTheme, mode: WorkspaceMode
   return {
     ...brand,
     "--ws-canvas": p.canvas, "--ws-good": p.good, "--ws-danger": p.danger,
+    "--ws-warn": p.warn, "--ws-info": p.info,
     "--ws-link": readableLink ? accent : p.ink,
     "--ws-control-line": mode === "dark" ? "#767E89" : "#7F858D",
     "--pt-surface": p.surface, "--pt-card": p.subtle, "--pt-ink": p.ink, "--pt-muted": p.muted, "--pt-line": p.line,

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { annualSavings, cycleName, cycles, limitLabel, quotaKeys, quotaResources, resourceName,
   type BillingCycle, type Plan, type PlanCode } from "@/lib/billing";
 import { localizedText, type Lang } from "@/lib/i18n";
+import { StatusDot } from "./workspace-data";
 import "./plan-comparison.css";
 
 export function PlanComparison({ plans, lang, current, initialCycle = "monthly", heading, id }: {
@@ -28,7 +29,7 @@ export function PlanComparison({ plans, lang, current, initialCycle = "monthly",
         const savings = annualSavings(plan);
         return <article key={plan.code} className="plan-card" data-current={plan.code === current}>
           <div className="plan-card-title"><h3>{localizedText(lang, plan.name_ar, plan.name_en)}</h3>
-            {plan.code === current && <small className="plan-tag">{en ? "Current plan" : "باقتك الحالية"}</small>}</div>
+            {plan.code === current && <StatusDot status="active">{en ? "Current plan" : "باقتك الحالية"}</StatusDot>}</div>
           <p className="plan-description">{localizedText(lang, plan.description_ar, plan.description_en)}</p>
           <p className="plan-price"><strong><bdi dir="ltr">{currency.format(cycle === "annual" ? plan.annual_price_egp : plan.monthly_price_egp)}</bdi></strong>
             <span>{cycle === "annual" ? (en ? "/ year" : "/ سنة") : (en ? "/ month" : "/ شهر")}</span></p>
