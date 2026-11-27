@@ -43,3 +43,10 @@
 -keep class com.whitelabel.commerce.core.domain.model.PromoBannerCampaign { *; }
 -keep class com.whitelabel.commerce.core.domain.model.PromoBannerCampaign$$serializer { *; }
 -keep class com.whitelabel.commerce.core.domain.model.PromoBannerCampaign$Companion { *; }
+
+# Credential Manager's Play Services AAR ships a consumer keep rule for its
+# manifest-discovered provider. Keep the Google credential bundle entry point
+# and Supabase's serializable id_token grant payload in minified builds.
+-keep,allowoptimization class com.google.android.libraries.identity.googleid.GoogleIdTokenCredential { *; }
+-keep,allowoptimization class io.github.jan.supabase.auth.providers.builtin.IDToken$Config { *; }
+-keep,allowoptimization class io.github.jan.supabase.auth.providers.builtin.IDToken$Config$* { *; }

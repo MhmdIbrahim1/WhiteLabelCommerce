@@ -1,83 +1,75 @@
 package com.whitelabel.commerce.core.data.repository
 
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.RequestBody.Companion.toRequestBody
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.edit
 import com.whitelabel.commerce.BuildConfig
+import com.whitelabel.commerce.core.data.di.enrolledUserKey
 import com.whitelabel.commerce.core.data.remote.PhoneNormalizer
 import com.whitelabel.commerce.core.data.remote.dto.CustomerProfileDto
+import com.whitelabel.commerce.core.data.remote.dto.StoreMembershipDto
 import com.whitelabel.commerce.core.data.remote.runSuspendCatching
 import com.whitelabel.commerce.core.domain.model.AuthSessionState
 import com.whitelabel.commerce.core.domain.model.CustomerProfile
-import com.whitelabel.commerce.core.domain.model.SignUpOutcome
+import com.whitelabel.commerce.core.domain.model.StorefrontAuthInput
 import com.whitelabel.commerce.core.domain.repository.AuthRepository
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.OtpType
 import io.github.jan.supabase.auth.auth
-import io.github.jan.supabase.auth.providers.builtin.Email
+import io.github.jan.supabase.auth.providers.Google
+import io.github.jan.supabase.auth.providers.builtin.IDToken
 import io.github.jan.supabase.auth.providers.builtin.OTP
+import io.github.jan.supabase.auth.status.RefreshFailureCause
 import io.github.jan.supabase.auth.status.SessionStatus
+import io.github.jan.supabase.exceptions.HttpRequestException
+import io.github.jan.supabase.exceptions.RestException
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.postgrest
+import java.io.IOException
+import javax.inject.Inject
+import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import javax.inject.Inject
-import javax.inject.Singleton
 
 @Singleton
 class AuthRepositoryImpl @Inject constructor(
     private val supabase: SupabaseClient,
+    private val dataStore: DataStore<Preferences>,
 ) : AuthRepository {
-
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val sessionLock = Mutex()
     private val _sessionState = MutableStateFlow<AuthSessionState>(AuthSessionState.Loading)
     override val sessionState: StateFlow<AuthSessionState> = _sessionState.asStateFlow()
 
+    // A successful sign-in and its SDK status notification refer to the same session.
+    private var checkedStatus: SessionStatus.Authenticated? = null
+
     init {
         scope.launch {
-            supabase.auth.sessionStatus.collect { status ->
-                when (status) {
-                    is SessionStatus.Authenticated -> {
-                        val user = status.session.user
-                        val uid = user?.id.orEmpty()
-                        val email = user?.email.orEmpty()
-                        if (uid.isBlank()) {
-                            _sessionState.value = AuthSessionState.SignedOut
-                        } else {
-                            val existing = (_sessionState.value as? AuthSessionState.SignedIn)
-                                ?.takeIf { it.userId == uid }
-                                ?.profile
-                            _sessionState.value = AuthSessionState.SignedIn(
-                                userId = uid,
-                                email = email,
-                                profile = existing ?: CustomerProfile(
-                                    fullName = "",
-                                    phone = "",
-                                    email = email,
-                                ),
-                            )
-                            loadProfileInternal(uid, email, "", "")
-                        }
-                    }
-
-                    is SessionStatus.NotAuthenticated -> {
-                        _sessionState.value = AuthSessionState.SignedOut
-                    }
-
-                    is SessionStatus.Initializing -> {
-                        _sessionState.value = AuthSessionState.Loading
-                    }
-
-                    is SessionStatus.RefreshFailure -> {
-                        // Keep last known signed-in state while offline, or signed out if none
-                        if (_sessionState.value is AuthSessionState.Loading) {
-                            _sessionState.value = AuthSessionState.SignedOut
+            supabase.auth.sessionStatus.collectLatest { status ->
+                runSuspendCatching {
+                    sessionLock.withLock {
+                        if (supabase.auth.sessionStatus.value !== status) return@withLock
+                        when (status) {
+                            is SessionStatus.Authenticated -> resolveMembership(status)
+                            is SessionStatus.RefreshFailure -> restoreOfflineSession(status)
+                            is SessionStatus.NotAuthenticated -> {
+                                checkedStatus = null
+                                _sessionState.value = AuthSessionState.SignedOut
+                            }
+                            SessionStatus.Initializing -> _sessionState.value = AuthSessionState.Loading
                         }
                     }
                 }
@@ -96,174 +88,202 @@ class AuthRepositoryImpl @Inject constructor(
 
     override suspend fun verifyEmailOtp(email: String, token: String): Result<Unit> = runSuspendCatching {
         val cleanEmail = email.trim().lowercase()
-        val cleanToken = token.filter { it.isDigit() }
-        supabase.auth.verifyEmailOtp(
-            type = OtpType.Email.EMAIL,
-            email = cleanEmail,
-            token = cleanToken,
-        )
-        syncProfileAfterAuth()
-    }
-
-    override suspend fun signInWithPassword(email: String, password: String): Result<Unit> = runSuspendCatching {
-        val cleanEmail = email.trim().lowercase()
-        supabase.auth.signInWith(Email) {
-            this.email = cleanEmail
-            this.password = password
+        val cleanToken = StorefrontAuthInput.otpDigits(token)
+        require(StorefrontAuthInput.isOtpReady(cleanToken)) { "invalid_otp" }
+        sessionLock.withLock {
+            supabase.auth.verifyEmailOtp(type = OtpType.Email.EMAIL, email = cleanEmail, token = cleanToken)
+            resolveMembership(authenticatedStatus())
         }
-        syncProfileAfterAuth()
-    }
-
-    override suspend fun signUpWithPassword(
-        fullName: String,
-        phone: String,
-        email: String,
-        password: String,
-    ): Result<SignUpOutcome> = runSuspendCatching {
-        val cleanName = fullName.trim()
-        val cleanPhone = PhoneNormalizer.normalize(phone)
-        val cleanEmail = email.trim().lowercase()
-
-        supabase.auth.signUpWith(Email) {
-            this.email = cleanEmail
-            this.password = password
-            this.data = buildJsonObject {
-                put("full_name", cleanName)
-                put("phone", cleanPhone)
-                put("signup_store_id", BuildConfig.STORE_ID)
-            }
-        }
-
-        if (supabase.auth.currentSessionOrNull() != null) {
-            syncProfileAfterAuth()
-            SignUpOutcome.SIGNED_IN
-        } else {
-            SignUpOutcome.NEEDS_EMAIL_CONFIRMATION
-        }
-    }
-
-    override suspend fun refreshProfile(): Result<CustomerProfile?> = runSuspendCatching {
-        val user = supabase.auth.currentUserOrNull() ?: return@runSuspendCatching null
-        loadProfileInternal(user.id, user.email.orEmpty(), "", "")
-    }
-
-    override suspend fun saveProfile(profile: CustomerProfile): Result<CustomerProfile> = runSuspendCatching {
-        val user = supabase.auth.currentUserOrNull() ?: error("auth_required")
-        val normalizedPhone = PhoneNormalizer.normalize(profile.phone)
-
-        syncProfileRpc(
-            fullName = profile.fullName.trim(),
-            phone = normalizedPhone,
-            governorate = profile.governorate.trim(),
-            city = profile.city.trim(),
-            address = profile.address.trim(),
-        )
-
-        val saved = loadProfileInternal(
-            userId = user.id,
-            email = user.email.orEmpty(),
-            fallbackName = profile.fullName.trim(),
-            fallbackPhone = normalizedPhone,
-        ) ?: profile.copy(
-            phone = normalizedPhone,
-            email = user.email.orEmpty().ifBlank { profile.email },
-        )
-        saved
-    }
-
-    override suspend fun changePassword(password: String): Result<Unit> = runSuspendCatching {
-        require(password.length in 8..128 && supabase.auth.currentUserOrNull() != null)
-        supabase.auth.updateUser { this.password = password }
         Unit
     }
 
-    private val recoveryHttp by lazy { okhttp3.OkHttpClient.Builder().followRedirects(false).build() }
+    override suspend fun signInWithGoogleIdToken(idToken: String, rawNonce: String): Result<Unit> = runSuspendCatching {
+        sessionLock.withLock {
+            supabase.auth.signInWith(IDToken) {
+                provider = Google
+                this.idToken = idToken
+                nonce = rawNonce
+            }
+            resolveMembership(authenticatedStatus())
+        }
+        Unit
+    }
 
-    private suspend fun recoveryRequest(path: String, payload: org.json.JSONObject): Result<Unit> = runSuspendCatching {
-        check(com.whitelabel.commerce.BuildConfig.EMAIL_PASSWORD_RESET_ENABLED)
-        val url = java.net.URL(java.net.URL(com.whitelabel.commerce.BuildConfig.WEB_STORE_BASE_URL), path)
-        require(url.protocol == "https" || (com.whitelabel.commerce.BuildConfig.DEBUG && url.host in setOf("localhost", "10.0.2.2")))
-        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            val request = okhttp3.Request.Builder().url(url)
-                .post(payload.toString().toRequestBody("application/json".toMediaType())).build()
-            recoveryHttp.newCall(request).execute().use { check(it.isSuccessful) }
+    override suspend fun completeStoreCustomerOnboarding(fullName: String, phone: String): Result<Unit> = runSuspendCatching {
+        require(StorefrontAuthInput.validName(fullName)) { "invalid_name" }
+        require(StorefrontAuthInput.validPhone(phone)) { "invalid_phone" }
+        sessionLock.withLock {
+            val user = authenticatedStatus().session.user ?: error("auth_required")
+            val name = fullName.trim()
+            val mobile = StorefrontAuthInput.normalizePhone(phone)
+            val result = supabase.postgrest.rpc(
+                function = "complete_store_customer_onboarding",
+                parameters = buildJsonObject {
+                    put("p_store_id", BuildConfig.STORE_ID)
+                    put("p_full_name", name)
+                    put("p_phone", mobile)
+                },
+            ).decodeAs<String>()
+            check(result == "ready") { "profile_setup" }
+            publishMembership(user.id, user.email.orEmpty(), StoreMembershipDto(true, name, mobile))
+        }
+        Unit
+    }
+
+    override suspend fun refreshProfile(): Result<CustomerProfile?> = runSuspendCatching {
+        val initial = supabase.auth.sessionStatus.value
+        if (initial is SessionStatus.RefreshFailure) {
+            // The SDK is already retrying its refresh token. Wait for that attempt before using PostgREST.
+            withTimeoutOrNull(20_000L) { supabase.auth.sessionStatus.first { it !== initial } }
+        }
+        sessionLock.withLock {
+            when (val status = supabase.auth.sessionStatus.value) {
+                is SessionStatus.Authenticated -> resolveMembership(status, force = status === initial)
+                is SessionStatus.RefreshFailure -> error("network")
+                else -> null
+            }
         }
     }
 
-    override suspend fun requestPasswordRecovery(email: String) = recoveryRequest("/api/auth/password-reset", org.json.JSONObject()
-        .put("email", email.trim()).put("store_id", com.whitelabel.commerce.BuildConfig.STORE_ID)
-        .put("package_name", com.whitelabel.commerce.BuildConfig.APPLICATION_ID))
-
-    override suspend fun completePasswordRecovery(token: String, password: String) = recoveryRequest("/api/auth/password-reset/complete",
-        org.json.JSONObject().put("token_hash", token).put("password", password))
+    override suspend fun saveProfile(profile: CustomerProfile): Result<CustomerProfile> = runSuspendCatching {
+        sessionLock.withLock {
+            val user = authenticatedStatus().session.user ?: error("auth_required")
+            val current = _sessionState.value as? AuthSessionState.SignedIn
+            check(current != null && current.userId == user.id && current.enrolled) { "enrollment_required" }
+            supabase.postgrest.rpc(
+                function = "sync_customer_profile",
+                parameters = buildJsonObject {
+                    put("p_store_id", BuildConfig.STORE_ID)
+                    put("p_full_name", profile.fullName.trim())
+                    put("p_phone", PhoneNormalizer.normalize(profile.phone))
+                    put("p_city", profile.city.trim())
+                    put("p_address", profile.address.trim())
+                    put("p_governorate", profile.governorate.trim())
+                },
+            )
+            val saved = loadProfileInternal(user.id, current.email) ?: error("profile_setup")
+            check(supabase.auth.currentUserOrNull()?.id == user.id) { "auth_required" }
+            _sessionState.value = current.copy(profile = saved)
+            saved
+        }
+    }
 
     override suspend fun signOut(): Result<Unit> = runSuspendCatching {
-        supabase.auth.signOut()
-        _sessionState.value = AuthSessionState.SignedOut
+        sessionLock.withLock {
+            // During refresh failure the SDK has no current access token to revoke, and its refresh is retrying.
+            check(supabase.auth.sessionStatus.value !is SessionStatus.RefreshFailure) { "network" }
+            supabase.auth.signOut()
+            checkedStatus = null
+            _sessionState.value = AuthSessionState.SignedOut
+        }
     }
 
-    private suspend fun syncProfileAfterAuth() {
-        val result = runSuspendCatching {
+    private fun authenticatedStatus(): SessionStatus.Authenticated =
+        supabase.auth.sessionStatus.value as? SessionStatus.Authenticated ?: error("auth_required")
+
+    private suspend fun resolveMembership(status: SessionStatus.Authenticated, force: Boolean = false): CustomerProfile? {
+        val user = status.session.user
+        if (user == null) {
+            _sessionState.value = AuthSessionState.SignedOut
+            return null
+        }
+        val email = user.email.orEmpty()
+        val current = (_sessionState.value as? AuthSessionState.SignedIn)?.takeIf { it.userId == user.id }
+        if (!force && status === checkedStatus && current != null) return current.profile
+        val pending = AuthSessionState.SignedIn(userId = user.id, email = email)
+        if (current?.membershipResolved != true) _sessionState.value = pending
+
+        val membership = runSuspendCatching {
             supabase.postgrest.rpc(
-                function = "initialize_customer_profile",
+                function = "store_customer_membership",
                 parameters = buildJsonObject { put("p_store_id", BuildConfig.STORE_ID) },
-            ).decodeAs<String>()
-        }.getOrElse { throw IllegalStateException("profile_setup", it) }
-        refreshProfile().getOrThrow()
-        if (result == "phone_unavailable") error("phone_unavailable")
-    }
-
-    private suspend fun syncProfileRpc(
-        fullName: String,
-        phone: String,
-        governorate: String,
-        city: String,
-        address: String,
-    ) {
-        if (supabase.auth.currentSessionOrNull() == null) return
-        supabase.postgrest.rpc(
-            function = "sync_customer_profile",
-            parameters = buildJsonObject {
-                put("p_store_id", BuildConfig.STORE_ID)
-                put("p_full_name", fullName)
-                put("p_phone", phone)
-                put("p_city", city)
-                put("p_address", address)
-                put("p_governorate", governorate)
-            },
-        )
-    }
-
-    private suspend fun loadProfileInternal(
-        userId: String,
-        email: String,
-        fallbackName: String,
-        fallbackPhone: String,
-    ): CustomerProfile? {
-        val row = runCatching {
-            supabase.from("store_customers")
-                .select {
-                    filter {
-                        eq("store_id", BuildConfig.STORE_ID)
-                        eq("user_id", userId)
-                    }
-                    limit(1)
+            ).decodeAs<StoreMembershipDto>()
+        }.getOrElse { error ->
+            check(supabase.auth.currentUserOrNull()?.id == user.id) { "auth_required" }
+            val state = if (error.isNetworkFailure()) {
+                pending.offlineMembership(dataStore.data.first()[enrolledUserKey], current)
+            } else {
+                val serverError = error as? RestException
+                if (serverError?.error == "store_unavailable" || serverError?.statusCode in setOf(401, 403)) {
+                    dataStore.edit { it.remove(enrolledUserKey) }
                 }
-                .decodeList<CustomerProfileDto>()
-                .firstOrNull()
-        }.getOrNull()
+                pending.copy(membershipError = serverError?.error ?: "profile_setup")
+            }
+            checkedStatus = status
+            _sessionState.value = state
+            if (!state.membershipResolved) throw error
+            return state.profile
+        }
+        val profile = publishMembership(user.id, email, membership)
+        checkedStatus = status
+        return profile
+    }
 
-        val resolved = row?.toDomain(fallbackEmail = email) ?: CustomerProfile(
-            fullName = fallbackName,
-            phone = fallbackPhone,
-            email = email,
-        )
-
+    private suspend fun publishMembership(userId: String, email: String, membership: StoreMembershipDto): CustomerProfile {
+        check(supabase.auth.currentUserOrNull()?.id == userId) { "auth_required" }
+        dataStore.edit { prefs ->
+            if (membership.enrolled) prefs[enrolledUserKey] = userId else prefs.remove(enrolledUserKey)
+        }
+        val profile = if (membership.enrolled) {
+            runSuspendCatching { loadProfileInternal(userId, email) }.getOrNull() ?: membership.profile(email)
+        } else {
+            membership.profile(email)
+        }
+        check(supabase.auth.currentUserOrNull()?.id == userId) { "auth_required" }
         _sessionState.value = AuthSessionState.SignedIn(
             userId = userId,
             email = email,
-            profile = resolved,
+            profile = profile,
+            enrolled = membership.enrolled,
+            membershipResolved = true,
         )
-        return resolved
+        return profile
     }
+
+    // An expired session restored offline can produce RefreshFailure before the first Authenticated event.
+    private suspend fun restoreOfflineSession(status: SessionStatus.RefreshFailure) {
+        val user = supabase.auth.sessionManager.loadSession()?.user
+        if (supabase.auth.sessionStatus.value !== status) return
+        if (user == null) {
+            _sessionState.value = AuthSessionState.SignedOut
+            return
+        }
+        val pending = AuthSessionState.SignedIn(userId = user.id, email = user.email.orEmpty())
+        val transient = when (val cause = status.cause) {
+            is RefreshFailureCause.NetworkError -> cause.exception.isNetworkFailure()
+            is RefreshFailureCause.InternalServerError -> cause.exception.statusCode in 500..599
+        }
+        val state = if (transient) {
+            pending.offlineMembership(dataStore.data.first()[enrolledUserKey], _sessionState.value as? AuthSessionState.SignedIn)
+        } else {
+            pending.copy(membershipError = "profile_setup")
+        }
+        if (supabase.auth.sessionStatus.value === status) _sessionState.value = state
+    }
+
+    private suspend fun loadProfileInternal(userId: String, email: String): CustomerProfile? =
+        supabase.from("store_customers").select {
+            filter {
+                eq("store_id", BuildConfig.STORE_ID)
+                eq("user_id", userId)
+            }
+            limit(1)
+        }.decodeList<CustomerProfileDto>().firstOrNull()?.toDomain(fallbackEmail = email)
+
+    private fun Throwable.isNetworkFailure() = this is HttpRequestException || this is IOException
+}
+
+/** The persisted marker belongs to this store. A matching owner can reuse their in-memory profile. */
+internal fun AuthSessionState.SignedIn.offlineMembership(
+    cachedUserId: String?,
+    previous: AuthSessionState.SignedIn?,
+): AuthSessionState.SignedIn {
+    val verified = userId == cachedUserId
+    val profile = previous?.takeIf { verified && it.enrolled && it.userId == userId }?.profile
+    return copy(
+        profile = profile ?: CustomerProfile(email = email),
+        enrolled = verified,
+        membershipResolved = verified,
+        membershipError = if (verified) null else "network",
+    )
 }

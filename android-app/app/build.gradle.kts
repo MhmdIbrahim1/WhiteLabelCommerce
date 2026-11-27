@@ -157,7 +157,7 @@ android {
             useSupportLibrary = true
         }
 
-        buildConfigField("boolean", "EMAIL_PASSWORD_RESET_ENABLED", resolveConfigValue("EMAIL_PASSWORD_RESET_ENABLED", "false").equals("true", true).toString())
+        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"${resolveConfigValue("GOOGLE_WEB_CLIENT_ID", "")}\"")
         buildConfigField("String", "STORE_ID", "\"$resolvedStoreId\"")
         buildConfigField("String", "STORE_SLUG", "\"$resolvedStoreSlug\"")
         buildConfigField("Boolean", "IS_WHITE_LABEL_TENANT", isWhiteLabelTenant.toString())
@@ -260,6 +260,11 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.activity.compose)
+
+    // Native Sign in with Google
+    implementation(libs.androidx.credentials.core)
+    implementation(libs.androidx.credentials.play.services.auth)
+    implementation(libs.google.id)
 
     // Jetpack Compose (Material 3)
     implementation(platform(libs.androidx.compose.bom))

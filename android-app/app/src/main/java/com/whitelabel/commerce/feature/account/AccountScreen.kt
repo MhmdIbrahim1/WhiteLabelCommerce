@@ -51,8 +51,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -82,8 +84,12 @@ fun AccountScreen(
     viewModel: AccountViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val brandColors = LocalBrandColors.current
-
+    val context = LocalContext.current
+    val storeName = remember(state.storeSettings.storeName, state.storeSettings.isSyncedFromRemote, context) {
+        val settings = state.storeSettings
+        settings.storeName.takeIf { it.isNotBlank() && (settings.isSyncedFromRemote || it != "Store") }
+            ?: context.applicationInfo.loadLabel(context.packageManager).toString()
+    }
     when (val session = state.session) {
         AuthSessionState.Loading -> {
             Box(
@@ -97,6 +103,7 @@ fun AccountScreen(
 
         AuthSessionState.SignedOut -> {
             AuthScreen(
+                storeName = storeName,
                 form = state.authForm,
                 showBackButton = showBackButton,
                 onBack = onBack,
@@ -105,42 +112,57 @@ fun AccountScreen(
                 onSetDarkThemePreference = onSetDarkThemePreference,
                 isRtl = isRtl,
                 onSelectLanguage = onSelectLanguage,
-                onSelectTab = viewModel::selectAuthTab,
-                onSelectPasswordMode = viewModel::selectPasswordMode,
                 onOtpEmailChange = viewModel::onOtpEmailChange,
                 onOtpCodeChange = viewModel::onOtpCodeChange,
                 onResetOtpEmail = viewModel::resetOtpEmailStep,
                 onSendOtp = viewModel::sendEmailOtp,
-                onVerifyOtp = {
-                    viewModel.verifyEmailOtp {
-                        onShowMessage(localized("تم تسجيل الدخول ومزامنة حسابك بنجاح", "Signed in & account synced"))
-                    }
-                },
-                onFullNameChange = viewModel::onAuthFullNameChange,
-                onPhoneChange = viewModel::onAuthPhoneChange,
-                onPasswordEmailChange = viewModel::onPasswordEmailChange,
-                onPasswordChange = viewModel::onPasswordChange,
-                onSubmitPasswordAuth = {
-                    viewModel.submitPasswordAuth {
-                        onShowMessage(localized("تم تسجيل الدخول ومزامنة حسابك بنجاح", "Signed in & account synced"))
-                    }
-                },
+                onVerifyOtp = viewModel::verifyEmailOtp,
+                onGoogleStart = viewModel::clearAuthErrors,
+                onGoogleResult = viewModel::onGoogleResult,
                 modifier = modifier,
             )
             return
         }
 
         is AuthSessionState.SignedIn -> {
+            val signOut = { viewModel.signOut { onShowMessage(localized("تم تسجيل الخروج", "Signed out")) } }
+            if (!session.membershipResolved) {
+                Box(modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
+                    val error = session.membershipError
+                    if (error == null || state.isRetryingMembership) CircularProgressIndicator()
+                    else Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        AuthFeedback(state.accountError ?: error)
+                        TextButton(onClick = viewModel::retryMembership) { Text(localized("إعادة المحاولة", "Try again")) }
+                        TextButton(onClick = signOut) { Text(localized("تبديل الحساب", "Switch account")) }
+                    }
+                }
+                return
+            }
+            if (!session.enrolled) {
+                StoreOnboardingScreen(
+                    email = session.email,
+                    storeName = storeName,
+                    form = state.onboarding,
+                    accountError = state.accountError,
+                    onNameChange = viewModel::onOnboardingNameChange,
+                    onPhoneChange = viewModel::onOnboardingPhoneChange,
+                    onSubmit = viewModel::completeOnboarding,
+                    onSignOut = signOut,
+                    modifier = modifier,
+                )
+                return
+            }
             var section by androidx.compose.runtime.saveable.rememberSaveable(session.userId) { androidx.compose.runtime.mutableStateOf("hub") }
             val profileForm = state.profileForm
-            val name = profileForm.fullName.ifBlank { session.email.substringBefore("@") }
+            val name = profileForm.fullName.ifBlank { localized("حسابي", "My account") }
             androidx.activity.compose.BackHandler(section != "hub") { section = "hub" }
             androidx.compose.runtime.LaunchedEffect(section, session.userId) {
                 if (section == "hub") viewModel.loadCounts()
-                if (section == "wallet") viewModel.loadWallet()
+                if (section == "hub" || section == "wallet") viewModel.loadWallet()
             }
             Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                state.accountError?.let { AuthFeedback(it) }
                 if (section != "hub") TextButton(onClick = { section = "hub" }) { Text(localized("العودة إلى حسابي", "Back to account")) }
                 when (section) {
                     "hub" -> {
@@ -167,18 +189,17 @@ fun AccountScreen(
                             HubTile(localized("المفضلة","Wishlist"), state.counts.wishlist, Modifier.weight(1f), onOpenWishlist)
                         }
                         Card(Modifier.fillMaxWidth()) {
-                            listOf("profile" to localized("بياناتي الشخصية","Personal information"), "security" to localized("الأمان وكلمة المرور","Security & password"),
+                            listOf("profile" to localized("بياناتي الشخصية","Personal information"),
                                 "preferences" to localized("التفضيلات","Preferences"), "wallet" to localized("محفظة المتجر","Store wallet")).forEach { (key,label) ->
                                 TextButton(onClick = { section = key }, modifier = Modifier.fillMaxWidth()) { Text(label, Modifier.weight(1f)) }
                             }
-                            TextButton(onClick = { viewModel.signOut { onShowMessage(localized("تم تسجيل الخروج","Signed out")) } },
+                            TextButton(onClick = signOut,
                                 modifier = Modifier.fillMaxWidth()) { Text(localized("تسجيل الخروج","Sign out"), Modifier.weight(1f)) }
                         }
                     }
                     "addresses" -> com.whitelabel.commerce.feature.addresses.AddressBook(session.email,
                         com.whitelabel.commerce.core.domain.model.CustomerAddress(recipientName = profileForm.fullName, phone = profileForm.phone))
                     "preferences" -> PreferencesAndSupportCard(darkThemeOverride, onSetDarkThemePreference, isRtl, onSelectLanguage, onOpenSupport)
-                    "security" -> PasswordPanel(PasswordMode.Change, viewModel = viewModel)
                     "wallet" -> WalletAccountCard(balance = state.walletSummary.balance, currency = state.walletSummary.currency.ifBlank { state.storeSettings.currency },
                         locale = state.storeSettings.locale, cashbackEnabled = state.storeSettings.cashbackEnabled,
                         cashbackPercentage = state.storeSettings.cashbackPercentage, transactions = state.walletSummary.transactions,
