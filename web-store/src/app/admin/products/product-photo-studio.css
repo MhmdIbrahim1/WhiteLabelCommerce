@@ -1,0 +1,59 @@
+.product-photo-studio {
+  display: grid;
+  gap: 1rem;
+  min-inline-size: 0;
+  padding: clamp(1rem, 2.5vw, 1.5rem);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--pt-card-radius);
+}
+.product-photo-studio h2 {
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 650;
+}
+.product-photo-studio h2 svg { flex-shrink: 0; }
+.product-studio-upload, .product-studio-review, .product-studio-tools > div {
+  display: grid;
+  align-content: start;
+  gap: .7rem;
+  min-inline-size: 0;
+}
+.product-photo-studio .product-studio-upload input { inline-size: 100%; }
+.product-studio-tools, .product-studio-comparison {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+.product-studio-tools, .product-studio-review { padding-block-start: 1rem; border-block-start: 1px solid var(--line); }
+.product-studio-tools button { flex-wrap: wrap; }
+.product-studio-tools button bdi, .product-studio-compression bdi { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.product-studio-tools button bdi {
+  border-inline-start: 1px solid var(--line);
+  padding-inline-start: .5rem;
+  font-size: .82em;
+}
+.product-studio-compression bdi { display: inline-block; margin-inline-start: .25rem; }
+.product-studio-figure { display: grid; gap: .3rem; margin: 0; min-inline-size: 0; }
+.product-studio-figure img {
+  display: block;
+  inline-size: 100%;
+  block-size: auto;
+  aspect-ratio: 10 / 7;
+  object-fit: contain;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--pt-radius);
+}
+.product-studio-upload .product-studio-figure { max-inline-size: 13rem; }
+.product-studio-figure figcaption, .product-studio-status { font-size: .84rem; color: var(--muted); }
+.product-studio-status:empty { display: none; }
+.product-photo-studio :is(input, select, button, a) { overflow-wrap: anywhere; }
+.product-photo-studio button:disabled:not([aria-busy="true"]) { cursor: default; }
+@media (max-width: 680px) {
+  .product-studio-tools { grid-template-columns: minmax(0, 1fr); }
+  .product-studio-comparison { gap: .5rem; }
+}

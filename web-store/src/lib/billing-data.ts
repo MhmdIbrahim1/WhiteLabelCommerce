@@ -9,7 +9,7 @@ export const getStoreBilling = cache(async (storeId: string): Promise<StoreBilli
 });
 
 type Allowance<T> = { used: number; cap: T; period_ym: string; plan_name_ar: string; plan_name_en: string };
-export async function getResourceAllowance(storeId: string, resource: "products" | "apk_builds"): Promise<Allowance<number | null>>;
+export async function getResourceAllowance(storeId: string, resource: "products" | "apk_builds" | "ai_autofills" | "ai_studio_images"): Promise<Allowance<number | null>>;
 export async function getResourceAllowance(storeId: string, resource: "custom_domains"): Promise<Allowance<boolean>>;
 export async function getResourceAllowance(storeId: string, resource: string) {
   const db = await serverDb();

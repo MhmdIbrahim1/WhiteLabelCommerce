@@ -1,7 +1,8 @@
 import type { Lang } from "./i18n";
 
 export const planCodes = ["starter", "pro", "business"] as const;
-export const quotaKeys = ["max_products", "max_monthly_orders", "max_monthly_apk_builds", "max_staff_members"] as const;
+export const quotaKeys = ["max_products", "max_monthly_orders", "max_monthly_apk_builds", "max_staff_members",
+  "max_monthly_ai_autofills", "max_monthly_ai_studio_images"] as const;
 export const cycles = ["monthly", "annual"] as const;
 export const subscriptionStatuses = ["trialing", "active", "past_due", "canceled"] as const;
 export type PlanCode = (typeof planCodes)[number];
@@ -21,13 +22,15 @@ export type Subscription = {
   quota_overrides: QuotaOverrides; admin_notes: string | null; revision: number;
 };
 export type StoreBilling = Pick<Subscription, "billing_cycle" | "status" | "trial_ends_at" | "current_period_start" | "current_period_end" | "quota_overrides"> & {
-  plan: Plan; entitlements: Entitlements; products: number; orders: number; apk_builds: number; staff_members: number; period_ym: string;
+  plan: Plan; entitlements: Entitlements; products: number; orders: number; apk_builds: number; staff_members: number;
+  ai_autofills: number; ai_studio_images: number; period_ym: string;
   trial_used_at: string | null; can_start_trial: boolean; scheduled_plan_code: PlanCode | null;
   scheduled_billing_cycle: BillingCycle | null; scheduled_effective_at: string | null; custom_domains: number;
 };
 
 export const quotaResources = {
   max_products: "products", max_monthly_orders: "orders", max_monthly_apk_builds: "apk_builds", max_staff_members: "staff_members",
+  max_monthly_ai_autofills: "ai_autofills", max_monthly_ai_studio_images: "ai_studio_images",
 } as const;
 export type Resource = (typeof quotaResources)[QuotaKey] | "custom_domains";
 const resourceNames: Record<Resource, Record<Lang, string>> = {
@@ -35,6 +38,8 @@ const resourceNames: Record<Resource, Record<Lang, string>> = {
   products: { en: "Active products", ar: "المنتجات المنشورة" },
   orders: { en: "Monthly orders", ar: "الطلبات الشهرية" },
   apk_builds: { en: "Monthly APK builds", ar: "عمليات بناء التطبيق الشهرية" },
+  ai_autofills: { en: "Monthly AI product drafts", ar: "مسودات المنتجات الشهرية بالذكاء الاصطناعي" },
+  ai_studio_images: { en: "Monthly AI studio photos", ar: "صور الاستوديو الشهرية بالذكاء الاصطناعي" },
   custom_domains: { en: "Custom domains", ar: "النطاقات المخصصة" },
 };
 export function resourceName(resource: Resource, lang: Lang) { return resourceNames[resource][lang]; }
@@ -52,7 +57,8 @@ export function limitLabel(limit: number | null, lang: Lang) {
 export function resolveEntitlements(plan: Entitlements, overrides: QuotaOverrides): Entitlements {
   return {
     max_staff_members: plan.max_staff_members, max_products: plan.max_products, max_monthly_orders: plan.max_monthly_orders,
-    max_monthly_apk_builds: plan.max_monthly_apk_builds, custom_domains_enabled: plan.custom_domains_enabled, ...overrides,
+    max_monthly_apk_builds: plan.max_monthly_apk_builds, max_monthly_ai_autofills: plan.max_monthly_ai_autofills,
+    max_monthly_ai_studio_images: plan.max_monthly_ai_studio_images, custom_domains_enabled: plan.custom_domains_enabled, ...overrides,
   };
 }
 export function limitReached(current: number, limit: number | null) { return limit !== null && current >= limit; }
@@ -82,6 +88,8 @@ export function quotaMessage(resource: Resource, lang: Lang, featureDisabled = f
   if (resource === "apk_builds") return en ? "You’ve used this month’s APK build allowance." : "استهلكت رصيد بناء التطبيق لهذا الشهر.";
   if (resource === "staff_members") return en ? "All staff seats are in use. Free a seat or change the store limit." : "جميع مقاعد الفريق مستخدمة. أخلِ مقعداً أو عدّل حد المتجر.";
   if (resource === "products") return en ? "You’ve reached your active product limit. You can still save drafts." : "وصلت إلى حد المنتجات المنشورة. يمكنك الاستمرار في حفظ المسودات.";
+  if (resource === "ai_autofills") return en ? "You’ve used this month’s AI product drafts." : "استهلكت رصيد مسودات المنتجات بالذكاء الاصطناعي لهذا الشهر.";
+  if (resource === "ai_studio_images") return en ? "You’ve used this month’s AI studio photos." : "استهلكت رصيد صور الاستوديو بالذكاء الاصطناعي لهذا الشهر.";
   return en ? "This store has reached its monthly order limit. Please contact the store before trying again." : "بلغ المتجر حد الطلبات لهذا الشهر. يُرجى التواصل مع المتجر قبل المحاولة مجدداً.";
 }
 
@@ -131,6 +139,7 @@ export function parsePlan(form: FormData): Omit<Plan, "revision"> {
     monthly_price_egp: integer(form, "monthly_price_egp"), annual_price_egp: integer(form, "annual_price_egp"),
     trial_days: integer(form, "trial_days"), sort_order: integer(form, "sort_order", true),
     max_staff_members: caps.max_staff_members ?? null, max_products: caps.max_products ?? null, max_monthly_orders: caps.max_monthly_orders ?? null, max_monthly_apk_builds: caps.max_monthly_apk_builds ?? null,
+    max_monthly_ai_autofills: caps.max_monthly_ai_autofills ?? null, max_monthly_ai_studio_images: caps.max_monthly_ai_studio_images ?? null,
     custom_domains_enabled: checkbox(form, "custom_domains_enabled"), is_active: checkbox(form, "is_active"),
   };
 }

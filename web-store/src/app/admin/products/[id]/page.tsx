@@ -10,6 +10,7 @@ import { WorkspaceEmpty, WorkspaceHeading } from "@/components/workspace-data";
 import { SubmitButton } from "@/components/submit-button";
 import { QuotaPrompt } from "@/components/quota-prompt";
 import { getResourceAllowance } from "@/lib/billing-data";
+import { isAiStudioEnabled } from "@/lib/openai-studio";
 import { limitReached } from "@/lib/billing";
 import { deleteProduct } from "../../mutations";
 import { catalogCategories, editorProduct } from "../catalog-data";
@@ -22,8 +23,9 @@ export default async function ProductEditor({ params, searchParams }: {
     params, searchParams, getServerLang(), requireAdmin("manage_products"),
   ]);
   if (id !== "new" && !isRecordId(id)) notFound();
-  const [product, categories, allowance] = await Promise.all([
+  const [product, categories, allowance, autofill, studio] = await Promise.all([
     id === "new" ? null : editorProduct(id), catalogCategories(), getResourceAllowance(storeId, "products"),
+    getResourceAllowance(storeId, "ai_autofills"), getResourceAllowance(storeId, "ai_studio_images"),
   ]);
   if (id !== "new" && !product) notFound();
   const en = lang === "en";
@@ -36,7 +38,9 @@ export default async function ProductEditor({ params, searchParams }: {
     <WorkspaceHeading title={product ? localizedText(lang, product.name, product.name_en) : en ? "Add a product" : "إضافة منتج"}
       description={en ? "Manage pricing, photos and inventory for each option." : "حدّد السعر وأضف الصور واضبط مخزون كل خيار."} />
     {limitReached(allowance.used, allowance.cap) && <QuotaPrompt lang={lang} resource="products" canViewBilling={Boolean(permissions.manage_billing)} />}
-    <section className="ws-box">{categories.length ? <AdminProductForm p={product ?? undefined} categories={categories} query={q} page={page} status={status} /> :
+    <section className="ws-box">{categories.length ? <AdminProductForm key={storeId + id} p={product ?? undefined} categories={categories}
+      query={q} page={page} status={status} storeId={storeId} aiEnabled={isAiStudioEnabled()}
+      allowances={{ autofillUsed: autofill.used, autofillCap: autofill.cap, studioUsed: studio.used, studioCap: studio.cap }} /> :
       <WorkspaceEmpty title={en ? "Give your first product a category" : "أضف فئة لمنتجك الأول"}
         action={<Link className="ws-button" href="/admin/products?categories=1#categories">{en ? "Add a category" : "إضافة فئة"}</Link>} />}</section>
     {product && <details className="ws-box"><summary>{t(lang, "adminDeleteProduct")}</summary>
