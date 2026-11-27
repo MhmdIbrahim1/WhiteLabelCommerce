@@ -53,10 +53,12 @@ function persistLang(next: Lang) {
 export function LanguageProvider({
   initialLang,
   defaultLang = "ar",
+  preview = false,
   children,
 }: {
   initialLang: Lang;
   defaultLang?: Lang;
+  preview?: boolean;
   children: React.ReactNode;
 }) {
   const router = useRouter();
@@ -64,6 +66,7 @@ export function LanguageProvider({
 
   // Keep DOM attributes synchronized and restore localStorage preference if cookie wasn't set yet
   useEffect(() => {
+    if (preview) return;
     document.documentElement.lang = langHtmlAttr(lang);
     document.documentElement.dir = langDir(lang);
 
@@ -83,16 +86,16 @@ export function LanguageProvider({
         }
       }
     } catch {}
-  }, [defaultLang, lang, router]);
+  }, [defaultLang, lang, router, preview]);
 
   const setLang = useCallback(
     (next: Lang) => {
-      if (next === lang) return;
+      if (preview || next === lang) return;
       persistLang(next);
       setLangState(next);
       router.refresh();
     },
-    [lang, router],
+    [lang, router, preview],
   );
 
   const toggleLang = useCallback(() => {

@@ -1,125 +1,25 @@
 import { checked, requireAdmin } from "@/lib/db";
-import brand from "@/lib/brand";
-import { photo } from "@/lib/shop";
-import { resolveUiConfig } from "@/lib/ui-config";
-import { CustomizerStudio } from "./customizer-studio";
+import { localizedText } from "@/lib/i18n";
+import { getServerLang } from "@/lib/i18n-server";
+import { getPublishedTheme } from "@/lib/platform-theme-data";
+import { designFields, readStoreDesign, type DesignSettingsRow } from "@/lib/store-design-settings";
+import { storefrontDesign } from "@/lib/storefront-theme";
 import { merchantStorefrontUrl } from "@/lib/tenant";
-
-type CustomizerSettingsRow = {
-  store_name: string;
-  currency: string;
-  shipping_fee: number;
-  banners: string[];
-  theme_template: string;
-  primary_color: string;
-  secondary_color: string;
-  surface_color: string;
-  border_radius: number;
-  ui_config?: unknown;
-};
-
-type RawProductRow = {
-  id: string;
-  category_id: string;
-  name: string;
-  name_en?: string | null;
-  description: string;
-  description_en?: string | null;
-  price: number;
-  old_price: number | null;
-  stock: number;
-  sizes: string[];
-  colors: string[];
-  image_path: string | null;
-};
+import { CustomizerStudio } from "./customizer-studio";
 
 export default async function CustomizerPage() {
   const { db, storeId, activeStore } = await requireAdmin("manage_settings");
-
-  const settingsQuery = await db
-    .from("store_settings")
-    .select(
-      "store_name,currency,shipping_fee,banners,theme_template,primary_color,secondary_color,surface_color,border_radius,ui_config",
-    )
-    .eq("store_id", storeId)
-    .single<CustomizerSettingsRow>();
-
-  let settingsRow = settingsQuery.data;
-  if (
-    settingsQuery.error?.code === "42703" ||
-    settingsQuery.error?.code === "PGRST204"
-  ) {
-    const fallback = await db
-      .from("store_settings")
-      .select(
-        "store_name,currency,shipping_fee,banners,theme_template,primary_color,secondary_color,surface_color,border_radius",
-      )
-      .eq("store_id", storeId)
-      .single<CustomizerSettingsRow>();
-    settingsRow = checked(fallback);
-  } else {
-    settingsRow = checked(settingsQuery);
-  }
-
-  const [productsRes, categoriesRes, liveUrl] = await Promise.all([
-    db
-      .from("products")
-      .select("id,category_id,name,name_en,description,description_en,price,old_price,stock,sizes,colors,image_path")
-      .eq("store_id", storeId)
-      .eq("is_active", true)
-      .order("name")
-      .limit(12),
-    db
-      .from("categories")
-      .select("id,name,name_en")
-      .eq("store_id", storeId)
-      .order("name")
-      .limit(12),
-    merchantStorefrontUrl(activeStore.slug),
+  const [settings, product, liveUrl, platform, lang] = await Promise.all([
+    db.from("store_settings").select("store_name," + designFields).eq("store_id", storeId)
+      .single<DesignSettingsRow & { store_name: string }>(),
+    db.from("products").select("id").eq("store_id", storeId).eq("is_active", true).order("id").limit(1).maybeSingle(),
+    merchantStorefrontUrl(activeStore.slug), getPublishedTheme(), getServerLang(),
   ]);
-
-  const products = ((productsRes.data ?? []) as RawProductRow[]).map((p) => ({
-    id: p.id,
-    categoryId: p.category_id,
-    name: p.name,
-    name_en: p.name_en ?? "",
-    description: p.description,
-    description_en: p.description_en ?? "",
-    price: Number(p.price),
-    old_price: p.old_price !== null ? Number(p.old_price) : null,
-    stock: Number(p.stock),
-    sizes: p.sizes ?? [],
-    colors: p.colors ?? [],
-    imageUrl: photo(p.image_path),
-  }));
-
-  const categories = (categoriesRes.data ?? []) as {
-    id: string;
-    name: string;
-    name_en?: string | null;
-  }[];
-
-  const initialConfig = resolveUiConfig(settingsRow.ui_config, {
-    template: settingsRow.theme_template,
-    primary: settingsRow.primary_color || brand.colors.primary,
-    accent: settingsRow.secondary_color || brand.colors.secondary,
-    surface: settingsRow.surface_color || brand.colors.surface,
-    radius: settingsRow.border_radius ?? brand.borderRadius,
-  });
-
-  return (
-    <CustomizerStudio
-      storefrontPath={liveUrl}
-      storeId={storeId}
-      initialConfig={initialConfig}
-      storeName={settingsRow.store_name || brand.storeName}
-      currency={settingsRow.currency || brand.currency}
-      shippingFee={Number(settingsRow.shipping_fee ?? brand.shippingFee)}
-      banners={(settingsRow.banners ?? []).filter((b) =>
-        b.startsWith("https://"),
-      )}
-      products={products}
-      categories={categories}
-    />
-  );
+  const row = checked(settings);
+  const config = readStoreDesign(row);
+  return <CustomizerStudio key={storeId} storeId={storeId} slug={activeStore.slug} liveUrl={liveUrl}
+    storeName={localizedText(lang, row.store_name || activeStore.name_ar, activeStore.name_en)}
+    initial={storefrontDesign(config)} template={config.baseTemplate} productId={product.data?.id ?? null}
+    hasHero={config.homeSections.some(section => section.type === "hero_banner" && section.visible)}
+    gates={{ motion_enabled: platform.motion_enabled, sticky_cta_enabled: platform.sticky_cta_enabled }}/>;
 }

@@ -5,12 +5,6 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { notificationPermissions } from "@/lib/team";
 import { revalidatePath } from "next/cache";
-import { templates, isTemplate } from "@/lib/theme-templates";
-import {
-  resolveUiConfig,
-  uiConfigFromTemplate,
-  type StoreUiConfig,
-} from "@/lib/ui-config";
 import {
   buildTrackingUrl,
   isSafeHttpUrl,
@@ -752,110 +746,6 @@ export async function adjustCustomerWallet(input: {
     balanceAfter: Number(row?.balance_after ?? 0),
   };
 }
-export async function applyTemplate(form: FormData) {
-  const { db, storeId } = await requireAdmin("manage_settings");
-  const id = form.get("template");
-  if (!isTemplate(id)) finish("/admin/settings", false);
-  const preset = templates[id];
-  const uiConfig = uiConfigFromTemplate(id);
-  const primaryUpdate = await db
-    .from("store_settings")
-    .update({
-      theme_template: id,
-      primary_color: preset.primary,
-      secondary_color: preset.accent,
-      surface_color: preset.surface,
-      border_radius: preset.radius,
-      ui_config: uiConfig,
-    })
-    .eq("store_id", storeId)
-    .select("store_id")
-    .single();
-  let error = primaryUpdate.error;
-  if (error?.code === "42703" || error?.code === "PGRST204") {
-    const fallback = await db
-      .from("store_settings")
-      .update({
-        theme_template: id,
-        primary_color: preset.primary,
-        secondary_color: preset.accent,
-        surface_color: preset.surface,
-        border_radius: preset.radius,
-      })
-      .eq("store_id", storeId)
-      .select("store_id")
-      .single();
-    error = fallback.error;
-  }
-  if (!error) revalidatePath("/", "layout");
-  finish("/admin/settings", !error);
-}
-
-export type SaveUiConfigResult =
-  | { ok: true; config: StoreUiConfig }
-  | { ok: false; error: string };
-
-export type UploadHeroBannerResult =
-  | { ok: true; url: string }
-  | { ok: false; error: string };
-
-export async function uploadHeroBannerImage(
-  f: FormData,
-): Promise<UploadHeroBannerResult> {
-  const { db, storeId } = await requireAdmin("manage_settings");
-  const file = f.get("file");
-  if (!(file instanceof File) || !file.size || file.size > 5 * 1024 * 1024) {
-    return { ok: false, error: "invalid_file" };
-  }
-
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  const verified = validateImageMagicBytes(bytes);
-  if (!verified) {
-    return { ok: false, error: "invalid_file" };
-  }
-
-  const path = `${storeId}/banners/${crypto.randomUUID()}.${verified.ext}`;
-  const bucket = db.storage.from("product-images");
-  const uploaded = await bucket.upload(path, bytes, {
-    contentType: verified.mime,
-    upsert: false,
-  });
-  if (uploaded.error) {
-    return { ok: false, error: "upload_failed" };
-  }
-  const { data } = bucket.getPublicUrl(path);
-  return { ok: true, url: data.publicUrl };
-}
-
-export async function saveUiConfig(
-  raw: unknown,
-): Promise<SaveUiConfigResult> {
-  const { db, storeId } = await requireAdmin("manage_settings");
-  const config = resolveUiConfig(raw);
-  const { error } = await db
-    .from("store_settings")
-    .update({
-      theme_template: config.baseTemplate,
-      primary_color: config.global.primaryButtonBg,
-      secondary_color: config.global.accentBadge,
-      surface_color: config.global.cardSurface,
-      border_radius: config.global.borderRadius,
-      ui_config: config,
-    })
-    .eq("store_id", storeId)
-    .select("store_id")
-    .single();
-  if (error) {
-    return {
-      ok: false,
-      error: actionError(error, "publish_failed"),
-    };
-  }
-  revalidatePath("/", "layout");
-  revalidatePath("/admin", "layout");
-  return { ok: true, config };
-}
-
 
 export async function saveCustomerNotes(f: FormData) {
   const { db, storeId } = await requireAdmin("manage_customers");

@@ -33,8 +33,13 @@ export const ENTRANCE_ANIMATIONS = [
 ] as const;
 export type EntranceAnimation = (typeof ENTRANCE_ANIMATIONS)[number];
 
-export const GRID_COLUMNS = [2, 3, 4] as const;
+export const GRID_COLUMNS = [2, 3, 4, 5] as const;
 export type GridColumns = (typeof GRID_COLUMNS)[number];
+
+export const STOREFRONT_FONTS = ["preset", "ibm_plex", "alexandria", "readex"] as const;
+export const CARD_RATIOS = ["preset", "3 / 4", "1 / 1", "4 / 5", "5 / 4"] as const;
+export type StorefrontFont = (typeof STOREFRONT_FONTS)[number];
+export type CardRatio = (typeof CARD_RATIOS)[number];
 
 export const CARD_HOVER_EFFECTS = ["zoom", "lift", "glow", "none"] as const;
 export type CardHoverEffect = (typeof CARD_HOVER_EFFECTS)[number];
@@ -102,6 +107,7 @@ export type HomeSection =
     };
 
 export type GlobalUiTokens = {
+  fontPair?: StorefrontFont;
   primaryButtonBg: string;
   primaryButtonText: string;
   pageBg: string;
@@ -196,6 +202,7 @@ export function defaultHeroBannerCms(): HeroBannerCmsConfig {
 }
 
 export type ProductsPageUiConfig = {
+  cardAspectRatio?: CardRatio;
   gridColumns: GridColumns;
   cardHoverEffect: CardHoverEffect;
   priceBadgeColor: string;
@@ -227,6 +234,8 @@ export type StoreUiConfig = {
   version: 1;
   baseTemplate: TemplateId;
   storefrontPreset?: StorefrontPreset;
+  // Older documents use values equal to the legacy template as inheritance sentinels.
+  storefrontStyleVersion?: 1;
   storefrontLogo?: string;
   sticky_cta_enabled?: boolean;
   motion_enabled?: boolean;
@@ -273,9 +282,9 @@ function pickNumber(
   return Math.round(Math.min(max, Math.max(min, n)));
 }
 
-function pickGridCols(value: unknown, fallback: GridColumns): GridColumns {
+function pickGridCols(value: unknown, fallback: GridColumns, explicit: boolean): GridColumns {
   const n = typeof value === "number" ? value : Number(value);
-  if (n === 2 || n === 3 || n === 4) return n;
+  if (n === 2 || n === 3 || n === 4 || (explicit && n === 5)) return n;
   return fallback;
 }
 
@@ -745,6 +754,7 @@ export function resolveUiConfig(
     version: 1,
     baseTemplate: templateId,
     ...(isStorefrontPreset(sector) && { storefrontPreset: sector }),
+    ...(input.storefrontStyleVersion === 1 && { storefrontStyleVersion: 1 }),
     ...(logo && { storefrontLogo: logo }),
     ...(typeof input.sticky_cta_enabled === "boolean" && { sticky_cta_enabled: input.sticky_cta_enabled }),
     ...(typeof input.motion_enabled === "boolean" && { motion_enabled: input.motion_enabled }),
@@ -755,6 +765,7 @@ export function resolveUiConfig(
     ),
     homeSections: normalizeHomeSections(input.homeSections, accentBadge),
     global: {
+      ...(input.storefrontStyleVersion === 1 && { fontPair: pickEnum(rawGlobal.fontPair, STOREFRONT_FONTS, "preset") }),
       primaryButtonBg,
       primaryButtonText: pickHex(
         rawGlobal.primaryButtonText,
@@ -861,9 +872,11 @@ export function resolveUiConfig(
           : [],
       },
       products: {
+        ...(input.storefrontStyleVersion === 1 && { cardAspectRatio: pickEnum(rawProducts.cardAspectRatio, CARD_RATIOS, "preset") }),
         gridColumns: pickGridCols(
           rawProducts.gridColumns,
           base.pages.products.gridColumns,
+          input.storefrontStyleVersion === 1,
         ),
         cardHoverEffect: pickEnum(
           rawProducts.cardHoverEffect,

@@ -1,4 +1,6 @@
 @import "@fontsource-variable/dm-sans/wght.css";
+@import "@fontsource-variable/alexandria/wght.css";
+@import "@fontsource-variable/readex-pro/wght.css";
 @import "@fontsource/ibm-plex-sans-arabic/arabic-400.css";
 @import "@fontsource/ibm-plex-sans-arabic/arabic-500.css";
 @import "@fontsource/ibm-plex-sans-arabic/arabic-600.css";
@@ -33,7 +35,7 @@
 .sf-store :is(h1,h2,h3) { text-wrap: balance; overflow-wrap: anywhere; }
 .shop.sf-store:lang(ar) { line-height: 1.8; }
 .shop.sf-store :lang(ar) { letter-spacing: 0 !important; }
-.sf-store .sf-copy:lang(ar), .sf-store:lang(ar) .sf-monogram { font-family: "IBM Plex Sans Arabic", "DM Sans Variable", sans-serif; }
+.sf-store .sf-copy:lang(ar), .sf-store:lang(ar) .sf-monogram { font-family: var(--sf-arabic-font); }
 .sf-store :is(h1,h2,h3):has(.sf-copy:lang(ar)) { line-height: 1.35; }
 .shop.sf-store:lang(ar) :is(h1,h2,h3) { line-height: 1.35; }
 .shop.sf-store:lang(ar) :is(p,li,dd) { line-height: 1.8; }
@@ -169,6 +171,7 @@
 .shop.sf-store .discount, .shop.sf-store .detail-flash-save-pill { color: var(--sf-on-badge); background: var(--sf-badge); box-shadow: none; border: 0; border-radius: min(var(--radius), 6px); }
 .sf-store .tile .wishlist-heart-btn { background: var(--surface); color: var(--ink); border: 1px solid var(--line); box-shadow: none; backdrop-filter: none; }
 .sf-store .sf-spec-badges { display: flex; flex-wrap: wrap; gap: .35rem; margin-block: .25rem; }
+.sf-store:not([data-storefront-preset="tech_precision"]) .sf-spec-badges { display: none; }
 .sf-store .sf-spec-badges div { font-size: .75rem; padding: .25rem .4rem; border: 1px solid var(--line); }
 .sf-store .sf-spec-badges dt { color: var(--muted); }
 .sf-store .sf-spec-badges dd { margin: 0; }

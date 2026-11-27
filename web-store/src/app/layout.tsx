@@ -3,7 +3,7 @@ import { headers } from "next/headers";
 import type { CSSProperties } from "react";
 import brand from "@/lib/brand";
 import { langDir, langHtmlAttr, type Lang } from "@/lib/i18n";
-import { getServerLang } from "@/lib/i18n-server";
+import { getServerLang, getStudioPreviewLang } from "@/lib/i18n-server";
 import { STORE_ID_HEADER } from "@/lib/tenant-shared";
 import { settings } from "@/lib/shop";
 import { LanguageProvider } from "@/components/language-provider";
@@ -31,7 +31,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang={langHtmlAttr(lang)} dir={langDir(lang)} style={tokens}>
       <body>
-        <LanguageProvider initialLang={lang} defaultLang={defaultLang}>
+        <LanguageProvider initialLang={lang} defaultLang={defaultLang} preview={Boolean(await getStudioPreviewLang())}>
           {children}
           <FloatingToastHost />
         </LanguageProvider>

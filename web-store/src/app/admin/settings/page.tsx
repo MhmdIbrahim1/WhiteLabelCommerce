@@ -1,4 +1,5 @@
 import { SubmitButton } from "@/components/submit-button";
+import Link from "next/link";
 import { StatusDot, WorkspaceHeading } from "@/components/workspace-data";
 import { checked, requireAdmin } from "@/lib/db";
 import {
@@ -6,9 +7,7 @@ import {
   saveSettings,
   saveWalletIncentiveSettings,
 } from "../mutations";
-import { TemplateGallery } from "./template-gallery";
 import { DomainSettings } from "./domain-settings";
-import { isTemplate } from "@/lib/theme-templates";
 import { getServerLang } from "@/lib/i18n-server";
 import { Notice } from "../ui";
 import { OnboardingStepMarker } from "../onboarding-store";
@@ -20,7 +19,6 @@ type StoreSettingsRow = {
   shipping_fee: number;
   default_max_order_qty: number | null;
   whatsapp_number: string;
-  theme_template: string;
   banners: string[];
   cod_enabled: boolean;
   paymob_enabled: boolean;
@@ -54,7 +52,7 @@ export default async function Settings({
     await db
       .from("store_settings")
       .select(
-        "store_id,store_name,shipping_fee,default_max_order_qty,currency,whatsapp_number,banners,theme_template,cod_enabled,paymob_enabled,paymob_card_enabled,paymob_wallet_enabled,cart_incentive_enabled,free_shipping_threshold,cashback_enabled,cashback_percentage,return_window_days",
+        "store_id,store_name,shipping_fee,default_max_order_qty,currency,whatsapp_number,banners,cod_enabled,paymob_enabled,paymob_card_enabled,paymob_wallet_enabled,cart_incentive_enabled,free_shipping_threshold,cashback_enabled,cashback_percentage,return_window_days",
       )
       .eq("store_id", storeId)
       .single<StoreSettingsRow>(),
@@ -134,7 +132,9 @@ export default async function Settings({
         <div className="wide ws-rule"><SubmitButton className="ws-primary">{label("Save shipping and rewards", "حفظ الشحن والمكافآت")}</SubmitButton></div>
       </form>
     </section>
-    <div id="templates"><TemplateGallery active={isTemplate(s.theme_template) ? s.theme_template : "modern-minimal"} /></div>
+    <section id="templates" className="ws-box"><h2>{label("Storefront appearance", "مظهر واجهة المتجر")}</h2>
+      <Link href="/admin/customizer" className="ws-text-link">{label("Open live preview studio", "فتح استوديو المعاينة المباشرة")}</Link>
+    </section>
     {permissions.manage_domains && <div id="domains"><DomainSettings storeId={storeId} slug={activeStore.slug} en={isEn} /></div>}
   </div>;
 }

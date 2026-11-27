@@ -9,18 +9,20 @@ import type { Product } from "@/lib/shop";
 import { photo } from "@/lib/product-photo";
 import { storefrontImageSrc } from "@/lib/storefront-media";
 import { Buy } from "./buy";
+import { useStudioPreview } from "./studio-preview-context";
 
 export function ProductPurchase({ product, title, basePath, currency, sticky, initialNow, children }: {
   product: Product; title: string; basePath: string; currency: string; sticky: boolean; initialNow: number; children: React.ReactNode;
 }) {
   const [color, setColor] = useState(product.colors.length === 1 ? product.colors[0] : "");
+  const showSticky = useStudioPreview()?.theme.stickyCtaEnabled ?? sticky;
   const images = useMemo(() => [...new Set([product.image_path, ...(product.image_paths ?? []),
     ...Object.values(product.color_images ?? {})].map(photo).filter((src): src is string => Boolean(storefrontImageSrc(src, 1080))))], [product]);
   const positions = useMemo(() => new Map(images.map((src, i) => [src, i])), [images]);
   return <section className="details-grid sf-product">
     <ProductGallery key={color} sources={images} alt={title} initial={positions.get(photo(product.color_images?.[color] ?? null) ?? "") ?? 0} />
     <div className="sf-buy-column">{children}<Buy p={product} detail basePath={basePath} onColorChange={setColor}
-      sticky={sticky ? { currency, initialNow } : undefined} /></div>
+      sticky={showSticky ? { currency, initialNow } : undefined} /></div>
   </section>;
 }
 

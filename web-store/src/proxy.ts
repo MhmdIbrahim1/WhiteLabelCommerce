@@ -2,13 +2,14 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { adminUser, superAdminUser } from "@/lib/access";
 import {
-  classifyHost, isLocalHost, isStoreSlug, platformAuthScreen, platformOrigin, platformRootDomain, publicStoreOrigin,
+  isLocalHost, isStoreSlug, platformAuthScreen, platformOrigin, platformRootDomain, publicStoreOrigin, resolveRequestHost,
   requestAuthority, resolveStoreBinding, storePath,
 } from "@/lib/host-routing";
 import { resolveHostRoute } from "@/lib/host-resolver";
 import {
   DEFAULT_STORE_SLUG, PLATFORM_ORIGIN_HEADER, STORE_BASE_PATH_HEADER, STORE_CANONICAL_HEADER,
   REQUEST_ORIGIN_HEADER, STORE_ID_HEADER, STORE_SLUG_COOKIE, STORE_SLUG_HEADER, storefrontPath, tenantAuthEntry,
+  STUDIO_LOCALE_HEADER, STUDIO_PREVIEW_QUERY, isStudioPreviewPage,
 } from "@/lib/tenant-shared";
 
 const privateHeaders = { "Cache-Control": "private, no-store" };
@@ -56,7 +57,12 @@ export async function proxy(request: NextRequest) {
   if (!host) return routingError();
   let root: string;
   try { root = platformRootDomain(); } catch { return routingError(503); }
-  const classification = classifyHost(host.hostname, root, root === "localhost" || process.env.NODE_ENV !== "production");
+  let resolvedHost;
+  try {
+    resolvedHost = await resolveRequestHost(host.hostname, root, root === "localhost" || process.env.NODE_ENV !== "production",
+      process.env.VERCEL_ENV, resolveHostRoute);
+  } catch { return routingError(503); }
+  const { host: classification, registered } = resolvedHost;
   if (!classification) return routingError();
 
   const externalPath = request.nextUrl.pathname;
@@ -66,6 +72,12 @@ export async function proxy(request: NextRequest) {
   if (path === landingPath || path.startsWith(landingPath + "/") || path === accessPath || path.startsWith(accessPath + "/") ||
       path === redirectPath || path.startsWith(redirectPath + "/")) return routingError();
   const platform = classification === "platform";
+  const previewLang = platform && alias && isStudioPreviewPage(path)
+    ? request.nextUrl.searchParams.get(STUDIO_PREVIEW_QUERY) : null;
+  const studioPreview = previewLang === "ar" || previewLang === "en";
+  if (studioPreview && request.method !== "GET" && request.method !== "HEAD") {
+    return new NextResponse(null, { status: 405, headers: { ...privateHeaders, Allow: "GET, HEAD" } });
+  }
   const landing = platform && !alias && path === "/";
   const asset = assetPath.test(path);
   const invite = /^\/invite(?:\/|$)/.test(path);
@@ -77,7 +89,8 @@ export async function proxy(request: NextRequest) {
   const origin = scheme + "://" + publicAuthority;
   const outgoing = new Headers(request.headers);
   for (const header of [PLATFORM_ORIGIN_HEADER, PLATFORM_REDIRECT_HEADER, STORE_ID_HEADER, STORE_BASE_PATH_HEADER, STORE_CANONICAL_HEADER,
-    STORE_SLUG_HEADER, "x-store-host", "x-store-subdomain", "forwarded"]) outgoing.delete(header);
+    STORE_SLUG_HEADER, STUDIO_LOCALE_HEADER, "x-store-host", "x-store-subdomain", "forwarded"]) outgoing.delete(header);
+  if (studioPreview) outgoing.set(STUDIO_LOCALE_HEADER, previewLang);
   outgoing.set(PLATFORM_ORIGIN_HEADER, platformUrl);
   outgoing.set(REQUEST_ORIGIN_HEADER, new URL(origin).origin);
   outgoing.set("host", publicAuthority);
@@ -89,7 +102,7 @@ export async function proxy(request: NextRequest) {
   if (!platform || alias || storefront) {
     const fallback = api && platform && !alias ? apiStoreSlug(request, origin) : DEFAULT_STORE_SLUG;
     let route;
-    try { route = await resolveStoreBinding(classification, alias?.slug, fallback, resolveHostRoute); }
+    try { route = await resolveStoreBinding(classification, alias?.slug, fallback, resolveHostRoute, registered); }
     catch { return routingError(503); }
     if (!route) return routingError();
     const authPage = path === "/login" || path === "/register";
@@ -97,10 +110,10 @@ export async function proxy(request: NextRequest) {
     outgoing.set(STORE_ID_HEADER, route.id);
     outgoing.set(STORE_SLUG_HEADER, route.slug);
     outgoing.set(STORE_BASE_PATH_HEADER, basePath);
-    if (path === "/" || /^\/(?:products|contact)(?:\/|$)/.test(path)) {
+    if (!studioPreview && (path === "/" || /^\/(?:products|contact)(?:\/|$)/.test(path))) {
       outgoing.set(STORE_CANONICAL_HEADER, publicStoreOrigin(route, platformUrl, root) + path);
     }
-    if (platform && storefront && !api && !authPage && !request.headers.has("next-router-prefetch") &&
+    if (!studioPreview && platform && storefront && !api && !authPage && !request.headers.has("next-router-prefetch") &&
         request.headers.get("purpose") !== "prefetch") cookieSlug = route.slug;
     if (platform && !alias && authPage && request.method === "GET") {
       const entry = tenantAuthEntry("", path, request.nextUrl.searchParams.get("next") || "");
@@ -162,6 +175,7 @@ export async function proxy(request: NextRequest) {
     response.cookies.set(STORE_SLUG_COOKIE, cookieSlug, { path: "/", sameSite: "lax", httpOnly: true, secure: scheme === "https" });
   }
   response.headers.set("Cache-Control", "private, no-store");
+  if (studioPreview) response.headers.set("Content-Security-Policy", "frame-ancestors 'self'; form-action 'none'");
   return response;
 }
 

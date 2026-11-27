@@ -8,6 +8,12 @@ export const STORE_CANONICAL_HEADER = "x-store-canonical";
 export const PLATFORM_ORIGIN_HEADER = "x-platform-origin";
 export const REQUEST_ORIGIN_HEADER = "x-wlc-request-origin";
 export const STORE_BASE_PATH_HEADER = "x-store-base-path";
+export const STUDIO_LOCALE_HEADER = "x-wlc-studio-locale";
+export const STUDIO_PREVIEW_QUERY = "studioPreview";
+
+export function isStudioPreviewPage(path: string) {
+  return path === "/" || /^\/products(?:\/[a-z0-9][a-z0-9_-]{0,127})?$/i.test(path);
+}
 
 export type StorePlan = "starter" | "growth" | "enterprise";
 export type StoreStatus = "active" | "trial" | "suspended";
