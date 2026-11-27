@@ -30,12 +30,17 @@ const fulfillment: Record<string, [string, string]> = {
   pending: ["Awaiting confirmation", "بانتظار التأكيد"], confirmed: ["Confirmed", "مؤكد"], shipped: ["Shipped", "تم الشحن"],
   delivered: ["Delivered", "تم التوصيل"], cancelled: ["Cancelled", "ملغي"],
 };
+export function paymentStatusLabel(status: string | null, en: boolean) {
+  if (status === "review") return en ? "Needs review" : "يحتاج إلى مراجعة";
+  return payments[status ?? ""]?.[en ? 0 : 1] ?? (en ? "Unknown" : "غير معروف");
+}
+
 export function orderLabels(order: PaymentOrder, en: boolean) {
   const status = order.payment_status ?? "";
   const payment = order.payment_method === "cod" && ["unpaid", "pending"].includes(status) ? "cod_pending" : status;
   const i = en ? 0 : 1;
   return {
-    payment: payments[payment]?.[i] ?? (en ? "Unknown" : "غير معروف"),
+    payment: paymentStatusLabel(payment, en),
     fulfillment: fulfillment[order.status]?.[i] ?? (en ? "Unknown" : "غير معروف")
   };
 }
@@ -48,4 +53,22 @@ export function paymentOutcome(status?: string | null) {
 
 export function cartSignature(lines: readonly ReceiptLine[]) {
   return JSON.stringify(lines.map(l => JSON.stringify([l.id, l.color, l.size, l.quantity])).sort());
+}
+
+type PricingRecord = {
+  subtotal: number | string | null; shipping_fee: number | null; discount_amount: number | null;
+  wallet_discount: number | null; total: number | null; order_items: { unit_price: number; quantity: number }[];
+};
+
+export function orderAmounts(order: PricingRecord) {
+  const raw = order.subtotal;
+  const recorded = raw !== null && (typeof raw !== "string" || raw.trim() !== "")
+    && Number.isFinite(Number(raw)) && Number(raw) >= 0;
+  const lineCents = order.order_items.reduce((sum, item) => sum + Math.round(item.unit_price * 100) * item.quantity, 0);
+  const subtotal = recorded ? Number(raw) : lineCents / 100;
+  // Checkout stores a coupon-adjusted subtotal. Legacy line prices are before the coupon.
+  const netCents = Math.max(0, Math.round(subtotal * 100) - (recorded ? 0 : Math.round((order.discount_amount ?? 0) * 100)));
+  const derivedTotal = order.shipping_fee == null || (!recorded && !order.order_items.length) ? null : Math.max(0, netCents
+    + Math.round(order.shipping_fee * 100) - Math.round((order.wallet_discount ?? 0) * 100)) / 100;
+  return { subtotal, couponIncluded: recorded && (order.discount_amount ?? 0) > 0, total: order.total ?? derivedTotal };
 }

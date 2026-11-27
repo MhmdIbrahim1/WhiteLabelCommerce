@@ -32,7 +32,7 @@ import {
 import type { ProductReview } from "@/lib/reviews-wishlist";
 import { resolveEffectivePrice } from "@/lib/flash-sale";
 import { normalizeSpecs } from "@/lib/specs";
-import { nextTicket, pagination } from "@/lib/workflow";
+import { pagination } from "@/lib/workflow";
 import { directoryHref, isRecordId } from "@/lib/workspace-directory";
 import { numberField, quickProductChange } from "@/lib/catalog-quick-edit";
 import { safeRelativePath, validateImageMagicBytes } from "@/lib/security";
@@ -528,27 +528,6 @@ export async function saveOrderInDrawer(storeId: string, action: "status" | "tok
   revalidatePath("/admin/orders");
   if (ok) revalidatePath("/", "layout");
   return ok;
-}
-export async function updateTicket(f: FormData) {
-  const { db, storeId } = await requireAdmin("manage_customers"),
-    id = text(f, "id"),
-    prev = text(f, "previous"),
-    status = text(f, "status");
-  if (
-    !Object.hasOwn(nextTicket, prev) ||
-    (status !== prev && !nextTicket[prev].includes(status))
-  )
-    finish("/admin/tickets", false);
-  const result = await db
-    .from("support_tickets")
-    .update({ admin_reply: text(f, "reply"), status })
-    .eq("id", id)
-    .eq("store_id", storeId)
-    .eq("status", prev)
-    .eq("admin_reply", text(f, "previous_reply"))
-    .select("id")
-    .single();
-  finish("/admin/tickets", !result.error);
 }
 export async function saveSettings(f: FormData) {
   const { db, storeId } = await requireAdmin("manage_settings");

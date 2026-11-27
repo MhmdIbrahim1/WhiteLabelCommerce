@@ -1,0 +1,11 @@
+.ws-review :where(svg) { stroke-width: 1.5; flex-shrink: 0; }
+.ws-review-head, .ws-review-meta, .ws-review-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .55rem .85rem; }
+.ws-review-head { justify-content: space-between; }
+.ws-review-head .ws-record { max-inline-size: 100%; }
+.ws-review .ws-cell-stack { min-inline-size: 0; }
+.ws-review-meta { color: var(--muted); font-size: .82rem; }
+.ws-review-meta strong { color: var(--ink); }
+.ws-review-meta span, .ws-review-score { display: inline-flex; align-items: center; gap: .35rem; }
+.ws-review-score { background: var(--card); border: 1px solid var(--line); border-radius: .4rem; font-size: .85rem; padding: .2rem .5rem; }
+.ws-review > p { overflow-wrap: anywhere; white-space: pre-wrap; }
+.ws-review .review-thread time { font-variant-numeric: tabular-nums; }
