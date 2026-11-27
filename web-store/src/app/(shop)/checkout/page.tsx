@@ -51,6 +51,7 @@ export default async function Checkout() {
     <Basket
       key={s.storeId + (user?.id || "")}
       storeId={s.storeId}
+      buyer={user?.id ?? "guest"}
       addresses={savedAddresses}
       signedIn={Boolean(user)}
       rates={Object.fromEntries(rates.map(r => [r.governorate, Number(r.fee)]))}

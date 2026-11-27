@@ -117,7 +117,7 @@ export function CartUpsellStrip({
       return;
     }
     const effective = resolveEffectivePrice(item);
-    const ok = change(
+    const ok = await change(
       tenantId,
       {
         id: item.id,

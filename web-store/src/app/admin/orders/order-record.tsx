@@ -7,7 +7,7 @@ import { checked, requireAdmin } from "@/lib/db";
 import { money, date } from "@/lib/brand";
 import { t, translateColor, localizedText, orderStatusLabel } from "@/lib/i18n";
 import { getServerLang } from "@/lib/i18n-server";
-import { nextOrder } from "@/lib/workflow";
+import { orderLabels } from "@/lib/order-payment";
 import { isRecordId } from "@/lib/workspace-directory";
 import { isSafeHttpUrl, localizeCarrierLabel } from "@/lib/shipping";
 import { normalizeReturnRecord, returnStatusMeta } from "@/lib/returns";
@@ -24,7 +24,7 @@ export async function OrderRecord({ id, print, drawer = false, resultCode }: {
   const invoice = print === "invoice";
   const printDocument = invoice || print === "label";
   const [result, returnRes, tokenRes] = await Promise.all([
-    db.from("orders").select("id,created_at,status,user_id,customer_id,recipient_name,shipping_address,phone,lat,lng,shipping_carrier,tracking_number,tracking_url,courier_note,shipped_at,delivered_at,payment_method,payment_status,subtotal,shipping_fee,discount_amount,wallet_discount,cashback_earned,total,currency,order_items(id,product_name,size,color,quantity,unit_price)")
+    db.from("orders").select("id,created_at,status,user_id,customer_id,recipient_name,shipping_address,phone,lat,lng,shipping_carrier,tracking_number,tracking_url,courier_note,shipped_at,delivered_at,payment_method,payment_status,payment_review,subtotal,shipping_fee,discount_amount,wallet_discount,cashback_earned,total,currency,order_items(id,product_name,size,color,quantity,unit_price)")
       .eq("id", id).eq("store_id", storeId).maybeSingle(),
     printDocument ? null : db.from("return_requests").select("*").eq("order_id", id)
       .eq("store_id", storeId).order("created_at", { ascending: false }).limit(1),
@@ -99,13 +99,16 @@ export async function OrderRecord({ id, print, drawer = false, resultCode }: {
   }
   const recipient = o.recipient_name || (await customerLookup)?.data?.full_name;
   const linkedReturn = returnRes?.data?.[0] ? normalizeReturnRecord(returnRes.data[0]) : null;
-  const options = (nextOrder[o.status] ?? []).filter(s => o.subtotal !== null || s === "cancelled");
+  const options = checked(await db.rpc("allowed_order_transitions", {
+    p_status: o.status, p_method: o.payment_method,
+    p_payment: o.payment_status, p_priced: o.subtotal !== null
+  })) as string[];
   const amount = (value: number | null) => <bdi dir="ltr">{money(value, o.currency, lang)}</bdi>;
   const columns = isEn ? ["Item", "Quantity", "Unit price", "Amount"] : ["المنتج", "الكمية", "سعر الوحدة", "المبلغ"];
   const methodNames: Record<string, string> = { cod: isEn ? "Cash on delivery" : "الدفع عند الاستلام",
-    wallet: isEn ? "Wallet" : "المحفظة", paymob_card: isEn ? "Bank card" : "بطاقة بنكية", paymob_wallet: isEn ? "Mobile wallet" : "محفظة إلكترونية" };
-  const paymentNames: Record<string, string> = { paid: t(lang, "paymentStatusPaid"), pending: t(lang, "paymentStatusPending"),
-    failed: t(lang, "paymentStatusFailed"), refunded: t(lang, "paymentStatusRefunded"), cod: t(lang, "paymentStatusCod") };
+    coupon: isEn ? "Coupon" : "كوبون", wallet: isEn ? "Wallet" : "المحفظة", paymob_card: isEn ? "Bank card" : "بطاقة بنكية", paymob_wallet: isEn ? "Mobile wallet" : "محفظة إلكترونية"
+  };
+  const paymentLabel = orderLabels(o, isEn).payment;
   return <div className={drawer ? "ws-order-record" : "ws-page ws-order-record"}>
     {!drawer && <><Link className="ws-text-link" href="/admin/orders"><ArrowLeft className="pt-directional" size={15}/>{isEn ? "Orders" : "الطلبات"}</Link>
       <WorkspaceHeading title={<>{isEn ? "Order" : "طلب"} <bdi dir="ltr">#{id.slice(0, 8)}</bdi></>} /><Notice result={resultCode} /></>}
@@ -134,6 +137,9 @@ export async function OrderRecord({ id, print, drawer = false, resultCode }: {
           <DataCell label={columns[1]}><bdi dir="ltr">{item.quantity}</bdi></DataCell><DataCell label={columns[2]}>{amount(item.unit_price)}</DataCell>
           <DataCell label={columns[3]}>{amount(item.unit_price * item.quantity)}</DataCell></tr>)}</WorkspaceTable> :
         <p className="ws-order-summary">{isEn ? "No items were recorded for this order." : "لم تُسجّل منتجات في هذا الطلب."}</p>}
+      {o.payment_review && <p role="status">{o.payment_review === "late_capture_after_cod"
+        ? (isEn ? "Online payment arrived after the switch to cash. Check any cash already collected." : "وصل الدفع الإلكتروني بعد التحويل للنقد. راجع أي مبلغ حُصّل نقداً.")
+        : (isEn ? "Review this payment and any refund owed." : "راجع هذه الدفعة وأي مبلغ مستحق للاسترداد.")}</p>}
       <dl className="ws-facts ws-order-summary">
         <div><dt>{isEn ? "Subtotal" : "مجموع المنتجات"}</dt><dd>{amount(o.subtotal)}</dd></div>
         <div><dt>{t(lang, "shippingLabel")}</dt><dd>{amount(o.shipping_fee)}</dd></div>
@@ -142,7 +148,7 @@ export async function OrderRecord({ id, print, drawer = false, resultCode }: {
         {o.cashback_earned > 0 && <div><dt>{isEn ? "Cashback earned" : "الرصيد المكتسب"}</dt><dd>{amount(o.cashback_earned)}</dd></div>}
         <div className="ws-rule"><dt>{isEn ? "Total" : "الإجمالي"}</dt><dd>{amount(o.total)}</dd></div>
         <div><dt>{t(lang, "paymentMethodLabel")}</dt><dd>{methodNames[o.payment_method] ?? o.payment_method}</dd></div>
-        {o.payment_status && <div><dt>{isEn ? "Payment status" : "حالة الدفع"}</dt><dd><StatusDot status={o.payment_status}>{paymentNames[o.payment_status] ?? o.payment_status}</StatusDot></dd></div>}
+        {o.payment_status && <div><dt>{isEn ? "Payment status" : "حالة الدفع"}</dt><dd><StatusDot status={o.payment_status}>{paymentLabel}</StatusDot></dd></div>}
         {o.payment_method === "cod" && <div><dt>{isEn ? "Amount to collect" : "المبلغ المطلوب تحصيله"}</dt><dd>{amount(codDue)}</dd></div>}
       </dl>
     </section>

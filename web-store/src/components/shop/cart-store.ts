@@ -11,6 +11,7 @@ import {
 } from "react";
 import { browserDb } from "@/lib/supabase/browser";
 import { createCartHeartbeat } from "@/lib/cart-heartbeat";
+import type { OrderReceipt, ReceiptLine } from "@/lib/order-payment";
 import type { Variant } from "@/lib/variant-stock";
 import { lineEffectivePrice, resolveEffectivePrice, type FlashSalePriceInput } from "@/lib/flash-sale";
 import { remainingQuantity } from "@/lib/variant-stock";
@@ -72,8 +73,48 @@ function cartKey(tenantId: string): string {
   return scopedKey("cart.v3", tenantId);
 }
 
-function pendingOrderKey(tenantId: string): string {
-  return scopedKey("pending_online_order", tenantId);
+export type CheckoutBinding = {
+  key: string; buyer: string; fingerprint: string; method: string; signature: string; orderId?: string;
+  lines: ReceiptLine[]; remaining: ReceiptLine[];
+};
+type CartState = { lines: Line[]; attempts: CheckoutBinding[]; consumed: string[] };
+
+function cartState(tenant: string): CartState {
+  const raw = snapshot(tenant);
+  const lines = decode(raw);
+  try {
+    const data = JSON.parse(raw);
+    if (Array.isArray(data.attempts) && Array.isArray(data.consumed)) return { lines, attempts: data.attempts, consumed: data.consumed };
+  } catch { /* Legacy carts contain only lines. */ }
+  return { lines, attempts: [], consumed: [] };
+}
+
+function cartLock<T>(tenant: string, work: () => T, durable = false): Promise<T> {
+  if (typeof navigator !== "undefined" && navigator.locks) return navigator.locks.request(cartKey(tenant), work);
+  // Embedded wallet browsers can lack Web Locks. Read/write IndexedDB transactions
+  // on one object store are serialized across tabs. The cart mutation is synchronous
+  // inside its request callback, while that transaction still holds the lock.
+  if (typeof indexedDB !== "undefined") return new Promise<T>((resolve, reject) => {
+    const open = indexedDB.open("wlc-cart-coordination", 1);
+    open.onupgradeneeded = () => open.result.createObjectStore("locks");
+    open.onerror = () => reject(open.error);
+    let blocked = false;
+    open.onblocked = () => { blocked = true; reject(new Error("Cart storage busy")); };
+    open.onsuccess = () => {
+      const db = open.result;
+      if (blocked) { db.close(); return; }
+      const tx = db.transaction("locks", "readwrite");
+      const read = tx.objectStore("locks").get(tenant);
+      let result: T;
+      read.onsuccess = () => {
+        try { result = work(); } catch (error) { tx.abort(); reject(error); }
+      };
+      tx.oncomplete = () => { db.close(); resolve(result); };
+      tx.onabort = () => { db.close(); reject(tx.error ?? new Error("Cart write aborted")); };
+    };
+  });
+  if (durable) return Promise.reject(new Error("Durable cart storage unavailable"));
+  return Promise.resolve(work());
 }
 
 function isolateLegacyStorage(): void {
@@ -180,7 +221,8 @@ export function getGuestSessionId(tenantId: string): string {
 
 function decode(raw: string): Line[] {
   try {
-    const rows = JSON.parse(raw);
+    const data = JSON.parse(raw);
+    const rows = Array.isArray(data) ? data : data.lines;
     return Array.isArray(rows)
       ? rows.filter(
           (l) =>
@@ -311,17 +353,17 @@ export function useCart() {
   return useMemo(() => decode(raw), [raw]);
 }
 
-export const same = (a: Line, b: Line) =>
+export const same = (a: ReceiptLine, b: ReceiptLine) =>
   a.id === b.id && a.size === b.size && a.color === b.color;
 
-function save(tenantId: string, rows: Line[]) {
+function save(tenantId: string, rows: Line[], state = cartState(tenantId), durable = false) {
   const cleanTenant = requireTenantId(tenantId);
-  const serialized = JSON.stringify(rows);
-  memory.set(cleanTenant, serialized);
+  const serialized = JSON.stringify({ ...state, lines: rows });
   isolateLegacyStorage();
   try {
     localStorage.setItem(cartKey(cleanTenant), serialized);
-  } catch {}
+  } catch (error) { if (durable) throw error; }
+  memory.set(cleanTenant, serialized);
   if (typeof window !== "undefined") {
     window.dispatchEvent(new Event(`shop-cart:${cleanTenant}`));
   }
@@ -347,78 +389,117 @@ export function inventoryForLine(p: Inventory | undefined, color: string, size: 
 
 export async function refreshCartInventory(tenant: string, ids: string[], isCurrent: () => boolean) {
   const inventory = await readInventory(tenant, ids);
-  if (!isCurrent()) return;
-  const rows = decode(snapshot(tenant));
-  const requested = new Set(ids);
-  const now = Date.now();
-  const updated = rows.map(row => {
-    if (!requested.has(row.id)) return row;
-    const product = inventory.get(row.id);
-    const stock = inventoryForLine(product, row.color, row.size);
-    if (!product) return { ...row, ...stock };
-    return {
-      ...row, ...stock,
-      image_path: row.image_path || product.image_path,
-      regular_price: product.price,
-      price: resolveEffectivePrice(product, now),
-      flash_sale_price: product.flash_sale_price ?? null,
-      flash_sale_starts_at: product.flash_sale_starts_at ?? null,
-      flash_sale_ends_at: product.flash_sale_ends_at ?? null,
-    };
+  return cartLock(tenant, () => {
+    if (!isCurrent()) return;
+    const rows = decode(snapshot(tenant));
+    const requested = new Set(ids);
+    const now = Date.now();
+    const updated = rows.map(row => {
+      if (!requested.has(row.id)) return row;
+      const product = inventory.get(row.id);
+      const stock = inventoryForLine(product, row.color, row.size);
+      if (!product) return { ...row, ...stock };
+      return {
+        ...row, ...stock,
+        image_path: row.image_path || product.image_path,
+        regular_price: product.price,
+        price: resolveEffectivePrice(product, now),
+        flash_sale_price: product.flash_sale_price ?? null,
+        flash_sale_starts_at: product.flash_sale_starts_at ?? null,
+        flash_sale_ends_at: product.flash_sale_ends_at ?? null,
+      };
+    });
+    if (JSON.stringify(updated) !== JSON.stringify(rows)) save(tenant, updated);
   });
-  if (JSON.stringify(updated) !== JSON.stringify(rows)) save(tenant, updated);
 }
 
 export function change(tenantId: string, line: Line, delta: number, defaultLimit: number | null) {
-  const rows = decode(snapshot(tenantId));
-  const i = rows.findIndex(l => same(l, line));
-  if (delta > 0 && delta > remainingQuantity(rows, line, defaultLimit)) return false;
-  const quantity = (rows[i]?.quantity ?? 0) + delta;
-  if (i >= 0 && quantity <= 0) rows.splice(i, 1);
-  else if (i >= 0) rows[i] = { ...line, quantity };
-  else if (quantity > 0) rows.push({ ...line, quantity });
-  save(tenantId, rows);
-  return true;
+  return cartLock(tenantId, () => {
+    const state = cartState(tenantId);
+    const rows = state.lines;
+    const i = rows.findIndex(l => same(l, line));
+    if (delta > 0 && delta > remainingQuantity(rows, line, defaultLimit)) return false;
+    const quantity = (rows[i]?.quantity ?? 0) + delta;
+    if (i >= 0 && quantity <= 0) rows.splice(i, 1);
+    else if (i >= 0) rows[i] = { ...line, quantity };
+    else if (quantity > 0) rows.push({ ...line, quantity });
+    if (delta < 0) reduceReserved(state, line, -delta);
+    save(tenantId, rows, state);
+    return true;
+  });
 }
 
-export function purchased(tenantId: string, lines: Line[]) {
-  const rows = decode(snapshot(tenantId)).map((row) => ({
-    ...row,
-    quantity: row.quantity - (lines.find((l) => same(l, row))?.quantity ?? 0),
-  }));
-  save(
-    tenantId,
-    rows.filter((l) => l.quantity > 0),
-  );
-}
-
-export function clearCart(tenantId: string) {
-  save(tenantId, []);
-}
-
-export function setPendingOnlineOrder(tenantId: string, orderId: string) {
-  isolateLegacyStorage();
-  try {
-    localStorage.setItem(pendingOrderKey(tenantId), orderId);
-  } catch {}
-}
-
-export function getPendingOnlineOrder(tenantId: string): string | null {
-  isolateLegacyStorage();
-  try {
-    return localStorage.getItem(pendingOrderKey(tenantId));
-  } catch {
-    return null;
+function reduceReserved(state: CartState, line: ReceiptLine, removed: number) {
+  for (const attempt of state.attempts) {
+    const original = attempt.remaining.find(l => same(l, line));
+    if (original) original.quantity = Math.max(0, original.quantity - removed);
   }
 }
 
-export function clearPendingOnlineOrder(tenantId: string) {
-  isolateLegacyStorage();
-  try {
-    localStorage.removeItem(pendingOrderKey(tenantId));
-  } catch {}
+export function clearCart(tenant: string) {
+  const state = cartState(tenant);
+  for (const attempt of state.attempts) attempt.remaining = [];
+  save(tenant, [], state);
 }
 
-export function checkoutAttemptKey(tenantId: string, hash: string): string {
-  return scopedKey(`checkout.${hash}`, tenantId);
+export function pendingCheckout(tenant: string, buyer: string, signature: string) {
+  const matching = cartState(tenant).attempts.filter(a => a.buyer === buyer && a.signature === signature);
+  return matching.find(a => a.orderId) ?? matching[0];
+}
+
+export function reserveCartCheckout(tenant: string, buyer: string, signature: string, fingerprint: string, method: string, lines: ReceiptLine[]) {
+  return cartLock(tenant, () => {
+    const state = cartState(tenant);
+    const prior = state.attempts.find(a => a.buyer === buyer && (a.signature === signature || a.fingerprint === fingerprint));
+    if (prior) return prior;
+    const attempt: CheckoutBinding = {
+      key: crypto.randomUUID(), buyer, signature, fingerprint, method,
+      lines: lines.map(l => ({ ...l })), remaining: lines.map(l => ({ ...l }))
+    };
+    state.attempts.push(attempt);
+    save(tenant, state.lines, state, true);
+    return attempt;
+  }, true);
+}
+
+export function bindCartCheckout(tenant: string, key: string, id: string) {
+  return cartLock(tenant, () => {
+    const state = cartState(tenant);
+    const attempt = state.attempts.find(a => a.key === key);
+    if (attempt && !state.consumed.includes(id)) {
+      if (attempt.orderId && attempt.orderId !== id) throw new Error("Checkout binding changed");
+      attempt.orderId = id;
+      save(tenant, state.lines, state, true);
+    }
+  }, true);
+}
+
+export function discardCheckout(tenant: string, keyOrOrder: string) {
+  return cartLock(tenant, () => {
+    const state = cartState(tenant);
+    state.attempts = state.attempts.filter(a => a.key !== keyOrOrder && a.orderId !== keyOrOrder);
+    save(tenant, state.lines, state, true);
+  }, true);
+}
+
+export function consumeReceipt(tenant: string, receipt: OrderReceipt) {
+  return cartLock(tenant, () => {
+    const state = cartState(tenant);
+    const attempt = state.attempts.find(a => a.orderId === receipt.id);
+    if (tenant !== receipt.store_id || !attempt || state.consumed.includes(receipt.id) || receipt.status === "cancelled" ||
+      !(receipt.payment_status === "paid" || (receipt.payment_method === "cod" && ["unpaid", "cod_pending"].includes(receipt.payment_status ?? ""))) ||
+      !Number.isFinite(receipt.total) || receipt.total < 0 || !receipt.currency || !receipt.lines.length) return false;
+    // Verify the entire variant/quantity snapshot before touching a single cart line.
+    const quantity = (lines: ReceiptLine[], line: ReceiptLine) => lines.filter(l => same(l, line)).reduce((n, l) => n + l.quantity, 0);
+    if ([...receipt.lines, ...attempt.lines].some(l => quantity(receipt.lines, l) !== quantity(attempt.lines, l))) return false;
+    for (const row of state.lines) {
+      const remove = Math.min(row.quantity, quantity(attempt.remaining, row));
+      row.quantity -= remove;
+      reduceReserved(state, row, remove);
+    }
+    state.attempts = state.attempts.filter(a => a.key !== attempt.key);
+    state.consumed.push(receipt.id);
+    save(tenant, state.lines.filter(row => row.quantity > 0), state, true);
+    return true;
+  }, true);
 }

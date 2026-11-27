@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Minus, Package, Plus, Trash2 } from "lucide-react";
@@ -32,11 +32,15 @@ export function useBasketContents() {
       .catch(() => { if (current) setChecked({ key, ok: false }); });
     return () => { current = false; };
   }, [key, productIds, tenant]);
+  const retry = useCallback(() => setAttempt(n => n + 1), []);
   const subtotal = lines.reduce((total, line) => total + lineEffectivePrice(line, now) * line.quantity, 0);
   const overLimit = lines.some(line => remainingQuantity(lines, line, limit) < 0);
-  return { tenant, lines, limit, now, subtotal, overLimit,
+  const quoteBasis = JSON.stringify(lines.map(l => [l.id, l.size, l.color, l.quantity, lineEffectivePrice(l, now)]));
+  return {
+    tenant, lines, limit, now, subtotal, quoteBasis, overLimit,
     inventoryReady: checked.key === key && checked.ok, inventoryError: checked.key === key && !checked.ok,
-    retry: () => setAttempt(n => n + 1) };
+    retry
+  };
 }
 
 export function CartLines({ basket, currency, basePath, editable, onNavigate }: {

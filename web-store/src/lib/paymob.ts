@@ -171,6 +171,7 @@ export async function authenticatePaymob(apiKey: string): Promise<string> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ api_key: apiKey }),
     cache: "no-store",
+    signal: AbortSignal.timeout(7000),
   });
   if (!res.ok) {
     throw new Error("paymob_auth_failed");
@@ -200,12 +201,22 @@ export async function registerPaymobOrder(params: {
       items: [],
     }),
     cache: "no-store",
+    signal: AbortSignal.timeout(7000),
   });
   if (!res.ok) {
+    // A registration response can be lost. Only recover a provider mapping with the
+    // same merchant reference, currency and amount from the authenticated inquiry.
+    const inquiry = await fetch(`${PAYMOB_BASE_URL}/ecommerce/orders/transaction_inquiry`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, cache: "no-store", signal: AbortSignal.timeout(7000),
+      body: JSON.stringify({ auth_token: params.authToken, merchant_order_id: params.merchantOrderId }),
+    });
+    const existing = inquiry.ok ? (await inquiry.json()).order : null;
+    if (existing?.merchant_order_id === params.merchantOrderId && Number(existing.amount_cents) === params.amountCents &&
+      existing.currency === (params.currency ?? "EGP") && /^\d{1,30}$/.test(String(existing.id))) return String(existing.id);
     throw new Error("paymob_order_failed");
   }
   const data = (await res.json()) as { id?: number | string };
-  if (data.id === undefined || data.id === null) {
+  if (!/^\d{1,30}$/.test(String(data.id ?? ""))) {
     throw new Error("paymob_order_failed");
   }
   return String(data.id);
@@ -216,6 +227,7 @@ export async function requestPaymobPaymentKey(params: {
   amountCents: number;
   paymobOrderId: string;
   integrationId: string;
+  expiration?: number;
   currency?: string;
   customerName?: string | null;
   customerEmail?: string | null;
@@ -235,7 +247,7 @@ export async function requestPaymobPaymentKey(params: {
     body: JSON.stringify({
       auth_token: params.authToken,
       amount_cents: String(params.amountCents),
-      expiration: 3600,
+      expiration: Math.max(1, Math.min(900, params.expiration ?? 900)),
       order_id: params.paymobOrderId,
       currency: params.currency ?? "EGP",
       integration_id: Number(params.integrationId),
@@ -257,6 +269,7 @@ export async function requestPaymobPaymentKey(params: {
       },
     }),
     cache: "no-store",
+    signal: AbortSignal.timeout(7000),
   });
   if (!res.ok) {
     throw new Error("paymob_payment_key_failed");
@@ -271,7 +284,8 @@ export async function requestPaymobPaymentKey(params: {
 export async function payPaymobWallet(params: {
   paymentToken: string;
   walletPhone: string;
-}): Promise<string> {
+}) {
+  if (!EGYPT_WALLET_PHONE_RE.test(params.walletPhone)) throw new Error("invalid_wallet_phone");
   const res = await fetch(`${PAYMOB_BASE_URL}/acceptance/payments/pay`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -283,22 +297,22 @@ export async function payPaymobWallet(params: {
       payment_token: params.paymentToken,
     }),
     cache: "no-store",
+    signal: AbortSignal.timeout(7000),
   });
-  if (!res.ok) {
-    throw new Error("paymob_wallet_failed");
+  if (!res.ok && (res.status >= 500 || res.status === 429 || res.status === 408)) throw new Error("wallet_result_unknown");
+  if (!res.ok) return { state: "failed" as const };
+  const data = await res.json();
+  if (data.pending !== true && data.pending !== "true" && (data.success === false || data.success === "false")) {
+    return { state: "failed" as const };
   }
-  const data = (await res.json()) as {
-    iframe_redirection_url?: string;
-    redirect_url?: string;
-    redirection_url?: string;
-  };
-  const redirectUrl =
-    data.iframe_redirection_url ||
-    data.redirect_url ||
-    data.redirection_url ||
-    "";
-  if (!redirectUrl) {
-    throw new Error("paymob_wallet_failed");
+  const redirect = data.redirect_url || data.iframe_redirection_url || data.redirection_url;
+  if (typeof redirect === "string" && URL.canParse(redirect)) {
+    const url = new URL(redirect);
+    if (url.protocol === "https:" && !url.username && !url.password) return { state: "ready" as const, url: url.href };
   }
-  return redirectUrl;
+  if (data.pending === true || data.pending === "true" || data.success === true || data.success === "true") {
+    return { state: "prompt" as const };
+  }
+  if (data.pending === false || data.pending === "false") return { state: "failed" as const };
+  throw new Error("wallet_result_unknown");
 }

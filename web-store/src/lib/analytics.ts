@@ -343,12 +343,14 @@ export function trackInitiateCheckout(params: {
 
 export function trackPurchase(params: {
   orderId: string;
+  storeId?: string;
   value: number;
   currency?: string;
   items?: PixelEventItem[];
 }) {
   if (typeof window === "undefined") return;
   const active = getActivePixelConfig();
+  if (params.storeId && params.storeId !== active.storeId) return;
   const cleanOrderId = (params.orderId ?? "").trim();
   if (!cleanOrderId) return;
 

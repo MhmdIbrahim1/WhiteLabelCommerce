@@ -68,7 +68,7 @@ export default async function CustomerOrderDetailPage({
     db
       .from("orders")
       .select(
-        "id,status,created_at,shipping_address,lat,lng,phone,payment_method,payment_status,currency,subtotal,shipping_fee,coupon_code,discount_amount,wallet_discount,cashback_earned,total,shipping_carrier,tracking_number,tracking_url,courier_note,shipped_at,delivered_at,order_items(id,product_id,product_name,quantity,unit_price,size,color)",
+        "id,status,created_at,shipping_address,lat,lng,phone,payment_method,payment_status,reservation_expires_at,currency,subtotal,shipping_fee,coupon_code,discount_amount,wallet_discount,cashback_earned,total,shipping_carrier,tracking_number,tracking_url,courier_note,shipped_at,delivered_at,order_items(id,product_id,product_name,quantity,unit_price,size,color)",
       )
       .eq("id", id)
       .eq("store_id", store.storeId)
@@ -146,7 +146,7 @@ export default async function CustomerOrderDetailPage({
 
       <div className="details-grid">
         <div style={{ display: "grid", gap: "1.25rem", alignContent: "start" }}>
-          <Timeline row={order} hideReturnPanel />
+          <Timeline row={order} hideReturnPanel options={store.payment} basePath={store.basePath} />
 
           <section className="panel order-return-section">
             <div className="order-return-section-head">

@@ -127,7 +127,7 @@ export function Buy({
               return;
             }
           }
-          const added = change(
+          const added = await change(
             tenantId,
             {
               ...inventory,

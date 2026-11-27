@@ -187,3 +187,31 @@ export function platformAuthScreen(platform: boolean, aliased: boolean, path: st
   if (path === "/register") return "register";
   return path === "/auth/reset-password" ? "reset-password" : null;
 }
+
+export async function paymentStorefrontUrl(storeId: string, slug: string, checkoutBase: string | null,
+  platform: string | null, lookup: (key: RouteKey) => Promise<StoreRoute | null>, env = process.env) {
+  if (!isStoreSlug(slug)) return null;
+  const route = await lookup({ kind: "slug", value: slug });
+  if (route?.id !== storeId) return null;
+  const root = platformRootDomain(env.PLATFORM_ROOT_DOMAIN || "", env.NEXT_PUBLIC_ROOT_DOMAIN || "");
+  const local = !isVercelDeployment(env) && env.NODE_ENV !== "production";
+  const previewHosts = [env.VERCEL_URL, env.VERCEL_BRANCH_URL, platform && URL.canParse(platform) ? new URL(platform).hostname : ""];
+  if (checkoutBase && URL.canParse(checkoutBase)) {
+    const url = new URL(checkoutBase);
+    const host = normalizeHost(url.host);
+    if (host && !url.username && !url.password && !url.search && !url.hash &&
+      (isLocalHost(host.hostname) ? local && url.protocol === "http:" : url.protocol === "https:")) {
+      const { host: kind, registered } = await resolveRequestHost(host.hostname, root, local, env.VERCEL_ENV, lookup);
+      if (kind && kind !== "platform" && url.pathname === "/" && (registered ?? await lookup(kind))?.id === storeId) return url.origin;
+      if (kind === "platform" && (host.hostname === root || (local && isLocalHost(host.hostname)) || previewHosts.includes(host.hostname)) &&
+        ["/s/" + slug, "/store/" + slug].includes(url.pathname)) return url.origin + url.pathname;
+    }
+  }
+  const primary = route.primaryDomain && customDomain(route.primaryDomain, root);
+  const verified = primary && (await lookup({ kind: "domain", value: primary }))?.id === storeId ? primary : null;
+  let origin = platform;
+  if (!origin && env.VERCEL_ENV === "preview" && env.VERCEL_URL?.endsWith(".vercel.app")) origin = "https://" + env.VERCEL_URL;
+  const href = resolveMerchantStorefrontUrl(slug, verified, origin, { ...env, PLATFORM_ROOT_DOMAIN: root });
+  if (!URL.canParse(href) || (!local && isLocalHost(new URL(href).hostname))) return null;
+  return href;
+}
