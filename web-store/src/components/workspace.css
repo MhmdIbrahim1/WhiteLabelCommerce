@@ -75,7 +75,10 @@
 .ws-auth-card :is(.hybrid-resend-row,.hybrid-otp-email-row) { background: transparent; color: var(--muted); padding-inline: 0; }
 .ws-auth-card .hybrid-auth-hint { color: var(--muted); background: transparent; padding: 0; font-size: .84rem; }
 .ws-auth-card .hybrid-link-btn { background: transparent; padding: .25rem; }
-.ws-auth-card .otp-code-input { font-variant-numeric: tabular-nums; }
+.ws-account-banner { padding: 1rem; background: var(--card); border-inline-start: 2px solid var(--ink); border-radius: var(--pt-radius); }
+.ws-account-banner p { color: var(--ink); overflow-wrap: anywhere; }
+.ws-account-banner .session-logout { margin-block-start: .35rem; }
+.ws-account-banner button { color: var(--ws-link); background: transparent; padding-inline: 0; min-block-size: 44px; text-decoration: underline; }
 .ws-auth-switch { padding-block-start: 1rem; border-block-start: 1px solid var(--line); font-size: .9rem; color: var(--muted); }
 .ws-auth-switch a { color: var(--ws-link); text-decoration: underline; text-underline-offset: .22em; }
 .ws-surface .ws-feedback, .ws-auth-card > [role=status], .ws-auth-card .password-form + [role=status] {

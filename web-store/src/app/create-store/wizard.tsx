@@ -13,6 +13,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { templates, type TemplateId } from "@/lib/theme-templates";
+import { LogoutForm, useSessionUser } from "@/components/auth-session";
 import { useLanguage } from "@/components/language-provider";
 import {
   checkSlugAvailability,
@@ -38,7 +39,16 @@ function slugify(value: string): string {
     .slice(0, 40);
 }
 
-export function CreateStoreWizard({ initialName }: { initialName: string }) {
+export function CreateStoreWizard({ initialName, userId, email, registerNext }: {
+  initialName: string; userId: string; email: string; registerNext: string;
+}) {
+  const active = useSessionUser() === userId;
+  const en = useLanguage().lang === "en";
+  if (!active) return <p role="status">{en ? "Sign in to create your store." : "سجّل الدخول لإنشاء متجرك."}</p>;
+  return <StoreWizard initialName={initialName} userId={userId} email={email} registerNext={registerNext} />;
+}
+
+function StoreWizard({ initialName, userId, email, registerNext }: { initialName: string; userId: string; email: string; registerNext: string }) {
   const { lang } = useLanguage();
   const isEn = lang === "en";
   const ArrowIcon = isEn ? ArrowRight : ArrowLeft;
@@ -116,6 +126,8 @@ export function CreateStoreWizard({ initialName }: { initialName: string }) {
         ? "Please enter a store name (at least 2 characters)."
         : "يرجى إدخال اسم المتجر (حرفين على الأقل).";
     }
+    if (code === "account_changed") return isEn ? "Your account changed. Reload this page to review the signed-in email." :
+      "تغيّر الحساب. أعد تحميل الصفحة لمراجعة البريد المسجّل.";
     if (code.includes("auth_required")) {
       return isEn
         ? "Please sign in to create a store."
@@ -131,6 +143,7 @@ export function CreateStoreWizard({ initialName }: { initialName: string }) {
     setErrorMsg("");
     startSubmit(async () => {
       const res = await createStoreAction({
+        expectedUserId: userId,
         nameAr,
         nameEn,
         slug,
@@ -167,6 +180,11 @@ export function CreateStoreWizard({ initialName }: { initialName: string }) {
   return <>
     <h1>{isEn ? "Create your store" : "أنشئ متجرك"}</h1>
     <p>{isEn ? "Choose a name, an address and a starting look for your storefront." : "اختر اسم متجرك ورابطه والتصميم الذي تبدأ به."}</p>
+    <aside className="ws-account-banner">
+      <p>{isEn ? "You are currently signed in as " : "أنت مسجّل الدخول حالياً بـ "}<bdi dir="ltr">{email}</bdi>
+        {isEn ? " — the new store will be linked to this account." : " — سيتم ربط المتجر الجديد بهذا الحساب."}</p>
+      <LogoutForm registerNext={registerNext}>{isEn ? "Sign out & create a new account" : "تسجيل الخروج وإنشاء حساب جديد"}</LogoutForm>
+    </aside>
     <form className="ws-wizard" onSubmit={handleSubmit}>
       <div className="ws-field-grid">
         <label>{isEn ? "Store name in Arabic" : "اسم المتجر بالعربية"}<input name="name_ar" lang="ar" dir="auto" required minLength={2} maxLength={120}

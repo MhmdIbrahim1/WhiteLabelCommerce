@@ -9,9 +9,11 @@ import * as routing from "../src/lib/host-routing.ts";
 import * as tenant from "../src/lib/tenant-shared.ts";
 import * as paymob from "../src/lib/paymob.ts";
 import * as numbers from "../src/lib/order-number.ts";
+import * as cartSession from "../src/lib/cart-session.ts";
 import * as flash from "../src/lib/flash-sale.ts";
 
 const store="00000000-0000-0000-0000-000000000001", id=crypto.randomUUID();
+const guestCart = cartSession.cartScope(store, null);
 const baseOrder={id,status:"pending",payment_method:"paymob_wallet",payment_status:"failed"};
 const flags={codEnabled:true,paymobEnabled:true,paymobCardEnabled:true,paymobWalletEnabled:true};
 const signatureLine={id:crypto.randomUUID(),size:"M",color:"Blue",quantity:2};
@@ -89,34 +91,34 @@ function localCart(t) {
     Object.defineProperty(obj,key,{configurable:true,value});
     t.after(()=>{if(old)Object.defineProperty(obj,key,old);else delete obj[key];});
   }
-  const cart=loadSource("components/shop/cart-store.ts",{"@/lib/cart-heartbeat":{},"@/lib/supabase/browser":{},
+  const cart=loadSource("components/shop/cart-store.ts",{"@/lib/cart-session":cartSession,"@/components/auth-session":{},"@/lib/cart-heartbeat":{},"@/lib/supabase/browser":{},
     "@/lib/variant-stock":{remainingQuantity:()=>100},"@/lib/flash-sale":flash,"./studio-preview-context":{}});
-  return {cart,storage,read:()=>JSON.parse(storage.getItem("wlc.cart.v3."+store))};
+  return {cart,storage,read:()=>JSON.parse(storage.getItem("wlc.cart.v4."+guestCart.key))};
 }
 test("parallel submissions share one checkout key across a method change and retain the exact order after redirect",async t=>{
   const {cart}=localCart(t);const sig=payment.cartSignature([line]);
-  const reserve=method=>cart.reserveCartCheckout(store,"guest",sig,"same basket and shipping",method,[signatureLine]);
+  const reserve=method=>cart.reserveCartCheckout(guestCart,"guest",sig,"same basket and shipping",method,[signatureLine]);
   const [first,second]=await Promise.all([reserve("paymob_wallet"),reserve("paymob_card")]);
   assert.equal(first.key,second.key);assert.equal(second.method,"paymob_wallet");
-  await cart.bindCartCheckout(store,first.key,id);
+  await cart.bindCartCheckout(guestCart,first.key,id);
   assert.equal((await reserve("cod")).orderId,id);
-  assert.equal(cart.pendingCheckout(store,"guest",sig).orderId,id);
-  assert.equal(cart.pendingCheckout(store,"another buyer",sig),undefined);
+  assert.equal(cart.pendingCheckout(guestCart,"guest",sig).orderId,id);
+  assert.equal(cart.pendingCheckout(guestCart,"another buyer",sig),undefined);
 });
 
 test("a verified receipt consumes once across tabs, subtracts only original quantities, and reports persisted analytics",async t=>{
   const {cart,storage,read}=localCart(t);
   const extra={...line,id:crypto.randomUUID(),quantity:1}, sibling={...line,size:"L",quantity:1};
-  storage.setItem("wlc.cart.v3."+store,JSON.stringify([line,sibling])); // existing on-disk array format
-  const a=await cart.reserveCartCheckout(store,"guest",payment.cartSignature([line]),"shipping","paymob_card",[signatureLine]);
-  await cart.bindCartCheckout(store,a.key,id);
-  await cart.change(store,line,-1,null); await cart.change(store,line,3,null); await cart.change(store,extra,1,null);
+  storage.setItem("wlc.cart.v4."+guestCart.key,JSON.stringify([line,sibling])); // existing on-disk array format
+  const a=await cart.reserveCartCheckout(guestCart,"guest",payment.cartSignature([line]),"shipping","paymob_card",[signatureLine]);
+  await cart.bindCartCheckout(guestCart,a.key,id);
+  await cart.change(guestCart,line,-1,null); await cart.change(guestCart,line,3,null); await cart.change(guestCart,extra,1,null);
   const receipt={...baseOrder,store_id:store,payment_status:"paid",total:56.75,currency:"USD",lines:[line]};
-  assert.equal(await cart.consumeReceipt(store,{...receipt,store_id:crypto.randomUUID()}),false);
-  assert.equal(await cart.consumeReceipt(store,{...receipt,lines:[{...line,quantity:9}]}),false);
+  assert.equal(await cart.consumeReceipt(guestCart,{...receipt,store_id:crypto.randomUUID()}),false);
+  assert.equal(await cart.consumeReceipt(guestCart,{...receipt,lines:[{...line,quantity:9}]}),false);
   const tracked=[];
   const {OrdersPaymentSync}=loadSource("components/shop/orders-payment-sync.tsx",{react:{useEffect:fn=>fn()},
-    "@/lib/order-number":numbers,"@/components/floating-toast":{},"./cart-store":{...cart,useCartTenant:()=>store},
+    "@/lib/order-number":numbers,"@/components/floating-toast":{},"./cart-store":{...cart,useCartScope:()=>guestCart},
     "@/lib/analytics":{trackPurchase:p=>tracked.push(p)},...hooks("en")});
   const query={paymentCallback:"success",callbackOrder:id,guest:true};
   OrdersPaymentSync({...query,receipt:null});await tick();
@@ -124,19 +126,19 @@ test("a verified receipt consumes once across tabs, subtracts only original quan
   OrdersPaymentSync({...query,receipt}); OrdersPaymentSync({...query,receipt});await tick();
   assert.equal(tracked.length,1);assert.equal(tracked[0].value,56.75);assert.equal(tracked[0].currency,"USD");
   assert.deepEqual(read().lines.map(l=>l.quantity),[3,1,1]);
-  await cart.change(store,line,1,null);OrdersPaymentSync({...query,receipt});await tick();
+  await cart.change(guestCart,line,1,null);OrdersPaymentSync({...query,receipt});await tick();
   assert.deepEqual(read().lines.map(l=>l.quantity),[4,1,1]);assert.equal(tracked.length,1);
 });
 
 test("coupon confirmation has its own localized banner and fresh quote inputs follow quantity and sale boundaries",()=>{
   const {OrdersPaymentSync}=loadSource("components/shop/orders-payment-sync.tsx",{react:{useEffect(){}},
-    "@/lib/order-number":numbers,"@/components/floating-toast":{},"./cart-store":{useCartTenant:()=>store},
+    "@/lib/order-number":numbers,"@/components/floating-toast":{},"./cart-store":{useCartScope:()=>guestCart},
     "@/lib/analytics":{},...hooks("en")});
   const html=renderToStaticMarkup(OrdersPaymentSync({guest:true,callbackOrder:id,placedCoupon:true}));
   assert.match(html,/coupon covered the full amount/);assert.doesNotMatch(html,/Store Wallet/);
   let clock=1000,qty=1;
   const {useBasketContents}=loadSource("components/shop/cart-lines.tsx",{react:{useState:x=>[x,()=>{}],useEffect(){},useCallback:fn=>fn},
-    "./cart-store":{useCartTenant:()=>store,useDefaultOrderLimit:()=>10,remainingQuantity:()=>8,lineEffectivePrice:flash.lineEffectivePrice,
+    "./cart-store":{useCartScope:()=>guestCart,useDefaultOrderLimit:()=>10,remainingQuantity:()=>8,lineEffectivePrice:flash.lineEffectivePrice,
       useCart:()=>[{...line,quantity:qty,regular_price:100,flash_sale_price:50,flash_sale_ends_at:new Date(2000).toISOString()}]},
     "./use-sale-clock":{useSaleClock:()=>clock},"./store-copy":{},"@/lib/brand":{},"@/lib/i18n":{},"@/lib/variant-stock":{},
     "@/lib/tenant-shared":tenant,"@/lib/storefront-media":{},"@/lib/product-photo":{},...hooks("en")});

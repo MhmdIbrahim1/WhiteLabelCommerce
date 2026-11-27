@@ -2,7 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { NextRequest } from "next/server.js";
 import * as routing from "../src/lib/host-routing.ts";
+import * as i18n from "../src/lib/i18n.ts";
 import * as tenant from "../src/lib/tenant-shared.ts";
+import * as cartSession from "../src/lib/cart-session.ts";
 import { createCartHeartbeat } from "../src/lib/cart-heartbeat.ts";
 import { loadSource } from "./helpers/load-source.mjs";
 
@@ -18,6 +20,7 @@ function proxyFixture(t, env, lookup) {
     t.after(() => { if (old === undefined) delete process.env[key]; else process.env[key] = old; });
   }
   const { proxy } = loadSource("proxy.ts", {
+    "@/lib/i18n": i18n,
     "@/lib/host-routing": routing, "@/lib/tenant-shared": tenant, "@/lib/host-resolver": { resolveHostRoute: lookup },
     "@/lib/access": {}, "@supabase/ssr": { createServerClient: () => ({}) },
   });
@@ -25,6 +28,16 @@ function proxyFixture(t, env, lookup) {
     method, headers: { host, ...headers },
   }));
 }
+
+test("proxy forwards a validated URL language and gives only bare platform auth an Arabic default", async t => {
+  const request = proxyFixture(t, { PLATFORM_ROOT_DOMAIN: root, VERCEL_ENV: "production" }, async () => nova);
+  const forwarded = res => res.headers.get("x-middleware-request-" + tenant.PAGE_LOCALE_HEADER);
+  assert.equal(forwarded(await request(root, "/login")), "ar");
+  assert.equal(forwarded(await request(root, "/login", "GET", { cookie: "nova_lang=en" })), null);
+  assert.equal(forwarded(await request(root, "/s/nova-store/login")), null);
+  assert.equal(forwarded(await request(root, "/s/nova-store/login?nova_lang=en")), "en");
+  assert.equal(forwarded(await request(root, "/s/nova-store/login?nova_lang=fr", "GET", { [tenant.PAGE_LOCALE_HEADER]: "en" })), null);
+});
 
 test("proxy serves immutable GET and HEAD assets with zero directory or revision reads", async t => {
   let calls = 0;
@@ -197,21 +210,22 @@ test("the cart provider releases scheduled and in-flight work on switch, pagehid
   let release;
   const { CartTenantProvider, clearCart } = loadSource("components/shop/cart-store.ts", {
     react: { createContext: () => ({}), createElement() {}, useMemo: fn => fn(), useLayoutEffect: fn => { release = fn(); } },
+    "@/lib/cart-session": cartSession, "@/components/auth-session": { useSessionUser: () => null, cartSessionEnded: "signed-out" },
     "@/lib/cart-heartbeat": { createCartHeartbeat }, "@/lib/supabase/browser": {}, "@/lib/variant-stock": {},
     "@/lib/flash-sale": {}, "./studio-preview-context": {},
   });
-  CartTenantProvider({ storeId: nova.id, slug: nova.slug });
-  clearCart(nova.id);
+  CartTenantProvider({ storeId: nova.id, slug: nova.slug, userId: null });
+  clearCart(cartSession.cartScope(nova.id, null));
   release();
-  CartTenantProvider({ storeId: omar.id, slug: omar.slug });
-  clearCart(nova.id);
-  clearCart(omar.id);
+  CartTenantProvider({ storeId: omar.id, slug: omar.slug, userId: null });
+  clearCart(cartSession.cartScope(nova.id, null));
+  clearCart(cartSession.cartScope(omar.id, null));
   t.mock.timers.tick(1500);
   assert.equal(calls.length, 2);
   assert.ok(calls.every(c => c.url.startsWith("/s/omar-a7a/") && !c.signal.aborted));
   window.dispatchEvent(new Event("pagehide"));
   assert.ok(calls.every(c => c.signal.aborted));
-  clearCart(omar.id);
+  clearCart(cartSession.cartScope(omar.id, null));
   t.mock.timers.tick(1500);
   assert.equal(calls.length, 4);
   release();

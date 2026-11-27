@@ -7,18 +7,23 @@ import { PasswordForm } from "@/components/shop/password-form";
 import { LanguageToggle } from "@/components/language-provider";
 import { EgyptAddressFields } from "@/components/shop/egypt-address-fields";
 import { HybridAuthPanel } from "@/components/shop/hybrid-auth-panel";
+import { safeAuthNext } from "@/lib/auth-flow";
 import { serverDb, checked } from "@/lib/db";
 import { settings } from "@/lib/shop";
 import { storeHref } from "@/lib/tenant";
 import { getServerLang } from "@/lib/i18n-server";
 import { t } from "@/lib/i18n";
-import { logout, saveCustomerAccount } from "../../login/actions";
+import { LogoutForm } from "@/components/auth-session";
+import { saveCustomerAccount } from "../../login/actions";
 import "./account.css";
 
 export default async function AccountPage({ searchParams }: Pick<PageProps<"/account">, "searchParams">) {
   const [params, store, lang, db] = await Promise.all([searchParams, settings(), getServerLang(), serverDb()]);
   const { data: { user } } = await db.auth.getUser();
   if (!user) {
+    const section = typeof params.section === "string" && ["profile","addresses","tickets","wallet","preferences","security"].includes(params.section)
+      ? "/" + params.section : "";
+    const next = safeAuthNext(params.next, store.basePath, store.slug) || storeHref(store.basePath, "/account" + section);
     const error = typeof params.error === "string" ? params.error : "";
     const registered =
       typeof params.registered === "string" ? params.registered : "";
@@ -42,9 +47,9 @@ export default async function AccountPage({ searchParams }: Pick<PageProps<"/acc
           </div>
 
           <HybridAuthPanel
-            nextPath={storeHref(store.basePath, "/account")}
+            nextPath={next}
             basePath={store.basePath}
-            storeName={store.name}
+            initialOtp={params.method === "otp"}
             initialError={error}
             initialRegistered={registered}
           />
@@ -89,7 +94,7 @@ export default async function AccountPage({ searchParams }: Pick<PageProps<"/acc
         <Link key={key} href={href(path)}><Icon size={23}/><strong>{label}</strong><span>{Number(counts[key] ?? 0).toLocaleString(lang)}</span></Link>)}</nav>
       <nav className="hub-settings" aria-label={en ? "Account settings" : "إعدادات الحساب"}>
         {groups.map(({ key, icon: Icon, label }) => <Link key={key} href={href("/account/"+key)}><Icon size={19}/>{label}<Arrow size={16}/></Link>)}
-        <form action={logout}><button><LogOut size={18}/>{t(lang, "navLogout")}</button></form>
+        <LogoutForm><LogOut size={18}/>{t(lang, "navLogout")}</LogoutForm>
       </nav>
     </section>;
   }

@@ -96,7 +96,7 @@ test("each guest receipt displays and copies the same isolated reference in AR a
   for (const lang of ["ar", "en"]) {
     const { OrdersPaymentSync } = loadSource("components/shop/orders-payment-sync.tsx", {
       react: { useEffect() {} }, "@/lib/order-number": numbers, "@/components/floating-toast": { showToast() {} },
-      "./cart-store": { useCartTenant: () => nova }, "@/lib/analytics": {},
+      "./cart-store": { useCartScope: () => ({ storeId: nova }) }, "@/lib/analytics": {},
       "@/components/language-provider": { useLanguage: () => ({ lang, t: key => key }) },
     });
     for (const flags of [{ placedCod: true }, { placedWallet: true }, { paymentCallback: "success" }]) {

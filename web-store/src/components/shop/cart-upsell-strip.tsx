@@ -12,7 +12,7 @@ import { localizedText } from "@/lib/i18n";
 import { storeHref } from "@/lib/tenant-shared";
 import { isFlashSaleActive, resolveEffectivePrice } from "@/lib/flash-sale";
 import { useLanguage } from "@/components/language-provider";
-import { change, type Line, useCartTenant, useDefaultOrderLimit, readInventory, inventoryForLine } from "./cart-store";
+import { change, type Line, useCartScope, useDefaultOrderLimit, readInventory, inventoryForLine } from "./cart-store";
 
 type UpsellProduct = {
   id: string;
@@ -45,7 +45,7 @@ export function CartUpsellStrip({
   basePath?: string;
 }) {
   const { lang } = useLanguage();
-  const tenantId = useCartTenant();
+  const tenantId = useCartScope();
   const defaultLimit = useDefaultOrderLimit();
   const isEn = lang === "en";
 

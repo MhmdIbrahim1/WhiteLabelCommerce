@@ -37,5 +37,5 @@
   background: transparent; color: inherit; gap: .4rem; font: inherit; font-size: .84rem; font-weight: 600;
 }
 .pt-brand { display: inline-flex; align-items: center; gap: .45rem; font: 750 1.12rem/1 "DM Sans Variable", sans-serif; white-space: nowrap; unicode-bidi: isolate; }
-.pt-brand > span { letter-spacing: -.055em; }
-.pt-brand > span > span { font-weight: 450; }
+.pt-brand > bdi { letter-spacing: -.055em; }
+.pt-brand > bdi > span { font-weight: 450; }

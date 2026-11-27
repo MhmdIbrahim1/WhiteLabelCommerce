@@ -5,11 +5,12 @@ import {
   isLocalHost, isStoreSlug, isVercelDeployment, platformAuthScreen, platformOrigin, platformRootDomain, publicStoreOrigin, resolveRequestHost,
   requestAuthority, resolveStoreBinding, storePath,
 } from "@/lib/host-routing";
+import { isLang, LANG_COOKIE } from "@/lib/i18n";
 import { resolveHostRoute } from "@/lib/host-resolver";
 import {
   DEFAULT_STORE_SLUG, PLATFORM_ORIGIN_HEADER, STORE_BASE_PATH_HEADER, STORE_CANONICAL_HEADER,
-  REQUEST_ORIGIN_HEADER, STORE_ID_HEADER, STORE_SLUG_COOKIE, STORE_SLUG_HEADER, storefrontPath, tenantAuthEntry,
-  STUDIO_LOCALE_HEADER, STUDIO_PREVIEW_QUERY, isStudioPreviewPage,
+  REQUEST_ORIGIN_HEADER, PASSWORD_RECOVERY_HEADER, STORE_ID_HEADER, STORE_SLUG_COOKIE, STORE_SLUG_HEADER, storefrontPath, tenantAuthEntry,
+  PAGE_LOCALE_HEADER, STUDIO_LOCALE_HEADER, STUDIO_PREVIEW_QUERY, isStudioPreviewPage,
 } from "@/lib/tenant-shared";
 
 const privateHeaders = { "Cache-Control": "private, no-store" };
@@ -18,14 +19,14 @@ const accessPath = "/platform-access";
 const redirectPath = "/platform-redirect";
 const PLATFORM_REDIRECT_HEADER = "x-wlc-platform-redirect";
 const controlPlane = /^\/(?:admin|super-admin|create-store|api\/admin)(?:\/|$)/;
-const tenantApi = /^\/api\/(?:abandoned-cart|catalog-search|cart-upsells|payments\/paymob\/initiate|notifications\/(?:back-in-stock|cart-heartbeat|inbox|register))$/;
+const tenantApi = /^\/api\/(?:auth\/password-reset(?:\/complete)?|abandoned-cart|catalog-search|cart-upsells|payments\/paymob\/initiate|notifications\/(?:back-in-stock|cart-heartbeat|inbox|register))$/;
 const assetPath = /^(?:\/_next\/static\/|\/_next\/(?:image|webpack-hmr)(?:\/|$)|\/(?:favicon\.ico|store-collection\.jpg|firebase-messaging-sw\.js)$)/;
 
 function cleanRoutingHeaders(request: NextRequest) {
   const outgoing = new Headers(request.headers);
   for (const header of [PLATFORM_ORIGIN_HEADER, PLATFORM_REDIRECT_HEADER, REQUEST_ORIGIN_HEADER, STORE_ID_HEADER,
-    STORE_BASE_PATH_HEADER, STORE_CANONICAL_HEADER, STORE_SLUG_HEADER, STUDIO_LOCALE_HEADER,
-    "x-store-host", "x-store-subdomain", "forwarded"]) outgoing.delete(header);
+    STORE_BASE_PATH_HEADER, STORE_CANONICAL_HEADER, STORE_SLUG_HEADER, PAGE_LOCALE_HEADER, STUDIO_LOCALE_HEADER,
+    PASSWORD_RECOVERY_HEADER, "x-store-host", "x-store-subdomain", "forwarded"]) outgoing.delete(header);
   return outgoing;
 }
 
@@ -118,7 +119,8 @@ export async function proxy(request: NextRequest) {
     try { route = await resolveStoreBinding(classification, alias?.slug, fallback, resolveHostRoute, registered); }
     catch { return routingError(503); }
     if (!route) return routingError();
-    const authPage = path === "/login" || path === "/register";
+    const entryPage = path === "/login" || path === "/register";
+    const authPage = entryPage || path.startsWith("/auth/") || path === "/forgot-password" || path === "/reset-password";
     const basePath = platform ? alias?.basePath ?? (authPage || api ? "" : storefrontPath(route.slug)) : "";
     outgoing.set(STORE_ID_HEADER, route.id);
     outgoing.set(STORE_SLUG_HEADER, route.slug);
@@ -129,7 +131,7 @@ export async function proxy(request: NextRequest) {
     }
     if (!studioPreview && platform && storefront && !api && !authPage && !request.headers.has("next-router-prefetch") &&
         request.headers.get("purpose") !== "prefetch") cookieSlug = route.slug;
-    if (platform && !alias && authPage && request.method === "GET") {
+    if (platform && !alias && entryPage && request.method === "GET") {
       const entry = tenantAuthEntry("", path, request.nextUrl.searchParams.get("next") || "");
       if (entry) return NextResponse.redirect(new URL(entry, origin), { status: 303, headers: privateHeaders });
     }
@@ -148,15 +150,20 @@ export async function proxy(request: NextRequest) {
   // Keep rewrites internal to the Next server, even when a trusted ingress terminates TLS.
   const destination = request.nextUrl.clone();
   const access = platformAuthScreen(platform, Boolean(alias), path);
-  destination.pathname = access ? accessPath + "/" + access : landing ? landingPath : path;
+  const urlLang = request.nextUrl.searchParams.get(LANG_COOKIE);
+  if (!api && isLang(urlLang)) {
+    outgoing.set(PAGE_LOCALE_HEADER, urlLang);
+  } else if (access && !isLang(request.cookies.get(LANG_COOKIE)?.value)) {
+    // Apex auth has a store binding for sign-in, but its interface uses the platform default.
+    outgoing.set(PAGE_LOCALE_HEADER, "ar");
+  }
+  const recoveryPath = path === "/forgot-password" || path === "/reset-password" ? "/auth/reset-password" : path;
+  if (recoveryPath === "/auth/reset-password") outgoing.set(PASSWORD_RECOVERY_HEADER, "1");
+  destination.pathname = access ? accessPath + "/" + access : landing ? landingPath : recoveryPath;
   const forward = () => destination.pathname !== externalPath
     ? NextResponse.rewrite(destination, { request: { headers: outgoing } })
     : NextResponse.next({ request: { headers: outgoing } });
   let response = forward();
-  if (landing) {
-    response.headers.set("Cache-Control", "private, no-store");
-    return response;
-  }
 
   const db = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
     cookies: {
@@ -176,7 +183,7 @@ export async function proxy(request: NextRequest) {
     const login = "/login?next=" + encodeURIComponent(path + request.nextUrl.search);
     let redirectTo = !user ? login : "";
     if (user && /^\/super-admin(?:\/|$)/.test(path) && !(await superAdminUser(db, user))) redirectTo = "/";
-    if (user && /^\/admin(?:\/|$)/.test(path) && !(await adminUser(db, undefined, user))) redirectTo = login;
+    if (user && /^\/admin(?:\/|$)/.test(path) && !(await adminUser(db, undefined, user))) redirectTo = "/account?notice=customer_only";
     if (redirectTo) {
       const redirect = NextResponse.redirect(new URL(redirectTo, origin), { status: 303, headers: privateHeaders });
       for (const cookie of response.cookies.getAll()) redirect.cookies.set(cookie);
@@ -185,7 +192,7 @@ export async function proxy(request: NextRequest) {
   } else if (request.cookies.getAll().some(c => c.name.startsWith("sb-"))) {
     await db.auth.getUser();
   }
-  if (path === "/orders/return" || invite || request.nextUrl.searchParams.get("next")?.startsWith("/invite/")) response.headers.set("Referrer-Policy", "no-referrer");
+  if (path.startsWith("/auth/") || path === "/reset-password" || path === "/forgot-password" || path === "/orders/return" || invite || request.nextUrl.searchParams.get("next")?.startsWith("/invite/")) response.headers.set("Referrer-Policy", "no-referrer");
   if (cookieSlug && request.cookies.get(STORE_SLUG_COOKIE)?.value !== cookieSlug) {
     response.cookies.set(STORE_SLUG_COOKIE, cookieSlug, { path: "/", sameSite: "lax", httpOnly: true, secure: scheme === "https" });
   }

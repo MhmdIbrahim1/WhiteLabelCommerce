@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { serverDb } from "@/lib/db";
+import { authEntry, verifiedEmailUser } from "@/lib/auth-flow";
 import { CreateStoreWizard } from "./wizard";
 import { AuthShell } from "@/components/workspace-surface";
 
@@ -15,10 +16,8 @@ export default async function CreateStorePage({ searchParams }: {
     data: { user },
   } = await db.auth.getUser();
 
-  if (!user) {
-    const next = initialName ? "/create-store?" + new URLSearchParams({ name: initialName }) : "/create-store";
-    redirect("/login?next=" + encodeURIComponent(next));
-  }
+  const next = initialName ? "/create-store?" + new URLSearchParams({ name: initialName }) : "/create-store";
+  if (!verifiedEmailUser(user)) redirect(authEntry("", "/login", next));
 
-  return <AuthShell wide account={user.email}><CreateStoreWizard initialName={initialName} /></AuthShell>;
+  return <AuthShell wide><CreateStoreWizard key={user.id} userId={user.id} email={user.email} registerNext={next} initialName={initialName} /></AuthShell>;
 }

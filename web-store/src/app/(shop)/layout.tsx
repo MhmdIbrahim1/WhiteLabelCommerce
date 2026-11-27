@@ -11,7 +11,7 @@ import { storefrontAppearance } from "@/lib/storefront-appearance";
 import { serverDb } from "@/lib/db";
 import { adminUser, hasStorePermission, superAdminUser } from "@/lib/access";
 import { storeHref } from "@/lib/tenant";
-import { STORE_CANONICAL_HEADER } from "@/lib/tenant-shared";
+import { PASSWORD_RECOVERY_HEADER, PLATFORM_ORIGIN_HEADER, STORE_CANONICAL_HEADER } from "@/lib/tenant-shared";
 import { localizedText, t } from "@/lib/i18n";
 import { getServerLang, getStudioPreviewLang } from "@/lib/i18n-server";
 import brand from "@/lib/brand";
@@ -63,6 +63,9 @@ export default async function Layout({
 }: {
   children: React.ReactNode;
 }) {
+  // Keep merchant pixels and other storefront integrations off password recovery pages.
+  const requestHeaders = await headers();
+  if (requestHeaders.has(PASSWORD_RECOVERY_HEADER)) return children;
   const [db, s, authRes, appearance, jar, previewLang] = await Promise.all([
     serverDb(), settings(), serverDb().then((client) => client.auth.getUser()), storefrontAppearance(), cookies(), getStudioPreviewLang(),
   ]);
@@ -122,6 +125,7 @@ export default async function Layout({
           ga4MeasurementId={s.pixels.ga4MeasurementId}
         />}
         <Navigation
+          platformOrigin={requestHeaders.get(PLATFORM_ORIGIN_HEADER)}
           preview={Boolean(previewLang)}
           name={displayName}
           logo={s.uiConfig.storefrontLogo}
@@ -163,7 +167,7 @@ export default async function Layout({
         <div data-storefront-overlays="" />
   </>;
   const platform = previewLang ? await getPublishedTheme() : null;
-  return <CartTenantProvider key={s.storeId} storeId={s.storeId} slug={s.slug} defaultMaxOrderQty={s.defaultMaxOrderQty}>
+  return <CartTenantProvider key={s.storeId} storeId={s.storeId} slug={s.slug} userId={authUser?.id ?? null} defaultMaxOrderQty={s.defaultMaxOrderQty}>
     <WishlistProvider key={authUser?.id ?? "guest"} storeId={s.storeId} initialProductIds={initialWishlistIds} isSignedIn={Boolean(authUser)}>
       {platform && previewLang ? <StudioPreview slug={s.slug} lang={previewLang} card={brand.presets.productCard}
         base={s.previewBase}

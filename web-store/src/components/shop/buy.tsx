@@ -9,7 +9,7 @@ import { translateColor } from "@/lib/i18n";
 import { storeHref } from "@/lib/tenant-shared";
 import { useLanguage } from "@/components/language-provider";
 import { trackAddToCart } from "@/lib/analytics";
-import { change, useCartTenant, useCart, useDefaultOrderLimit, remainingQuantity, readInventory, inventoryForLine } from "./cart-store";
+import { change, useCartScope, useCart, useDefaultOrderLimit, remainingQuantity, readInventory, inventoryForLine } from "./cart-store";
 import { showToast } from "@/components/floating-toast";
 import { indexVariants, quantityLimitHint, stockLabel, variantKey } from "@/lib/variant-stock";
 import { photo } from "@/lib/product-photo";
@@ -32,7 +32,7 @@ export function Buy({
   sticky?: { currency: string; initialNow: number };
 }) {
   const { lang, t } = useLanguage();
-  const tenantId = useCartTenant();
+  const tenantId = useCartScope();
   const defaultLimit = useDefaultOrderLimit();
   const cart = useCart();
   const [requested, setRequested] = useState(1);

@@ -8,7 +8,7 @@ import {
   consumeReceipt,
   discardCheckout,
   markWebCartRecovered,
-  useCartTenant,
+  useCartScope,
 } from "./cart-store";
 import type { OrderReceipt } from "@/lib/order-payment";
 import { trackPurchase } from "@/lib/analytics";
@@ -54,25 +54,25 @@ export function OrdersPaymentSync({
   receipt?: OrderReceipt | null;
 }) {
   const { lang, t } = useLanguage();
-  const tenantId = useCartTenant();
+  const scope = useCartScope();
   const isEn = lang === "en";
 
   useEffect(() => {
-    if (!receipt || receipt.store_id !== tenantId) return;
+    if (!receipt || receipt.store_id !== scope.storeId) return;
     if (receipt.status === "cancelled") {
-      void discardCheckout(tenantId, receipt.id).catch(() => undefined);
+      void discardCheckout(scope, receipt.id).catch(() => undefined);
       return;
     }
-    void consumeReceipt(tenantId, receipt).then(consumed => {
+    void consumeReceipt(scope, receipt).then(consumed => {
       if (!consumed) return;
-      markWebCartRecovered(tenantId, receipt.id);
+      markWebCartRecovered(scope, receipt.id);
       trackPurchase({
-        storeId: tenantId, orderId: receipt.id, value: receipt.total, currency: receipt.currency, items: receipt.lines.map(l => ({
+        storeId: scope.storeId, orderId: receipt.id, value: receipt.total, currency: receipt.currency, items: receipt.lines.map(l => ({
           id: l.id, name: l.name, price: l.price, quantity: l.quantity, variant: [l.size, l.color].filter(Boolean).join(" / ") || undefined,
         }))
       });
     }).catch(() => undefined);
-  }, [receipt, tenantId]);
+  }, [receipt, scope]);
 
   if (placedCoupon) return <div className="payment-callback-banner is-success" role="status">
     <strong>{isEn ? "Order confirmed. Your coupon covered the full amount." : "تم تأكيد طلبك. غطّى الكوبون كامل المبلغ."}</strong>

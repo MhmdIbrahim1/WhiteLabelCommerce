@@ -1536,6 +1536,16 @@ details details,
   }
 }
 
+/* The pending glyph occupies the same slot as the globe in both languages. */
+[data-lang-toggle] > svg { flex: none; }
+@media (prefers-reduced-motion: no-preference) {
+  :is([data-motion="on"], [data-motion-enabled="true"]) [data-lang-toggle][aria-busy="true"] > svg {
+    animation: language-refresh 1s linear infinite;
+  }
+  @keyframes language-refresh { to { transform: rotate(1turn); } }
+}
+:is([data-motion="off"], [data-motion-enabled="false"]) [data-lang-toggle][aria-busy="true"] > svg { animation: none; }
+
 /* Phase 7: Bilingual Toggle Pill, Variant Badges & Admin Presets / Specs Editor */
 .lang-toggle-pill {
   display: inline-flex;
@@ -1790,13 +1800,32 @@ details details,
   color: var(--primary);
 }
 
-.otp-code-input {
-  text-align: center;
-  letter-spacing: 0.45rem;
-  font-size: 1.35rem;
-  font-weight: 750;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+.otp-field { text-align: start; min-inline-size: 0; }
+.otp-field > span { display: block; font-weight: 600; margin-block-end: .5rem; }
+.auth-password-field { display: grid; gap: .36rem; min-inline-size: 0; }
+.auth-label-line { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: .25rem .6rem; }
+.auth-label-line label { margin: 0; }
+.auth-password-control { position: relative; min-inline-size: 0; }
+.auth-password-control input { inline-size: 100%; }
+.auth-password-control input:dir(ltr), .auth-password-control input:dir(rtl) { padding-inline-end: 3rem; }
+[dir="rtl"] .auth-password-control input:dir(ltr), [dir="ltr"] .auth-password-control input:dir(rtl) { padding-inline: 3rem .8rem; }
+.auth-password-control .auth-eye {
+  position: absolute; inset-inline-end: 1px; inset-block: 1px; display: grid; place-items: center;
+  inline-size: 2.65rem; padding: 0; color: var(--muted); background: transparent; border: 0; box-shadow: none;
 }
+
+.otp-boxes { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: clamp(.2rem, 1.2vw, .55rem); unicode-bidi: isolate; }
+.otp-field .otp-boxes input[type=text] {
+  inline-size: 100%; min-inline-size: 0; block-size: 3rem; margin: 0; padding: 0; text-align: center;
+  font: inherit; font-size: 1.3rem; font-variant-numeric: tabular-nums; letter-spacing: 0;
+  color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: .45rem; box-shadow: none;
+}
+.otp-field .otp-boxes input:focus { outline: 2px solid var(--ink); outline-offset: 2px; }
+.otp-field .otp-boxes input[aria-invalid=true] { border-color: var(--ws-danger, var(--error, #a32f24)); }
+.otp-field .otp-boxes input:disabled { opacity: .58; cursor: wait; }
+.auth-error { color: var(--ws-danger, var(--error, #a32f24)); border-inline-start: 2px solid currentColor; padding-inline-start: .65rem; }
+.hybrid-auth-root bdi, .password-form bdi { unicode-bidi: isolate; overflow-wrap: anywhere; }
+
 
 .hybrid-otp-email-row,
 .hybrid-resend-row {

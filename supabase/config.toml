@@ -1,0 +1,20 @@
+project_id = "WhiteLabelCommerce"
+
+[auth.email]
+enable_signup = true
+enable_confirmations = true
+max_frequency = "1m"
+otp_length = 6
+otp_expiry = 600
+
+[auth.email.template.confirmation]
+subject = "تأكيد البريد · Confirm your email"
+content_path = "./supabase/templates/confirmation.html"
+
+[auth.email.template.magic_link]
+subject = "رمز الدخول · Your sign-in code"
+content_path = "./supabase/templates/magic_link.html"
+
+[auth.email.template.recovery]
+subject = "استعادة كلمة المرور · Reset your password"
+content_path = "./supabase/templates/recovery.html"
