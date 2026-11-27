@@ -5,12 +5,12 @@ import { showToast } from "@/components/floating-toast";
 import { useEffect } from "react";
 import { CheckCircle2, Clock3, AlertCircle, Copy } from "lucide-react";
 import {
-  clearCart,
-  clearPendingOnlineOrder,
-  getPendingOnlineOrder,
+  consumeReceipt,
+  discardCheckout,
   markWebCartRecovered,
   useCartTenant,
 } from "./cart-store";
+import type { OrderReceipt } from "@/lib/order-payment";
 import { trackPurchase } from "@/lib/analytics";
 import { useLanguage } from "@/components/language-provider";
 
@@ -43,40 +43,40 @@ export function OrdersPaymentSync({
   callbackOrder,
   placedCod,
   placedWallet = false,
-  paidOrderIds,
+  placedCoupon = false, receipt,
 }: {
   guest: boolean;
   paymentCallback: string;
   callbackOrder: string;
   placedCod: boolean;
   placedWallet?: boolean;
-  paidOrderIds: string[];
+  placedCoupon?: boolean;
+  receipt?: OrderReceipt | null;
 }) {
   const { lang, t } = useLanguage();
   const tenantId = useCartTenant();
   const isEn = lang === "en";
 
   useEffect(() => {
-    const pendingId = getPendingOnlineOrder(tenantId);
-    const pendingNowPaid =
-      Boolean(pendingId) && paidOrderIds.includes(pendingId!);
-
-    // Clear cart ONLY on confirmed online payment (?payment=success or pending order now paid).
-    // Never clear cart on ?payment=failed so the customer can retry seamlessly.
-    if (paymentCallback === "success" || pendingNowPaid) {
-      const recoveredOrder = callbackOrder || pendingId || "";
-      if (recoveredOrder) {
-        markWebCartRecovered(tenantId, recoveredOrder);
-        trackPurchase({
-          orderId: recoveredOrder,
-          value: 0,
-          currency: "EGP",
-        });
-      }
-      clearCart(tenantId);
-      clearPendingOnlineOrder(tenantId);
+    if (!receipt || receipt.store_id !== tenantId) return;
+    if (receipt.status === "cancelled") {
+      void discardCheckout(tenantId, receipt.id).catch(() => undefined);
+      return;
     }
-  }, [paymentCallback, callbackOrder, paidOrderIds, tenantId]);
+    void consumeReceipt(tenantId, receipt).then(consumed => {
+      if (!consumed) return;
+      markWebCartRecovered(tenantId, receipt.id);
+      trackPurchase({
+        storeId: tenantId, orderId: receipt.id, value: receipt.total, currency: receipt.currency, items: receipt.lines.map(l => ({
+          id: l.id, name: l.name, price: l.price, quantity: l.quantity, variant: [l.size, l.color].filter(Boolean).join(" / ") || undefined,
+        }))
+      });
+    }).catch(() => undefined);
+  }, [receipt, tenantId]);
+
+  if (placedCoupon) return <div className="payment-callback-banner is-success" role="status">
+    <strong>{isEn ? "Order confirmed. Your coupon covered the full amount." : "تم تأكيد طلبك. غطّى الكوبون كامل المبلغ."}</strong>
+    <ReceiptReference id={callbackOrder} guest={guest} en={isEn} /></div>;
 
   if (placedWallet) {
     return (

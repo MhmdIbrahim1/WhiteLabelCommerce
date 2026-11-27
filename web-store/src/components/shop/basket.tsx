@@ -17,14 +17,15 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import {
-  purchased,
-  setPendingOnlineOrder,
+  reserveCartCheckout, bindCartCheckout, pendingCheckout, discardCheckout,
   lineEffectivePrice,
   syncAbandonedCartContact,
-  markWebCartRecovered,
-  checkoutAttemptKey,
 } from "./cart-store";
-import { trackInitiateCheckout, trackPurchase } from "@/lib/analytics";
+import { cartSignature, canRetryOrder, walletPhonePattern as EGYPT_WALLET_RE, type PaymentOrder, type PaymentOptions } from "@/lib/order-payment";
+import { OrderPaymentControls } from "./order-payment-controls";
+import { readPaymentReceipt, recoverCheckout } from "@/app/(shop)/orders/payment-actions";
+import { paymentDeadline, startOrderPayment, type InitiationState } from "@/lib/payment-client";
+import { trackInitiateCheckout } from "@/lib/analytics";
 import {
   checkout,
   previewCoupon,
@@ -40,21 +41,15 @@ import { findEgyptGovernorate } from "@/lib/egypt-locations";
 import { CartIncentiveBar } from "./cart-incentive-bar";
 import { CartUpsellStrip } from "./cart-upsell-strip";
 
-const EGYPT_WALLET_RE = /^01[0125][0-9]{8}$/;
 const subscribeToHydration = () => () => {};
 
-export type StorePaymentOptions = {
-  codEnabled: boolean;
-  paymobEnabled: boolean;
-  paymobCardEnabled: boolean;
-  paymobWalletEnabled: boolean;
-};
+export type StorePaymentOptions = PaymentOptions;
 
 type SelectedPayment = "cod" | "paymob_card" | "paymob_wallet";
 
 export function Basket({
   order = false,
-  storeId = "", addresses = [], rates = {}, signedIn = false,
+  storeId = "", buyer = "guest", addresses = [], rates = {}, signedIn = false,
   fee,
   currency,
   defaultName = "",
@@ -80,6 +75,7 @@ export function Basket({
 }: {
   order?: boolean;
   storeId?: string;
+  buyer?: string;
   addresses?: SavedAddress[];
   rates?: ShippingRates;
   signedIn?: boolean;
@@ -101,7 +97,8 @@ export function Basket({
   const isEn = lang === "en";
   const hydrated = useSyncExternalStore(subscribeToHydration, () => true, () => false);
   const basket = useBasketContents();
-  const { tenant: tenantId, lines, subtotal, overLimit } = basket;
+  const { tenant: tenantId, lines, subtotal: cartSubtotal, quoteBasis, overLimit, retry: refreshInventory } = basket;
+  const signature = cartSignature(lines);
 
   const availableMethods: SelectedPayment[] = [];
   if (paymentOptions.codEnabled) availableMethods.push("cod");
@@ -126,17 +123,23 @@ export function Basket({
   const [redirectingPayment, setRedirectingPayment] = useState(false);
   const [result, setResult] = useState<CheckoutResult>({});
   const [couponInput, setCouponInput] = useState("");
-  const [appliedCoupon, setAppliedCoupon] = useState<{
-    code: string;
-    discount: number;
-  } | null>(null);
-  const [couponMsg, setCouponMsg] = useState<{
-    ok: boolean;
-    text: string;
-  } | null>(null);
-  const [checkingCoupon, setCheckingCoupon] = useState(false);
+  const [couponCode, setCouponCode] = useState("");
+  const [quote, setQuote] = useState<{ code: string; basis: string; subtotal: number; discount: number } | null>(null);
+  const [quoteRun, setQuoteRun] = useState(0);
+  const [couponMsg, setCouponMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [settledQuoteKey, setSettledQuoteKey] = useState("");
   const [useWallet, setUseWallet] = useState(false);
-  const couponLock = useRef(false);
+  const [recovery, setRecovery] = useState<(PaymentOrder & { total?: number; currency?: string }) | null>(null);
+  const [initialState, setInitialState] = useState<InitiationState>();
+  const [corrected, setCorrected] = useState<{ basis: string; total: number } | null>(null);
+  const appliedCoupon = quote?.basis === quoteBasis && quote.code === couponCode ? quote : null;
+  const subtotal = appliedCoupon?.subtotal ?? cartSubtotal;
+  const binding = hydrated && order ? pendingCheckout(tenantId, buyer, signature) : undefined;
+  const boundId = binding?.orderId;
+  const draftKey = binding?.key;
+  const quoteLines = JSON.stringify(lines.map(l => ({ id: l.id, quantity: l.quantity })));
+  const quoteKey = couponCode ? JSON.stringify([couponCode, quoteBasis, quoteLines, quoteRun]) : "";
+  const checkingCoupon = Boolean(quoteKey && settledQuoteKey !== quoteKey);
   const lock = useRef(false);
   const checkoutTrackedRef = useRef(false);
 
@@ -162,8 +165,45 @@ export function Basket({
     canUseWallet && useWallet
       ? Math.min(walletBalance, preWalletTotal)
       : 0;
-  const finalTotal = Math.max(0, preWalletTotal - walletApplied);
+  const reviewBasis = JSON.stringify([quoteBasis, governorate, couponCode, discount, useWallet, deliveryFee]);
+  const finalTotal = corrected?.basis === reviewBasis ? corrected.total : Math.round(Math.max(0, preWalletTotal - walletApplied) * 100) / 100;
   const fullyPaidByWallet = walletApplied > 0 && finalTotal === 0;
+  const couponCovered = Boolean(appliedCoupon && discount > 0 && finalTotal === 0 && walletApplied === 0);
+  const zeroDue = fullyPaidByWallet || couponCovered;
+
+  useEffect(() => {
+    if (!draftKey || busy || result.id) return;
+    let current = true;
+    (boundId ? readPaymentReceipt(boundId).then(r => r ?? recoverCheckout(draftKey)) : recoverCheckout(draftKey)).then(async receipt => {
+      if (!current || !receipt) return;
+      if (!boundId) await bindCartCheckout(tenantId, draftKey, receipt.id);
+      if (receipt.payment_status === "paid" || (receipt.payment_method === "cod" && receipt.status !== "cancelled")) {
+        router.replace(storeHref(basePath, "/orders?order=" + receipt.id)); return;
+      }
+      if (receipt.status === "cancelled") {
+        await discardCheckout(tenantId, draftKey);
+        if (current) { setRecovery(null); refreshInventory(); }
+      } else setRecovery(receipt);
+    }).catch(() => undefined);
+    return () => { current = false; };
+  }, [basePath, boundId, draftKey, busy, result.id, router, tenantId, refreshInventory]);
+
+  useEffect(() => {
+    if (!quoteKey) return;
+    let current = true;
+    previewCoupon(couponCode, JSON.parse(quoteLines)).then(res => {
+      if (!current) return;
+      if (!res.valid || res.subtotal === undefined) { setQuote(null); setCouponMsg({ ok: false, text: res.message }); return; }
+      setQuote({ code: couponCode, basis: quoteBasis, subtotal: res.subtotal, discount: res.discountAmount ?? 0 });
+      setCouponMsg({ ok: true, text: isEn ? "Coupon updated. Review the payable total below." : "تم تحديث الخصم. راجع المبلغ المطلوب أدناه." });
+    }).catch(() => { if (current) { setQuote(null); setCouponMsg({ ok: false, text: isEn ? "Could not verify the coupon." : "تعذر التحقق من الكوبون." }); } })
+      .finally(() => { if (current) setSettledQuoteKey(quoteKey); });
+    return () => { current = false; };
+  }, [couponCode, quoteBasis, quoteLines, quoteKey, isEn]);
+
+  useEffect(() => {
+    if (appliedCoupon && appliedCoupon.subtotal !== cartSubtotal) refreshInventory();
+  }, [appliedCoupon, cartSubtotal, refreshInventory]);
 
   // Fire InitiateCheckout once when shopper lands on /checkout with items, and sync contact info
   useEffect(() => {
@@ -199,38 +239,7 @@ export function Basket({
     tenantId,
   ]);
 
-  const handleApplyCoupon = async () => {
-    if (!couponInput.trim() || couponLock.current) return;
-    couponLock.current = true;
-    setCheckingCoupon(true);
-    setCouponMsg(null);
-    try {
-      const res = await previewCoupon(couponInput, subtotal);
-      if (res.valid && res.code) {
-        setAppliedCoupon({
-          code: res.code,
-          discount: res.discountAmount ?? 0,
-        });
-        setCouponMsg({
-          ok: true,
-          text: isEn
-            ? `Coupon (${res.code}) applied successfully.`
-            : res.message,
-        });
-      } else {
-        setAppliedCoupon(null);
-        setCouponMsg({ ok: false, text: res.message });
-      }
-    } catch {
-      setCouponMsg({
-        ok: false,
-        text: isEn ? "Could not verify promo code." : "تعذر التحقق من الكوبون.",
-      });
-    } finally {
-      couponLock.current = false;
-      setCheckingCoupon(false);
-    }
-  };
+  const handleApplyCoupon = () => { setCouponMsg(null); setCouponCode(couponInput.trim().toUpperCase()); setQuoteRun(n => n + 1); };
 
   if (redirectingPayment)
     return (
@@ -249,18 +258,16 @@ export function Basket({
       </section>
     );
 
-  if (result.id)
-    return (
-      <section className="panel">
-        <h1>{t("orderReceivedTitle")}</h1>
-        <p>{t("orderReceivedNote")}</p>
-        <p><bdi dir="ltr">{result.id}</bdi></p>
-        <p><bdi dir="ltr">{money(result.total ?? null, result.currency, lang)}</bdi></p>
-        <Link className="cta" href={storeHref(basePath, "/orders")}>
-          {t("trackOrderBtn")}
-        </Link>
-      </section>
-    );
+  if (result.id || boundId || recovery) {
+    const id = recovery?.id ?? boundId ?? result.id!;
+    return <section className="panel"><h1>{isEn ? "Your order" : "طلبك"}</h1>
+      <p><bdi dir="ltr">{id}</bdi></p>
+      {recovery?.total != null && <p>{isEn ? "Order total" : "إجمالي الطلب"} · <bdi dir="ltr">{money(recovery.total, recovery.currency, lang)}</bdi></p>}
+      {recovery && <OrderPaymentControls key={id} order={recovery} options={paymentOptions} basePath={basePath} initialState={initialState} />}
+      {recovery && !canRetryOrder(recovery) && <p role="status">{isEn ? "Check the latest order status." : "راجع آخر تحديث لحالة الطلب."}</p>}
+      <Link className="cta" href={storeHref(basePath, "/orders?order=" + id)}>{t("trackOrderBtn")}</Link>
+    </section>;
+  }
 
   if (!hydrated) return <section className="panel" role="status" aria-busy="true">
     <h1>{order ? t("checkoutTitle") : t("cartTitle")}</h1>
@@ -310,11 +317,11 @@ export function Basket({
               e.preventDefault();
               if (
                 overLimit || lock.current ||
-                (!fullyPaidByWallet && availableMethods.length === 0)
+                ((!zeroDue && availableMethods.length === 0) || checkingCoupon || Boolean(couponCode && !appliedCoupon))
               )
                 return;
 
-              const effectivePaymentMethod = fullyPaidByWallet
+              const effectivePaymentMethod = couponCovered ? "coupon" : fullyPaidByWallet
                 ? "wallet"
                 : activePayment;
               const cleanWallet = walletPhone.replace(/\s+/g, "");
@@ -331,19 +338,19 @@ export function Basket({
 
               lock.current = true;
               setBusy(true);
-              const f = new FormData(e.currentTarget);
-              if (e.currentTarget.querySelector(".address-book fieldset:disabled")) { lock.current = false; setBusy(false); return; }
-              const delivery = JSON.parse(String(f.get("delivery")));
-              const recipient = String(f.get("recipient_name") || "").trim();
-              const address = String(f.get("address")).trim(),
-                phone = String(f.get("phone")),
-                items = lines.map(({ id, quantity, size, color }) => ({
-                  id,
-                  quantity,
-                  size,
-                  color,
-                }));
               try {
+                const f = new FormData(e.currentTarget);
+                if (e.currentTarget.querySelector(".address-book fieldset:disabled")) return;
+                const delivery = JSON.parse(String(f.get("delivery")));
+                const recipient = String(f.get("recipient_name") || "").trim();
+                const address = String(f.get("address")).trim(),
+                  phone = String(f.get("phone")),
+                  items = lines.map(({ id, quantity, size, color }) => ({
+                    id,
+                    quantity,
+                    size,
+                    color,
+                  }));
                 const couponCode = appliedCoupon?.code ?? "";
                 const useWalletFlag = canUseWallet && useWallet;
                 const payload = JSON.stringify([
@@ -351,8 +358,7 @@ export function Basket({
                   phone, delivery, recipient,
                   items,
                   couponCode,
-                  effectivePaymentMethod,
-                  useWalletFlag,
+                  useWalletFlag, buyer,
                 ]);
                 const hash = Array.from(
                   new Uint8Array(
@@ -364,123 +370,57 @@ export function Basket({
                 )
                   .map((b) => b.toString(16).padStart(2, "0"))
                   .join("");
-                const key = checkoutAttemptKey(tenantId, hash);
-                const request =
-                  localStorage.getItem(key) || crypto.randomUUID();
-                localStorage.setItem(key, request);
-
-                const receipt = await checkout(
-                  request,
+                const attempt = await paymentDeadline(reserveCartCheckout(tenantId, buyer, signature, hash, effectivePaymentMethod, items));
+                if (attempt.orderId) {
+                  router.push(storeHref(basePath, "/orders?order=" + attempt.orderId));
+                  return;
+                }
+                const receipt = await paymentDeadline(checkout(
+                  attempt.key,
                   address,
                   phone,
-                  effectivePaymentMethod,
+                  attempt.method,
                   items,
                   couponCode || undefined,
                   recipient || undefined,
                   useWalletFlag,
                   delivery,
-                );
+                  finalTotal,
+                ));
 
                 if (!receipt.id) {
+                  if (receipt.changedTotal !== undefined || receipt.refreshQuote) {
+                    await discardCheckout(tenantId, attempt.key);
+                    refreshInventory();
+                    setQuoteRun(n => n + 1);
+                  }
+                  if (Number.isFinite(receipt.changedTotal)) { setCorrected({ basis: reviewBasis, total: receipt.changedTotal! }); }
                   setResult(receipt);
                   return;
                 }
 
-                const purchasedPixelItems = lines.map((l) => ({
-                  id: l.id,
-                  name: l.name,
-                  price: lineEffectivePrice(l),
-                  quantity: l.quantity,
-                  variant:
-                    [l.size, l.color].filter(Boolean).join(" / ") || undefined,
-                }));
-
-                // Full Store Wallet Payment (remainingTotal === 0): skip Paymob, clear cart & confirm
-                if (
-                  effectivePaymentMethod === "wallet" ||
-                  Number(receipt.total ?? 0) <= 0
-                ) {
-                  markWebCartRecovered(tenantId, receipt.id);
-                  trackPurchase({
-                    orderId: receipt.id,
-                    value: Number(receipt.total ?? finalTotal),
-                    currency: receipt.currency ?? currency,
-                    items: purchasedPixelItems,
-                  });
-                  purchased(tenantId, lines);
-                  localStorage.removeItem(key);
-                  router.push(
-                    storeHref(
-                      basePath,
-                      "/orders?placed=wallet&order=" +
-                        encodeURIComponent(receipt.id),
-                    ),
-                  );
+                await bindCartCheckout(tenantId, attempt.key, receipt.id);
+                if (receipt.status === "cancelled") {
+                  await discardCheckout(tenantId, attempt.key);
+                  setResult({ error: isEn ? "This reservation expired. Review your cart and confirm again." : "انتهت مدة الحجز. راجع سلتك وأكّد الطلب مجدداً." });
                   return;
                 }
-
-                // Online Paymob Flow: keep cart intact and show full-screen redirecting state
-                // Cart is cleared ONLY when payment is confirmed on /orders (?payment=success or paid)
-                if (
-                  effectivePaymentMethod === "paymob_card" ||
-                  effectivePaymentMethod === "paymob_wallet"
-                ) {
-                  setRedirectingPayment(true);
-                  setPendingOnlineOrder(tenantId, receipt.id);
-                  const initRes = await fetch(
-                    "/api/payments/paymob/initiate",
-                    {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        order_id: receipt.id,
-                        method:
-                          effectivePaymentMethod === "paymob_card"
-                            ? "card"
-                            : "wallet",
-                        wallet_phone:
-                          effectivePaymentMethod === "paymob_wallet"
-                            ? cleanWallet
-                            : undefined,
-                        customer_phone: phone,
-                      }),
-                    },
-                  );
-                  const initData = (await initRes.json()) as {
-                    redirect_url?: string;
-                    error?: string;
-                  };
-                  if (!initRes.ok || !initData.redirect_url) {
-                    setRedirectingPayment(false);
-                    setResult({
-                      error: isEn
-                        ? "Order created, but online payment could not be initiated. You can retry from My Orders."
-                        : "تم إنشاء الطلب ولكن تعذر بدء الدفع الإلكتروني حالياً. يمكنك إعادة المحاولة من صفحة طلباتي.",
-                    });
-                    return;
-                  }
-                  localStorage.removeItem(key);
-                  window.location.assign(initData.redirect_url);
+                if (receipt.paymentStatus === "paid" || receipt.method === "cod") {
+                  setResult(receipt);
+                  router.push(storeHref(basePath, "/orders?placed=" + receipt.method + "&order=" + receipt.id));
                   return;
                 }
-
-                // Cash on Delivery Flow: clear cart immediately and redirect to /orders
-                markWebCartRecovered(tenantId, receipt.id);
-                trackPurchase({
-                  orderId: receipt.id,
-                  value: Number(receipt.total ?? finalTotal),
-                  currency: receipt.currency ?? currency,
-                  items: purchasedPixelItems,
-                });
-                purchased(tenantId, lines);
-                localStorage.removeItem(key);
-                router.push(
-                  storeHref(
-                    basePath,
-                    "/orders?placed=cod&order=" +
-                      encodeURIComponent(receipt.id),
-                  ),
-                );
+                const existing = {
+                  id: receipt.id, status: receipt.status!, payment_method: receipt.method, payment_status: receipt.paymentStatus,
+                  reservation_expires_at: receipt.expiresAt, total: receipt.total, currency: receipt.currency,
+                };
+                setRedirectingPayment(true);
+                try {
+                  setInitialState(await startOrderPayment(basePath, receipt.id, activePayment === "paymob_wallet" ? "wallet" : "card", cleanWallet, phone));
+                } finally {
+                  setRedirectingPayment(false);
+                  setRecovery(existing);
+                }
               } catch {
                 setRedirectingPayment(false);
                 setResult({
@@ -544,7 +484,7 @@ export function Basket({
               </div>
             )}
 
-            {fullyPaidByWallet ? (
+            {couponCovered ? <p role="status">{isEn ? "Your coupon covers the full order." : "يغطّي الكوبون كامل قيمة الطلب."}</p> : fullyPaidByWallet ? (
               <div className="wallet-full-cover-banner" role="status">
                 <CheckCircle2 size={18} aria-hidden="true" />
                 <span>
@@ -673,18 +613,18 @@ export function Basket({
           </dl>
           {order && (
             <div className="coupon-apply-box">
-              {appliedCoupon ? (
+              {couponCode ? (
                 <div className="coupon-applied-chip">
                   <span>
                     <TicketPercent size={14} /> {t("couponActivePrefix")}{" "}
-                    <bdi dir="ltr">{appliedCoupon.code}</bdi> {t("couponActiveSuffix")}
+                    <bdi dir="ltr">{couponCode}</bdi>
                   </span>
                   <button
                     type="button"
                     className="icon-ghost-btn"
                     aria-label={isEn ? "Remove coupon" : "إزالة الكوبون"}
                     onClick={() => {
-                      setAppliedCoupon(null);
+                      setCouponCode(""); setQuote(null);
                       setCouponInput("");
                       setCouponMsg(null);
                     }}
@@ -727,7 +667,7 @@ export function Basket({
               <button
                 className="checkout-cta" type="submit" form="store-checkout"
                 disabled={
-                  overLimit || busy || (!fullyPaidByWallet && availableMethods.length === 0)
+                overLimit || busy || checkingCoupon || Boolean(couponCode && !appliedCoupon) || (!zeroDue && availableMethods.length === 0)
                 }
               >
                 {redirectingPayment

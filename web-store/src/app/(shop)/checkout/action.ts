@@ -1,4 +1,8 @@
 "use server";
+import { headers } from "next/headers";
+import { REQUEST_ORIGIN_HEADER } from "@/lib/tenant-shared";
+import { rememberCheckout } from "@/lib/order-receipt";
+import { adminDb } from "@/lib/supabase/admin";
 import { quotaFailure, quotaMessage } from "@/lib/billing";
 import { serverDb } from "@/lib/db";
 import { getServerLang } from "@/lib/i18n-server";
@@ -12,18 +16,25 @@ export type CheckoutResult = {
   total?: number;
   currency?: string;
   error?: string;
+  changedTotal?: number;
+  refreshQuote?: boolean;
+  method?: string;
+  paymentStatus?: string;
+  status?: string;
+  expiresAt?: string | null;
 };
 
 export type CouponPreviewResult = {
   valid: boolean;
   code?: string;
   discountAmount?: number;
+  subtotal?: number;
   message: string;
 };
 
 export async function previewCoupon(
   code: string,
-  subtotal: number,
+  lines: { id: string; quantity: number }[],
 ): Promise<CouponPreviewResult> {
   const isEn = (await getServerLang()) === "en";
   const clean = typeof code === "string" ? code.trim().toUpperCase() : "";
@@ -38,10 +49,10 @@ export async function previewCoupon(
     resolveActiveStoreOrDefault(),
   ]);
   const { data, error } = await db
-    .rpc("validate_coupon", {
+    .rpc("quote_checkout_coupon", {
       p_code: clean,
-      p_subtotal: subtotal,
-      p_store_id: store.id,
+      p_lines: lines,
+      p_store: store.id,
     })
     .maybeSingle<{
       valid: boolean;
@@ -51,6 +62,7 @@ export async function previewCoupon(
       discount_value: number;
       discount_amount: number;
       min_order_amount: number;
+      subtotal: number;
     }>();
 
   if (error || !data) {
@@ -96,6 +108,7 @@ export async function previewCoupon(
   return {
     valid: true,
     code: data.code,
+    subtotal: Number(data.subtotal),
     discountAmount: Number(data.discount_amount ?? 0),
     message: isEn
       ? `Coupon (${data.code}) applied successfully.`
@@ -113,6 +126,7 @@ export async function checkout(
   customerName?: string,
   useWallet = false,
   delivery?: { governorate: string; lat: number | null; lng: number | null },
+  expectedTotal?: number,
 ): Promise<CheckoutResult> {
   const isEn = (await getServerLang()) === "en";
   const shippingAddress = typeof address === "string" ? address.trim() : "";
@@ -136,7 +150,7 @@ export async function checkout(
         ? "cod"
         : payment.trim().toLowerCase()
       : "";
-  const allowedPayments = new Set(["cod", "paymob_card", "paymob_wallet", "wallet"]);
+  const allowedPayments = new Set(["cod", "paymob_card", "paymob_wallet", "wallet", "coupon"]);
   if (
     !Array.isArray(lines) ||
     !lines.length ||
@@ -162,8 +176,14 @@ export async function checkout(
     serverDb(),
     resolveActiveStoreOrDefault(),
   ]);
+  if (typeof expectedTotal !== "number" || !Number.isFinite(expectedTotal)) return { error: isEn ? "Review your order total." : "راجع إجمالي الطلب." };
+  const origin = (await headers()).get(REQUEST_ORIGIN_HEADER);
+  const release = await adminDb().rpc("release_expired_unpaid_orders", { p_store: store.id, p_limit: 50 });
+  if (release.error) return { error: isEn ? "Checkout is temporarily unavailable." : "تعذر إتمام الشراء حالياً." };
   const { data, error } = await db
-    .rpc("checkout_delivery", {
+    .rpc("checkout_reviewed", {
+      p_expected_total: expectedTotal,
+      p_checkout_base: origin ? origin + store.basePath : null,
       p_delivery: delivery ?? {},
       request_key: request,
       address: shippingAddress,
@@ -175,12 +195,14 @@ export async function checkout(
       p_use_wallet: Boolean(useWallet) || normalizedPayment === "wallet",
       p_store_id: store.id,
     })
-    .single<{ order_number: string; amount: number; order_currency: string }>();
+    .single<{ order_number: string; amount: number; order_currency: string; method: string; pay_status: string; fulfillment: string; expires_at: string | null; created: boolean; guest: boolean }>();
 
   if (error || !data) {
     const quota = quotaFailure(error);
     if (quota?.resource === "orders") return { error: quotaMessage("orders", isEn ? "en" : "ar") };
     switch (error?.message) {
+      case "checkout_quote_changed":
+        return { changedTotal: Number(error?.details), error: isEn ? "The total changed. Review the new amount before confirming." : "تغيّر الإجمالي. راجع المبلغ الجديد قبل التأكيد." };
       case "store_suspended":
         return {
           error: isEn
@@ -195,6 +217,7 @@ export async function checkout(
         };
       case "payment_method_disabled":
         return {
+          refreshQuote: true,
           error: isEn
             ? "Selected payment method is currently unavailable."
             : "طريقة الدفع المختارة غير متاحة حالياً.",
@@ -219,8 +242,11 @@ export async function checkout(
             ? "Product options changed. Please re-select from the store."
             : "تغيّرت خيارات المنتج. أعد اختياره من المتجر.",
         };
+      case "coupon_does_not_cover_order":
+        return { refreshQuote: true, changedTotal: Number(error?.details), error: isEn ? "The coupon no longer covers the full order. Review your updated total." : "لم يعد الكوبون يغطي كامل الطلب. راجع الإجمالي المحدّث." };
       case "invalid_coupon":
         return {
+          refreshQuote: true,
           error: isEn
             ? "Promo code is no longer valid. Remove it or try another."
             : "كود الخصم لم يعد صالحاً. أزله أو جرّب كوداً آخر.",
@@ -243,11 +269,12 @@ export async function checkout(
     };
   }
   // Fire-and-forget bilingual notifications (customer confirmation, admin alert, low-stock alerts)
-  void notifyOrderCreated(data.order_number);
+  await rememberCheckout(store.id, data.order_number, data.guest);
+  if (data.created) void notifyOrderCreated(data.order_number);
 
   return {
     id: data.order_number,
-    total: data.amount,
+    total: Number(data.amount), method: data.method, paymentStatus: data.pay_status, status: data.fulfillment, expiresAt: data.expires_at,
     currency: data.order_currency,
   };
 }

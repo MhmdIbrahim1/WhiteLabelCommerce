@@ -32,7 +32,7 @@ import {
 import type { ProductReview } from "@/lib/reviews-wishlist";
 import { resolveEffectivePrice } from "@/lib/flash-sale";
 import { normalizeSpecs } from "@/lib/specs";
-import { nextOrder, nextTicket, pagination } from "@/lib/workflow";
+import { nextTicket, pagination } from "@/lib/workflow";
 import { directoryHref, isRecordId } from "@/lib/workspace-directory";
 import { numberField, quickProductChange } from "@/lib/catalog-quick-edit";
 import { safeRelativePath, validateImageMagicBytes } from "@/lib/security";
@@ -371,14 +371,17 @@ async function applyOrderUpdate(f: FormData, expectedStore?: string) {
     status = text(f, "status");
   if (expectedStore && storeId !== expectedStore) return false;
 
-  const allowSameShippedEdit = prev === "shipped" && status === "shipped";
-  if (
-    !id ||
-    !Object.hasOwn(nextOrder, prev) ||
-    (!allowSameShippedEdit && !nextOrder[prev].includes(status))
-  ) {
-    return false;
-  }
+  if (!isRecordId(id)) return false;
+  const current = await db.from("orders").select("status,subtotal,payment_method,payment_status")
+    .eq("store_id", storeId).eq("id", id).eq("status", prev).maybeSingle();
+  if (current.error || !current.data) return false;
+  const o = current.data;
+  const allowed = await db.rpc("allowed_order_transitions", {
+    p_status: o.status, p_method: o.payment_method,
+    p_payment: o.payment_status, p_priced: o.subtotal !== null
+  });
+  const sameShipping = prev === "shipped" && status === "shipped";
+  if (allowed.error || (!sameShipping && !allowed.data?.includes(status))) return false;
 
   const updatePayload: Record<string, unknown> = { status };
 

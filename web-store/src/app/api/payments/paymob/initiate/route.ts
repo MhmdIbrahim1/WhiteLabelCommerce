@@ -1,3 +1,5 @@
+import { guestOwnsReceipt } from "@/lib/order-receipt";
+import { REQUEST_ORIGIN_HEADER } from "@/lib/tenant-shared";
 import { serverDb } from "@/lib/db";
 import { adminDb } from "@/lib/supabase/admin";
 import { resolveActiveStoreOrDefault } from "@/lib/tenant";
@@ -49,6 +51,7 @@ type StoreFlagsRow = {
 type PaymentSecretsRow = {
   store_id: string;
   paymob_api_key: string | null;
+  paymob_hmac_secret: string | null;
   paymob_card_integration_id: string | null;
   paymob_wallet_integration_id: string | null;
   paymob_iframe_id: string | null;
@@ -80,7 +83,8 @@ function phonesMatch(a: string | null | undefined, b: string | null | undefined)
 export async function POST(req: Request) {
   let body: InitiateBody;
   try {
-    body = (await req.json()) as InitiateBody;
+    body = await req.json();
+    if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("Invalid payload");
   } catch {
     return Response.json(
       { error: "Invalid JSON payload." },
@@ -140,6 +144,7 @@ export async function POST(req: Request) {
       .select(
         "id,store_id,user_id,guest_tracking,status,total,currency,payment_method,payment_status,phone,shipping_address,customer_id",
       )
+      .eq("store_id", activeStore.id)
       .eq("id", orderId)
       .maybeSingle<OrderRow>();
 
@@ -169,8 +174,7 @@ export async function POST(req: Request) {
     } else {
       const verifiedGuestPhone =
         order.guest_tracking === true &&
-        (phonesMatch(callerPhone, order.phone) ||
-          (method === "wallet" && phonesMatch(walletPhone, order.phone)));
+        (phonesMatch(callerPhone, order.phone) || (method === "wallet" && phonesMatch(walletPhone, order.phone)) || await guestOwnsReceipt(order.store_id, order.id));
       if (!verifiedGuestPhone) {
         return Response.json(
           { error: "Guest phone verification required." },
@@ -225,7 +229,7 @@ export async function POST(req: Request) {
       db
         .from("store_payment_secrets")
         .select(
-          "store_id,paymob_api_key,paymob_card_integration_id,paymob_wallet_integration_id,paymob_iframe_id",
+          "store_id,paymob_api_key,paymob_hmac_secret,paymob_card_integration_id,paymob_wallet_integration_id,paymob_iframe_id",
         )
         .eq("store_id", order.store_id)
         .maybeSingle<PaymentSecretsRow>(),
@@ -233,6 +237,7 @@ export async function POST(req: Request) {
         ? db
             .from("store_customers")
             .select("full_name,email,phone")
+          .eq("store_id", order.store_id)
             .eq("id", order.customer_id)
             .maybeSingle<CustomerRow>()
         : Promise.resolve({ data: null, error: null }),
@@ -269,86 +274,62 @@ export async function POST(req: Request) {
         : (secrets?.paymob_wallet_integration_id?.trim() ?? "");
     const iframeId = secrets?.paymob_iframe_id?.trim() ?? "";
 
-    if (!apiKey || !integrationId || (method === "card" && !iframeId)) {
+    if (!apiKey || !secrets?.paymob_hmac_secret?.trim() || !/^\d+$/.test(integrationId) || (method === "card" && !/^\d+$/.test(iframeId))) {
       return Response.json(
         { error: "Payment gateway credentials are incomplete." },
         { status: 503, headers: { "Cache-Control": "no-store" } },
       );
     }
 
-    // 1. Paymob Auth Token
-    const authToken = await authenticatePaymob(apiKey);
-
-    // 2. Register Paymob Order (unique merchant_order_id supports safe payment retries)
-    const merchantOrderId = `${order.id}__${Date.now()}`;
-    const paymobOrderId = await registerPaymobOrder({
-      authToken,
-      amountCents,
-      merchantOrderId,
-      currency,
+    const json = (body: object, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
+    const paymentMethod = method === "card" ? "paymob_card" : "paymob_wallet";
+    const origin = req.headers.get(REQUEST_ORIGIN_HEADER);
+    const reservation = await db.rpc("reserve_paymob_attempt", {
+      p_store: order.store_id, p_order: order.id,
+      p_method: paymentMethod, p_checkout_base: origin ? origin + activeStore.basePath : null
     });
-
-    const nextPaymentMethod =
-      method === "card" ? "paymob_card" : "paymob_wallet";
-
-    // Record attempt cleanly in payment_attempts so every initiated paymob_order_id remains resolvable
-    await db
-      .from("payment_attempts")
-      .insert({
-        store_id: order.store_id,
-        order_id: order.id,
-        paymob_order_id: paymobOrderId,
-        payment_method: nextPaymentMethod,
-      })
-      .then(() => undefined, () => undefined);
-
-    await db
-      .from("orders")
-      .update({
-        paymob_order_id: paymobOrderId,
-        payment_method: nextPaymentMethod,
-        payment_status: "pending",
-      })
-      .eq("id", order.id)
-      .eq("store_id", order.store_id)
-      .neq("payment_status", "paid")
-      .not("status", "in", "(cancelled,delivered)");
-
-    // 3. Payment Key with safe fallback billing data
-    const customer = customerRes.data;
-    const paymentToken = await requestPaymobPaymentKey({
-      authToken,
-      amountCents,
-      paymobOrderId,
-      integrationId,
-      currency,
-      customerName: customer?.full_name,
-      customerEmail: customer?.email,
-      customerPhone: customer?.phone || order.phone,
-      shippingAddress: order.shipping_address,
-    });
-
-    if (method === "card") {
-      const redirectUrl = `https://accept.paymob.com/api/acceptance/iframes/${encodeURIComponent(iframeId)}?payment_token=${encodeURIComponent(paymentToken)}`;
-      return Response.json(
-        { redirect_url: redirectUrl },
-        { status: 200, headers: { "Cache-Control": "no-store" } },
-      );
+    const a = reservation.data;
+    if (reservation.error || !a) return json({ error: "Payment reservation unavailable." }, reservation.error?.code === "P0001" ? 409 : 503);
+    if (a.action === "redirect") return json({ redirect_url: a.redirect_url });
+    if (a.action === "pending") return json({ state: "pending", pending_wallet_prompt: true }, 202);
+    if (a.action === "busy") return json({ state: "processing" }, 202);
+    if (a.action !== "start" || !UUID_RE.test(a.attempt) || !UUID_RE.test(a.lease)) return json({ error: "Missing reservation." }, 503);
+    const ids = { p_store: order.store_id, p_order: order.id, p_attempt: a.attempt, p_lease: a.lease };
+    async function advance(step: string, url?: string) {
+      const result = await db.rpc("advance_paymob_attempt", { ...ids, p_step: step, p_url: url ?? null });
+      if (result.error || result.data !== true) throw new Error("Attempt changed");
     }
-
-    const walletRedirect = await payPaymobWallet({
-      paymentToken,
-      walletPhone,
-    });
-
-    return Response.json(
-      { redirect_url: walletRedirect, pending_wallet_prompt: true },
-      { status: 200, headers: { "Cache-Control": "no-store" } },
-    );
-  } catch (err) {
-    console.error("Paymob initiate failed", {
-      code: err instanceof Error ? err.message : "unknown",
-    });
+    let walletSent = false;
+    try {
+      const authToken = await authenticatePaymob(apiKey);
+      const cents = Number(a.amount_cents);
+      if (!Number.isSafeInteger(cents) || cents !== amountCents || a.currency !== currency) throw new Error("Order changed");
+      const provider = a.provider ?? await registerPaymobOrder({ authToken, amountCents: cents, currency, merchantOrderId: a.attempt });
+      const bound = await db.rpc("bind_paymob_attempt", { ...ids, p_provider: provider });
+      if (bound.error || bound.data !== true) throw new Error("Missing durable binding");
+      const customer = customerRes.data;
+      const paymentToken = await requestPaymobPaymentKey({
+        authToken, amountCents: cents, paymobOrderId: provider, integrationId, currency,
+        expiration: Math.floor((Date.parse(a.expires_at) - Date.now()) / 1000), customerName: customer?.full_name,
+        customerEmail: customer?.email, customerPhone: customer?.phone || order.phone, shippingAddress: order.shipping_address
+      });
+      if (method === "card") {
+        const redirect = `https://accept.paymob.com/api/acceptance/iframes/${encodeURIComponent(iframeId)}?payment_token=${encodeURIComponent(paymentToken)}`;
+        await advance("ready", redirect);
+        return json({ redirect_url: redirect });
+      }
+      await advance("charging");
+      walletSent = true;
+      const wallet = await payPaymobWallet({ paymentToken, walletPhone });
+      await advance(wallet.state, wallet.url);
+      if (wallet.state === "failed") return json({ state: "failed" }, 422);
+      return wallet.state === "ready" ? json({ redirect_url: wallet.url }) : json({ state: "pending", pending_wallet_prompt: true }, 202);
+    } catch {
+      if (walletSent) return json({ state: "pending", pending_wallet_prompt: true }, 202);
+      await advance("release").catch(() => undefined);
+      return json({ error: "Payment initiation unavailable." }, 502);
+    }
+  } catch {
     return Response.json(
       { error: "Unable to initiate online payment right now." },
       { status: 502, headers: { "Cache-Control": "no-store" } },

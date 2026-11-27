@@ -185,7 +185,7 @@ export async function proxy(request: NextRequest) {
   } else if (request.cookies.getAll().some(c => c.name.startsWith("sb-"))) {
     await db.auth.getUser();
   }
-  if (invite || request.nextUrl.searchParams.get("next")?.startsWith("/invite/")) response.headers.set("Referrer-Policy", "no-referrer");
+  if (path === "/orders/return" || invite || request.nextUrl.searchParams.get("next")?.startsWith("/invite/")) response.headers.set("Referrer-Policy", "no-referrer");
   if (cookieSlug && request.cookies.get(STORE_SLUG_COOKIE)?.value !== cookieSlug) {
     response.cookies.set(STORE_SLUG_COOKIE, cookieSlug, { path: "/", sameSite: "lax", httpOnly: true, secure: scheme === "https" });
   }

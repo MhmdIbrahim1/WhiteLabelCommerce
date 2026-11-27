@@ -31,6 +31,7 @@ export type Summary = {
   phone?: string | null;
   payment_method?: string | null;
   payment_status?: string | null;
+  reservation_expires_at?: string | null;
   shipping_carrier?: string | null;
   tracking_number?: string | null;
   tracking_url?: string | null;
@@ -61,6 +62,12 @@ export async function track(
   const { data, error } = await db
     .rpc("track_guest_order", { p_store_id: store.id, order_number: id, customer_phone: phone })
     .maybeSingle<Summary>();
+  if (!error && data && ["paymob_card", "paymob_wallet"].includes(data.payment_method ?? "")) {
+    const { rememberCheckout, authorizedReceipt } = await import("@/lib/order-receipt");
+    await rememberCheckout(store.id, id, true);
+    const receipt = await authorizedReceipt(store.id, id);
+    if (receipt) data.reservation_expires_at = receipt.reservation_expires_at;
+  }
   return error
     ? {
         error: isEn
@@ -94,7 +101,14 @@ export async function switchOrderToCodAction(
     resolveActiveStoreOrDefault(),
   ]);
   const storeId = store.id;
-  const phone = normalizePhone(phoneRaw ?? "");
+  let phone = normalizePhone(phoneRaw ?? "");
+  const { guestOwnsReceipt, rememberCheckout } = await import("@/lib/order-receipt");
+  if (!phone && await guestOwnsReceipt(storeId, cleanId)) {
+    const { adminDb } = await import("@/lib/supabase/admin");
+    const verified = await adminDb().from("orders").select("phone").eq("store_id", storeId).eq("id", cleanId)
+      .eq("guest_tracking", true).is("user_id", null).maybeSingle();
+    phone = verified.data?.phone ?? "";
+  }
 
   const { data, error } = await db
     .rpc("switch_order_to_cod", {
@@ -104,7 +118,7 @@ export async function switchOrderToCodAction(
     })
     .maybeSingle<{ status: string }>();
 
-  if (error) {
+  if (error || !data) {
     return {
       ok: false,
       error: isEn
@@ -113,6 +127,7 @@ export async function switchOrderToCodAction(
     };
   }
 
+  if (phone) await rememberCheckout(storeId, cleanId, true);
   revalidatePath("/orders");
   revalidatePath("/account");
   revalidatePath("/admin/orders");

@@ -4,7 +4,8 @@ import { formatOrderNumber } from "@/lib/order-number";
 import { showToast, ToastFeedback } from "@/components/floating-toast";
 import { useActionState, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { OrderBadges, OrderPaymentControls } from "./order-payment-controls";
+import type { PaymentOptions } from "@/lib/order-payment";
 import {
   Truck,
   Copy,
@@ -13,162 +14,38 @@ import {
   Clock3,
   FileText,
   Package,
-  RefreshCw,
-  CreditCard,
-  Smartphone,
-  Banknote,
   XCircle,
   CheckCircle2,
-  X,
   ArrowUpRight,
 } from "lucide-react";
 import {
   track,
-  switchOrderToCodAction,
   type Summary,
 } from "@/app/(shop)/orders/actions";
-import { orderStatusLabel, translateColor } from "@/lib/i18n";
+import { translateColor } from "@/lib/i18n";
 import { date } from "@/lib/brand";
 import { useLanguage } from "@/components/language-provider";
 import { isSafeHttpUrl, localizeCarrierLabel } from "@/lib/shipping";
 import { OrderReturnPanel } from "./order-return-panel";
-import {
-  clearPendingOnlineOrder,
-  setPendingOnlineOrder,
-  useCartTenant,
-} from "./cart-store";
-
-const EGYPT_WALLET_RE = /^01[0125][0-9]{8}$/;
-
-type RetryOption = "paymob_card" | "paymob_wallet" | "cod";
-
 export function Timeline({
   row,
   index = 0,
   detailHref,
   currency = "EGP",
-  hideReturnPanel = false,
+  hideReturnPanel = false, options, basePath,
 }: {
   row: Summary;
   index?: number;
   detailHref?: string;
   currency?: string;
   hideReturnPanel?: boolean;
+  options: PaymentOptions; basePath: string;
 }) {
-  const router = useRouter();
-  const tenantId = useCartTenant();
   const { lang, t } = useLanguage();
   const isEn = lang === "en";
   const [copiedId, setCopiedId] = useState(false);
   const [copiedAwb, setCopiedAwb] = useState(false);
-  const [retryOpen, setRetryOpen] = useState(false);
-  const [retryChoice, setRetryChoice] = useState<RetryOption>(
-    (row.payment_method ?? "").toLowerCase() === "paymob_wallet"
-      ? "paymob_wallet"
-      : "paymob_card",
-  );
-  const [retrying, setRetrying] = useState(false);
-  const [retryError, setRetryError] = useState<string | null>(null);
-  const [walletPhone, setWalletPhone] = useState(
-    row.phone && EGYPT_WALLET_RE.test(row.phone) ? row.phone : "",
-  );
-  const [localOverride, setLocalOverride] = useState<{
-    status: string;
-    payment_method: string;
-    payment_status: string;
-  } | null>(null);
-  const [codBanner, setCodBanner] = useState(false);
-
-  const effectiveStatus = localOverride?.status ?? row.status;
-  const effectiveMethod = (
-    localOverride?.payment_method ??
-    row.payment_method ??
-    "cod"
-  ).toLowerCase();
-  const effectivePaymentStatus = (
-    localOverride?.payment_status ??
-    row.payment_status ??
-    ""
-  ).toLowerCase();
-
-  const canRetryOnlinePayment =
-    effectiveStatus !== "cancelled" &&
-    effectiveStatus !== "delivered" &&
-    (effectiveMethod === "paymob_card" ||
-      effectiveMethod === "paymob_wallet") &&
-    (effectivePaymentStatus === "pending" ||
-      effectivePaymentStatus === "failed");
-
-  const handleConfirmRetry = async () => {
-    setRetryError(null);
-
-    if (retryChoice === "cod") {
-      setRetrying(true);
-      try {
-        const res = await switchOrderToCodAction(row.id, row.phone ?? "");
-        if (!res.ok) {
-          setRetryError(
-            res.error ??
-              (isEn
-                ? "Could not switch to Cash on Delivery."
-                : "تعذر التحويل إلى الدفع عند الاستلام."),
-          );
-          setRetrying(false);
-          return;
-        }
-        clearPendingOnlineOrder(tenantId);
-        setLocalOverride({
-          status: res.status ?? "confirmed",
-          payment_method: "cod",
-          payment_status: "cod_pending",
-        });
-        setRetryOpen(false);
-        setCodBanner(true);
-        router.refresh();
-      } catch {
-        setRetryError(
-          isEn
-            ? "Could not switch to Cash on Delivery."
-            : "تعذر التحويل إلى الدفع عند الاستلام.",
-        );
-      } finally {
-        setRetrying(false);
-      }
-      return;
-    }
-
-    const method = retryChoice === "paymob_wallet" ? "wallet" : "card";
-    const cleanWallet = walletPhone.replace(/\s+/g, "");
-    if (method === "wallet" && !EGYPT_WALLET_RE.test(cleanWallet)) {
-      setRetryError(t("paymentWalletPhoneError"));
-      return;
-    }
-
-    setRetrying(true);
-    try {
-      setPendingOnlineOrder(tenantId, row.id);
-      const res = await fetch("/api/payments/paymob/initiate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          order_id: row.id,
-          method,
-          wallet_phone: method === "wallet" ? cleanWallet : undefined,
-          customer_phone: row.phone ?? undefined,
-        }),
-      });
-      const data = (await res.json()) as { redirect_url?: string };
-      if (!res.ok || !data.redirect_url) {
-        setRetryError(t("paymentRetryError"));
-        setRetrying(false);
-        return;
-      }
-      window.location.assign(data.redirect_url);
-    } catch {
-      setRetryError(t("paymentRetryError"));
-      setRetrying(false);
-    }
-  };
+  const effectiveStatus = row.status;
 
   const stages = [
     { key: "pending", ar: "قيد الانتظار", en: "Pending", icon: Clock3 },
@@ -208,23 +85,6 @@ export function Timeline({
       }
     } catch {}
   };
-
-  const paymentBadge = (() => {
-    if (effectiveMethod === "wallet" && effectivePaymentStatus === "paid")
-      return {
-        tone: "paid",
-        label: isEn ? "Paid via Wallet" : "مدفوع بالمحفظة",
-      };
-    if (effectivePaymentStatus === "paid")
-      return { tone: "paid", label: t("paymentStatusPaid") };
-    if (effectivePaymentStatus === "failed")
-      return { tone: "failed", label: t("paymentStatusFailed") };
-    if (effectivePaymentStatus === "refunded")
-      return { tone: "refunded", label: t("paymentStatusRefunded") };
-    if (effectivePaymentStatus === "cod_pending" || effectiveMethod === "cod")
-      return { tone: "cod", label: t("paymentStatusCod") };
-    return { tone: "pending", label: t("paymentStatusPending") };
-  })();
 
   return (
     <article
@@ -268,26 +128,8 @@ export function Timeline({
             <Clock3 size={12} /> <bdi dir="ltr">{date(row.created_at, lang)}</bdi>
           </small>
         </div>
-        <div className="order-badges-cluster">
-          <span
-            className="payment-status-badge"
-            data-payment-status={paymentBadge.tone}
-          >
-            {paymentBadge.label}
-          </span>
-          <span className="order-status-badge" data-status={effectiveStatus}>
-            {orderStatusLabel(effectiveStatus, lang)}
-          </span>
-        </div>
+        <OrderBadges order={row} />
       </div>
-
-      {codBanner && (
-        <p className="account-notice account-notice--ok" role="status">
-          {isEn
-            ? "Switched to Cash on Delivery! Your order is now confirmed and being processed."
-            : "تم تحويل الطلب إلى الدفع عند الاستلام بنجاح! طلبك الآن مؤكد وقيد التجهيز."}
-        </p>
-      )}
 
       {/* Animated Order Status Tracker */}
       {isCancelled ? (
@@ -368,132 +210,7 @@ export function Timeline({
         </div>
       )}
 
-      {canRetryOnlinePayment && (
-        <div className="order-retry-payment-box">
-          {!retryOpen ? (
-            <button
-              type="button"
-              className="order-retry-payment-btn"
-              onClick={() => {
-                setRetryOpen(true);
-                setRetryError(null);
-              }}
-            >
-              <RefreshCw size={14} />
-              <span>{t("paymentRetryBtn")}</span>
-            </button>
-          ) : (
-            <div className="retry-method-sheet" role="dialog" aria-label={isEn ? "Choose payment method" : "اختر طريقة الدفع"}>
-              <div className="retry-sheet-head">
-                <strong>
-                  {isEn
-                    ? "Retry or Switch Payment Method"
-                    : "إعادة الدفع أو تغيير طريقة الدفع"}
-                </strong>
-                <button
-                  type="button"
-                  className="icon-ghost-btn"
-                  aria-label={isEn ? "Close" : "إغلاق"}
-                  onClick={() => {
-                    setRetryOpen(false);
-                    setRetryError(null);
-                  }}
-                >
-                  <X size={15} />
-                </button>
-              </div>
-
-              <div className="retry-options-grid">
-                <label className={`retry-option-card ${retryChoice === "paymob_card" ? "is-selected" : ""}`}>
-                  <input
-                    type="radio"
-                    name={`retry-${row.id}`}
-                    checked={retryChoice === "paymob_card"}
-                    onChange={() => {
-                      setRetryChoice("paymob_card");
-                      setRetryError(null);
-                    }}
-                  />
-                  <CreditCard size={17} aria-hidden="true" />
-                  <span>{isEn ? "Credit / Debit Card" : "بطاقة بنكية (فيزا / ماستركارد)"}</span>
-                </label>
-
-                <label className={`retry-option-card ${retryChoice === "paymob_wallet" ? "is-selected" : ""}`}>
-                  <input
-                    type="radio"
-                    name={`retry-${row.id}`}
-                    checked={retryChoice === "paymob_wallet"}
-                    onChange={() => {
-                      setRetryChoice("paymob_wallet");
-                      setRetryError(null);
-                    }}
-                  />
-                  <Smartphone size={17} aria-hidden="true" />
-                  <span>{isEn ? "Mobile Wallet" : "محفظة إلكترونية"}</span>
-                </label>
-
-                <label className={`retry-option-card ${retryChoice === "cod" ? "is-selected" : ""}`}>
-                  <input
-                    type="radio"
-                    name={`retry-${row.id}`}
-                    checked={retryChoice === "cod"}
-                    onChange={() => {
-                      setRetryChoice("cod");
-                      setRetryError(null);
-                    }}
-                  />
-                  <Banknote size={17} aria-hidden="true" />
-                  <span>{isEn ? "Cash on Delivery (COD)" : "الدفع عند الاستلام"}</span>
-                </label>
-              </div>
-
-              {retryChoice === "paymob_wallet" && (
-                <label className="order-retry-wallet-label">
-                  <span>{t("paymentWalletPhoneLabel")}</span>
-                  <input
-                    type="tel"
-                    dir="ltr"
-                    inputMode="numeric"
-                    maxLength={11}
-                    value={walletPhone}
-                    onChange={(e) => {
-                      setWalletPhone(e.target.value.replace(/\D/g, "").slice(0, 11));
-                      if (retryError) setRetryError(null);
-                    }}
-                    placeholder={t("paymentWalletPhonePlaceholder")}
-                  />
-                </label>
-              )}
-
-              <button
-                type="button"
-                className="order-retry-payment-btn"
-                disabled={retrying}
-                onClick={handleConfirmRetry}
-              >
-                <RefreshCw size={14} className={retrying ? "spin-icon" : undefined} />
-                <span>
-                  {retrying
-                    ? t("paymentRetryingBtn")
-                    : retryChoice === "cod"
-                      ? isEn
-                        ? "Confirm Cash on Delivery"
-                        : "تأكيد الدفع عند الاستلام"
-                      : isEn
-                        ? "Continue to Payment"
-                        : "متابعة إلى بوابة الدفع"}
-                </span>
-              </button>
-
-              {retryError && (
-                <small role="alert" className="wallet-error-text">
-                  {retryError}
-                </small>
-              )}
-            </div>
-          )}
-        </div>
-      )}
+      <OrderPaymentControls order={row} options={options} basePath={basePath} phone={row.phone} />
 
       {hasShippingInfo && (
         <div className="customer-shipping-card">
@@ -560,7 +277,7 @@ export function Timeline({
   );
 }
 
-export function GuestTracking() {
+export function GuestTracking({ options, basePath }: { options: PaymentOptions; basePath: string }) {
   const { t, lang } = useLanguage();
   const [state, action, busy] = useActionState(track, {});
   return (
@@ -586,7 +303,7 @@ export function GuestTracking() {
         </button>
       </form>
       {state.error && <ToastFeedback message={state.error} kind="error" />}
-      {state.row && <Timeline row={state.row} />}
+      {state.row && <Timeline row={state.row} options={options} basePath={basePath} />}
     </section>
   );
 }

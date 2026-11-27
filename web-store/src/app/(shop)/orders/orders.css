@@ -36,3 +36,11 @@
   unicode-bidi: isolate;
   font-variant-numeric: tabular-nums;
 }
+
+.history-heading, .history-card .order-badges-cluster { flex-wrap: wrap; }
+.order-badges-cluster { display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; }
+.order-retry-payment-box { display:grid; gap:.65rem; min-inline-size:0; }
+.order-retry-payment-box label { display:grid; gap:.3rem; max-inline-size:24rem; }
+.order-retry-payment-box :is(button,select,input) { min-block-size:44px; }
+.order-retry-payment-box button { cursor:pointer; }
+@media print { .order-retry-payment-box { display:none; } }

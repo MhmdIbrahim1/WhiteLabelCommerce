@@ -10,13 +10,6 @@ export const tickets: Record<string, string> = {
   in_progress: "قيد المتابعة",
   closed: "تم الحل",
 };
-export const nextOrder: Record<string, string[]> = {
-  pending: ["confirmed", "cancelled"],
-  confirmed: ["shipped", "cancelled"],
-  shipped: ["delivered", "cancelled"],
-  delivered: [],
-  cancelled: [],
-};
 export const nextTicket: Record<string, string[]> = {
   open: ["in_progress"],
   in_progress: ["closed"],
