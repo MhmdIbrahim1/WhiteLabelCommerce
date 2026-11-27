@@ -1,9 +1,10 @@
 import { serverDb } from "@/lib/db";
 import { adminDb } from "@/lib/supabase/admin";
-import { settings } from "@/lib/shop";
+import { STORE_ID_HEADER } from "@/lib/tenant-shared";
 
 export async function POST(req: Request) {
   let body: {
+    storeId?: unknown;
     guest_session_id?: unknown;
     item_count?: unknown;
     subtotal?: unknown;
@@ -15,6 +16,9 @@ export async function POST(req: Request) {
   } catch {
     return Response.json({ ok: false }, { status: 400 });
   }
+
+  const storeId = req.headers.get(STORE_ID_HEADER);
+  if (!storeId || body?.storeId !== storeId) return Response.json({ ok: false }, { status: 403 });
 
   const guestId =
     typeof body.guest_session_id === "string"
@@ -38,7 +42,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const [db, store] = await Promise.all([serverDb(), settings()]);
+    const db = await serverDb();
     const {
       data: { user },
     } = await db.auth.getUser();
@@ -47,7 +51,7 @@ export async function POST(req: Request) {
     const { data: existing } = await srv
       .from("cart_sessions")
       .select("id,user_id")
-      .eq("store_id", store.storeId)
+      .eq("store_id", storeId)
       .eq("guest_session_id", guestId)
       .maybeSingle<{ id: string; user_id: string | null }>();
 
@@ -58,7 +62,7 @@ export async function POST(req: Request) {
 
     await srv.from("cart_sessions").upsert(
       {
-        store_id: store.storeId,
+        store_id: storeId,
         user_id: user?.id ?? existing?.user_id ?? null,
         guest_session_id: guestId,
         push_token: pushToken,

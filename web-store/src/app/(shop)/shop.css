@@ -3600,12 +3600,6 @@
   box-shadow: none;
 }
 
-.shop .wishlist-card-removing {
-  opacity: 0;
-  transform: scale(0.95);
-  transition: opacity 180ms ease, transform 180ms ease;
-}
-
 /* =========================================================
    Scannable Product Detail Reviews Section
    ========================================================= */

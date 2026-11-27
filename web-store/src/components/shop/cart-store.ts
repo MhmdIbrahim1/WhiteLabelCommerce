@@ -5,10 +5,12 @@ import {
   createElement,
   useCallback,
   useContext,
+  useLayoutEffect,
   useMemo,
   useSyncExternalStore,
 } from "react";
 import { browserDb } from "@/lib/supabase/browser";
+import { createCartHeartbeat } from "@/lib/cart-heartbeat";
 import type { Variant } from "@/lib/variant-stock";
 import { lineEffectivePrice, resolveEffectivePrice, type FlashSalePriceInput } from "@/lib/flash-sale";
 import { remainingQuantity } from "@/lib/variant-stock";
@@ -51,7 +53,7 @@ const legacyExactKeys = [
   "nova.pending_online_order",
 ];
 const memory = new Map<string, string>();
-const heartbeatTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const heartbeats = new Map<string, ReturnType<typeof createCartHeartbeat>>();
 const contactCache = new Map<string, CartContact>();
 const fallbackCartSessions = new Map<string, string>();
 const fallbackGuestSessions = new Map<string, string>();
@@ -98,14 +100,25 @@ function randomSessionId(prefix: string): string {
 }
 
 export function CartTenantProvider({
-  storeId, defaultMaxOrderQty,
+  storeId, slug, defaultMaxOrderQty,
   children,
 }: {
   storeId: string;
+  slug: string;
   defaultMaxOrderQty: number | null;
   children: React.ReactNode;
 }) {
   const value = useMemo(() => ({ id: requireTenantId(storeId), defaultLimit: defaultMaxOrderQty }), [storeId, defaultMaxOrderQty]);
+  useLayoutEffect(() => {
+    const heartbeat = createCartHeartbeat(storeId, slug);
+    heartbeats.set(storeId, heartbeat);
+    window.addEventListener("pagehide", heartbeat.cancel);
+    return () => {
+      heartbeat.cancel();
+      window.removeEventListener("pagehide", heartbeat.cancel);
+      if (heartbeats.get(storeId) === heartbeat) heartbeats.delete(storeId);
+    };
+  }, [storeId, slug]);
   return createElement(
     CartTenantContext.Provider,
     { value },
@@ -198,12 +211,8 @@ function snapshot(tenantId: string, preview = false): string {
 }
 
 function scheduleCartHeartbeat(tenantId: string, rows: Line[]) {
-  if (typeof window === "undefined") return;
   const cleanTenant = requireTenantId(tenantId);
-  const existing = heartbeatTimers.get(cleanTenant);
-  if (existing) clearTimeout(existing);
-  const timer = setTimeout(() => {
-    heartbeatTimers.delete(cleanTenant);
+  heartbeats.get(cleanTenant)?.schedule(() => {
     const itemCount = rows.reduce((sum, l) => sum + l.quantity, 0);
     const subtotal = rows.reduce(
       (sum, l) => sum + lineEffectivePrice(l) * l.quantity,
@@ -211,17 +220,6 @@ function scheduleCartHeartbeat(tenantId: string, rows: Line[]) {
     );
     const locale = document.documentElement.lang === "en" ? "en" : "ar";
     const contact = contactCache.get(cleanTenant) ?? {};
-
-    void fetch("/api/notifications/cart-heartbeat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        guest_session_id: getGuestSessionId(cleanTenant),
-        item_count: itemCount,
-        subtotal,
-        locale,
-      }),
-    }).catch(() => {});
 
     const serializedItems = rows.map((l) => ({
       id: l.id,
@@ -233,10 +231,9 @@ function scheduleCartHeartbeat(tenantId: string, rows: Line[]) {
       color: l.color || null,
     }));
 
-    void fetch("/api/abandoned-cart", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    return {
+      notification: { guest_session_id: getGuestSessionId(cleanTenant), item_count: itemCount, subtotal, locale },
+      abandoned: {
         action: "upsert",
         session_key: getCartSessionKey(cleanTenant),
         items: serializedItems,
@@ -246,10 +243,9 @@ function scheduleCartHeartbeat(tenantId: string, rows: Line[]) {
         customer_name: contact.name || null,
         customer_email: contact.email || null,
         customer_phone: contact.phone || null,
-      }),
-    }).catch(() => {});
-  }, 1500);
-  heartbeatTimers.set(cleanTenant, timer);
+      },
+    };
+  });
 }
 
 export function syncAbandonedCartContact(
@@ -280,20 +276,10 @@ export function markWebCartRecovered(
 ) {
   if (typeof window === "undefined") return;
   const cleanTenant = requireTenantId(tenantId);
-  const timer = heartbeatTimers.get(cleanTenant);
-  if (timer) {
-    clearTimeout(timer);
-    heartbeatTimers.delete(cleanTenant);
-  }
-  void fetch("/api/abandoned-cart", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      action: "recover",
-      session_key: getCartSessionKey(cleanTenant),
-      order_id: orderId || null,
-    }),
-  }).catch(() => {});
+  void heartbeats.get(cleanTenant)?.recover({
+    session_key: getCartSessionKey(cleanTenant),
+    order_id: orderId || null,
+  });
 }
 
 function subscribe(tenantId: string, fn: () => void) {

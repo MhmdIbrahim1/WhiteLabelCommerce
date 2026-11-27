@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { serverDb } from "@/lib/db";
 import { getServerLang } from "@/lib/i18n-server";
 import { normalizePhone } from "@/lib/phone";
+import { trackingReference } from "@/lib/order-number";
 import { resolveActiveStoreOrDefault } from "@/lib/tenant";
 import {
   normalizeReturnRecord,
@@ -46,9 +47,9 @@ export async function track(
 ): Promise<{ row?: Summary; error?: string }> {
   const isEn = (await getServerLang()) === "en";
   const phone = normalizePhone(String(f.get("phone") || "")),
-    id = String(f.get("number") || "").trim();
+    id = trackingReference(String(f.get("number") || ""));
   if (
-    !/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id) ||
+    !id ||
     !/^\d{8,15}$/.test(phone)
   )
     return {
@@ -56,9 +57,9 @@ export async function track(
         ? "Please check the order ID and phone number."
         : "تحقق من رقم الطلب ورقم الهاتف.",
     };
-  const db = await serverDb();
+  const [db, store] = await Promise.all([serverDb(), resolveActiveStoreOrDefault()]);
   const { data, error } = await db
-    .rpc("track_guest_order", { order_number: id, customer_phone: phone })
+    .rpc("track_guest_order", { p_store_id: store.id, order_number: id, customer_phone: phone })
     .maybeSingle<Summary>();
   return error
     ? {

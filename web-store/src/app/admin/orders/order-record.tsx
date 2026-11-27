@@ -23,17 +23,19 @@ export async function OrderRecord({ id, print, drawer = false, resultCode }: {
   const isEn = lang === "en";
   const invoice = print === "invoice";
   const printDocument = invoice || print === "label";
-  const [result, returnRes] = await Promise.all([
-    db.from("orders").select("id,created_at,status,user_id,customer_id,recipient_name,shipping_address,phone,lat,lng,shipping_carrier,tracking_number,tracking_url,courier_note,shipped_at,delivered_at,delivery_token,payment_method,payment_status,subtotal,shipping_fee,discount_amount,wallet_discount,cashback_earned,total,currency,order_items(id,product_name,size,color,quantity,unit_price)")
+  const [result, returnRes, tokenRes] = await Promise.all([
+    db.from("orders").select("id,created_at,status,user_id,customer_id,recipient_name,shipping_address,phone,lat,lng,shipping_carrier,tracking_number,tracking_url,courier_note,shipped_at,delivered_at,payment_method,payment_status,subtotal,shipping_fee,discount_amount,wallet_discount,cashback_earned,total,currency,order_items(id,product_name,size,color,quantity,unit_price)")
       .eq("id", id).eq("store_id", storeId).maybeSingle(),
     printDocument ? null : db.from("return_requests").select("*").eq("order_id", id)
       .eq("store_id", storeId).order("created_at", { ascending: false }).limit(1),
+    printDocument ? null : db.rpc("merchant_order_delivery_token", { p_store_id: storeId, p_order_id: id }),
   ]);
   if (!result.error && !result.data) {
     if (drawer) return <p role="status">{isEn ? "This order is no longer in this store." : "لم يعد هذا الطلب متاحاً في المتجر."}</p>;
     notFound();
   }
   const o = checked(result);
+  if (tokenRes?.error) throw new Error("Could not load the delivery link.");
   const codDue = o.payment_method === "cod" && !["paid", "refunded"].includes(o.payment_status)
     && !["delivered", "cancelled"].includes(o.status) ? o.total : 0;
   const orderHref = "/admin/orders/" + id;
@@ -148,7 +150,7 @@ export async function OrderRecord({ id, print, drawer = false, resultCode }: {
       {!options.length && o.status !== "shipped" && <p>{isEn ? "There are no further status changes for this order." : "اكتملت خطوات معالجة هذا الطلب."}</p>}
       <OrderStatusForm drawerStore={drawer ? storeId : undefined} orderId={id} currentStatus={o.status} options={options}
         shippingCarrier={o.shipping_carrier} trackingNumber={o.tracking_number} trackingUrl={o.tracking_url}
-        courierNote={o.courier_note} deliveryToken={o.delivery_token} shippingAddress={o.shipping_address} phone={o.phone}
+        courierNote={o.courier_note} deliveryToken={tokenRes?.data} shippingAddress={o.shipping_address} phone={o.phone}
         totalLabel={money(codDue, o.currency, lang)} /></section>
     {linkedReturn && <section className="ws-box ws-stack"><h3>{isEn ? "Return or exchange" : "الإرجاع أو الاستبدال"}</h3>
       <div className="ws-section-line"><StatusDot status={linkedReturn.status}>{returnStatusMeta(linkedReturn.status, lang).label}</StatusDot>

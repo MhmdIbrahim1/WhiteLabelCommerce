@@ -2,7 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { adminUser, superAdminUser } from "@/lib/access";
 import {
-  isLocalHost, isStoreSlug, platformAuthScreen, platformOrigin, platformRootDomain, publicStoreOrigin, resolveRequestHost,
+  isLocalHost, isStoreSlug, isVercelDeployment, platformAuthScreen, platformOrigin, platformRootDomain, publicStoreOrigin, resolveRequestHost,
   requestAuthority, resolveStoreBinding, storePath,
 } from "@/lib/host-routing";
 import { resolveHostRoute } from "@/lib/host-resolver";
@@ -20,6 +20,14 @@ const PLATFORM_REDIRECT_HEADER = "x-wlc-platform-redirect";
 const controlPlane = /^\/(?:admin|super-admin|create-store|api\/admin)(?:\/|$)/;
 const tenantApi = /^\/api\/(?:abandoned-cart|catalog-search|cart-upsells|payments\/paymob\/initiate|notifications\/(?:back-in-stock|cart-heartbeat|inbox|register))$/;
 const assetPath = /^(?:\/_next\/static\/|\/_next\/(?:image|webpack-hmr)(?:\/|$)|\/(?:favicon\.ico|store-collection\.jpg|firebase-messaging-sw\.js)$)/;
+
+function cleanRoutingHeaders(request: NextRequest) {
+  const outgoing = new Headers(request.headers);
+  for (const header of [PLATFORM_ORIGIN_HEADER, PLATFORM_REDIRECT_HEADER, REQUEST_ORIGIN_HEADER, STORE_ID_HEADER,
+    STORE_BASE_PATH_HEADER, STORE_CANONICAL_HEADER, STORE_SLUG_HEADER, STUDIO_LOCALE_HEADER,
+    "x-store-host", "x-store-subdomain", "forwarded"]) outgoing.delete(header);
+  return outgoing;
+}
 
 function routingError(status: 404 | 503 = 404) {
   const en = status === 404 ? "Store not found" : "Store temporarily unavailable";
@@ -55,17 +63,23 @@ export async function proxy(request: NextRequest) {
   }
   const host = requestAuthority(request.headers.get("host"), request.headers.get("x-forwarded-host"));
   if (!host) return routingError();
+  const externalPath = request.nextUrl.pathname;
+  const assetRead = (request.method === "GET" || request.method === "HEAD") && !request.headers.has("next-action");
+  if (assetRead && externalPath.startsWith("/_next/static/")) {
+    // Next and the ingress must agree on the asset namespace, including after decoding.
+    if (/(?:%2[ef]|%5c|%25|\\|\/\/)/i.test(externalPath)) return routingError();
+    return NextResponse.next({ request: { headers: cleanRoutingHeaders(request) } });
+  }
   let root: string;
   try { root = platformRootDomain(); } catch { return routingError(503); }
   let resolvedHost;
   try {
-    resolvedHost = await resolveRequestHost(host.hostname, root, root === "localhost" || process.env.NODE_ENV !== "production",
+    resolvedHost = await resolveRequestHost(host.hostname, root, !isVercelDeployment() && process.env.NODE_ENV !== "production",
       process.env.VERCEL_ENV, resolveHostRoute);
   } catch { return routingError(503); }
   const { host: classification, registered } = resolvedHost;
   if (!classification) return routingError();
 
-  const externalPath = request.nextUrl.pathname;
   const alias = storePath(externalPath);
   if (alias === "invalid") return routingError();
   const path = alias?.pathname ?? externalPath;
@@ -79,19 +93,18 @@ export async function proxy(request: NextRequest) {
     return new NextResponse(null, { status: 405, headers: { ...privateHeaders, Allow: "GET, HEAD" } });
   }
   const landing = platform && !alias && path === "/";
-  const asset = assetPath.test(path);
+  const asset = assetRead && assetPath.test(path);
   const invite = /^\/invite(?:\/|$)/.test(path);
   const admin = controlPlane.test(path) || invite;
   const api = path.startsWith("/api/");
-  const platformUrl = platformOrigin(host, root);
+  const platformUrl = platformOrigin(host, root, classification);
+  if (platform && !platformUrl) return routingError(503);
   const scheme = isLocalHost(host.hostname) ? "http" : "https";
   const publicAuthority = scheme === "http" ? host.authority : host.hostname;
   const origin = scheme + "://" + publicAuthority;
-  const outgoing = new Headers(request.headers);
-  for (const header of [PLATFORM_ORIGIN_HEADER, PLATFORM_REDIRECT_HEADER, STORE_ID_HEADER, STORE_BASE_PATH_HEADER, STORE_CANONICAL_HEADER,
-    STORE_SLUG_HEADER, STUDIO_LOCALE_HEADER, "x-store-host", "x-store-subdomain", "forwarded"]) outgoing.delete(header);
+  const outgoing = cleanRoutingHeaders(request);
   if (studioPreview) outgoing.set(STUDIO_LOCALE_HEADER, previewLang);
-  outgoing.set(PLATFORM_ORIGIN_HEADER, platformUrl);
+  if (platformUrl) outgoing.set(PLATFORM_ORIGIN_HEADER, platformUrl);
   outgoing.set(REQUEST_ORIGIN_HEADER, new URL(origin).origin);
   outgoing.set("host", publicAuthority);
   outgoing.set("x-forwarded-host", publicAuthority);
@@ -111,7 +124,8 @@ export async function proxy(request: NextRequest) {
     outgoing.set(STORE_SLUG_HEADER, route.slug);
     outgoing.set(STORE_BASE_PATH_HEADER, basePath);
     if (!studioPreview && (path === "/" || /^\/(?:products|contact)(?:\/|$)/.test(path))) {
-      outgoing.set(STORE_CANONICAL_HEADER, publicStoreOrigin(route, platformUrl, root) + path);
+      const storeOrigin = platformUrl ? publicStoreOrigin(route, platformUrl, root) : origin;
+      outgoing.set(STORE_CANONICAL_HEADER, storeOrigin + path);
     }
     if (!studioPreview && platform && storefront && !api && !authPage && !request.headers.has("next-router-prefetch") &&
         request.headers.get("purpose") !== "prefetch") cookieSlug = route.slug;
@@ -122,6 +136,7 @@ export async function proxy(request: NextRequest) {
   }
   if (!platform && admin) {
     if ((request.method !== "GET" && request.method !== "HEAD") || api) return routingError();
+    if (!platformUrl) return routingError(503);
     outgoing.set(PLATFORM_REDIRECT_HEADER, new URL(path + request.nextUrl.search, platformUrl).toString());
     const target = request.nextUrl.clone();
     target.pathname = redirectPath;

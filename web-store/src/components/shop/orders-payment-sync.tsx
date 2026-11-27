@@ -1,8 +1,9 @@
 "use client";
 
-import { formatOrderNumber } from "@/lib/order-number";
+import { formatOrderNumber, trackingReference } from "@/lib/order-number";
+import { showToast } from "@/components/floating-toast";
 import { useEffect } from "react";
-import { CheckCircle2, Clock3, AlertCircle } from "lucide-react";
+import { CheckCircle2, Clock3, AlertCircle, Copy } from "lucide-react";
 import {
   clearCart,
   clearPendingOnlineOrder,
@@ -13,13 +14,38 @@ import {
 import { trackPurchase } from "@/lib/analytics";
 import { useLanguage } from "@/components/language-provider";
 
+function ReceiptReference({ id, guest, en }: { id: string; guest: boolean; en: boolean }) {
+  const reference = trackingReference(id);
+  if (!reference) return null;
+  if (!guest) return <code dir="ltr"><bdi dir="ltr">{formatOrderNumber(reference)}</bdi></code>;
+
+  async function copy(value: string) {
+    try {
+      await navigator.clipboard.writeText(value);
+      showToast({ kind: "success", message: en ? "Tracking reference copied." : "تم نسخ رقم التتبع." });
+    } catch {
+      showToast({ kind: "error", message: en ? "Select the tracking reference and copy it." : "حدّد رقم التتبع وانسخه." });
+    }
+  }
+
+  return <div className="receipt-tracking-reference">
+    <span>{en ? "Tracking reference" : "رقم تتبع الطلب"}</span>
+    <bdi dir="ltr" className="tabular-nums">{reference}</bdi>
+    <button type="button" className="icon-copy-chip" onClick={() => void copy(reference)}>
+      <Copy size={15} strokeWidth={1.5} aria-hidden="true"/>{en ? "Copy reference" : "نسخ رقم التتبع"}
+    </button>
+  </div>;
+}
+
 export function OrdersPaymentSync({
+  guest,
   paymentCallback,
   callbackOrder,
   placedCod,
   placedWallet = false,
   paidOrderIds,
 }: {
+  guest: boolean;
   paymentCallback: string;
   callbackOrder: string;
   placedCod: boolean;
@@ -63,7 +89,7 @@ export function OrdersPaymentSync({
               : "تم تأكيد طلبك وسداده بالكامل عبر رصيد محفظة المتجر!"}
           </strong>
         </span>
-        {callbackOrder && <code dir="ltr"><bdi dir="ltr">{formatOrderNumber(callbackOrder)}</bdi></code>}
+        <ReceiptReference id={callbackOrder} guest={guest} en={isEn}/>
       </div>
     );
   }
@@ -75,7 +101,7 @@ export function OrdersPaymentSync({
           <CheckCircle2 size={18} aria-hidden="true" />
           <strong>{t("paymentBannerCodSuccess")}</strong>
         </span>
-        {callbackOrder && <code dir="ltr"><bdi dir="ltr">{formatOrderNumber(callbackOrder)}</bdi></code>}
+        <ReceiptReference id={callbackOrder} guest={guest} en={isEn}/>
       </div>
     );
   }
@@ -110,7 +136,7 @@ export function OrdersPaymentSync({
               : t("paymentBannerFailed")}
         </strong>
       </span>
-      {callbackOrder && <code dir="ltr"><bdi dir="ltr">{formatOrderNumber(callbackOrder)}</bdi></code>}
+      <ReceiptReference id={callbackOrder} guest={guest} en={isEn}/>
     </div>
   );
 }

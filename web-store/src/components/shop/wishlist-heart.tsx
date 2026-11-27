@@ -27,8 +27,8 @@ export function WishlistHeartButton({
     e.stopPropagation();
     setPopping(true);
     setTimeout(() => setPopping(false), 380);
-    const nextSaved = await toggle(productId);
-    onAfterToggle?.(nextSaved);
+    const result = await toggle(productId);
+    if (result.ok) onAfterToggle?.(result.in_wishlist);
   }
 
   const label = saved

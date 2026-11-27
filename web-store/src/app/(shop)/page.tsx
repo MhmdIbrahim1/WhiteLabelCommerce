@@ -1,13 +1,9 @@
 import Link from "next/link";
 import { ArrowLeft, ArrowRight, Truck, ShieldCheck, Headphones } from "lucide-react";
 import brand from "@/lib/brand";
-import { serverDb, checked } from "@/lib/db";
-import {
-  settings,
-  categories,
-  productFields,
-  type Product,
-} from "@/lib/shop";
+import { serverDb } from "@/lib/db";
+import { settings, categories } from "@/lib/shop";
+import { homeProducts } from "@/lib/home-products";
 import { storeHref } from "@/lib/tenant";
 import { localizedText, t, translateHomeCopy } from "@/lib/i18n";
 import { getServerLang, getStudioPreviewLang } from "@/lib/i18n-server";
@@ -16,7 +12,6 @@ import { PreviewHeroVisibility } from "@/components/shop/studio-preview-context"
 import { StoreCopy } from "@/components/shop/store-copy";
 import { Grid } from "@/components/shop/cards";
 import { FlashDealsSection } from "@/components/shop/flash-deals-section";
-import { filterActiveFlashDeals } from "@/lib/flash-sale";
 import { storefrontAppearance } from "@/lib/storefront-appearance";
 import { accentContrast } from "@/lib/theme-contrast";
 import fashion from "../platform-landing/photos/fashion.webp";
@@ -29,29 +24,10 @@ const art = { fashion_editorial: fashion.src, tech_precision: audio.src, beauty_
 
 export default async function Home() {
   const [db, s, c, appearance, preview] = await Promise.all([serverDb(), settings(), categories(), storefrontAppearance(), getStudioPreviewLang()]);
-  const result = await db
-    .from("products")
-    .select(productFields)
-    .eq("store_id", s.storeId)
-    .eq("is_active", true)
-    .order("created_at", { ascending: false })
-    .order("id")
-    .limit(48);
-  const lang = await getServerLang(s.uiConfig.defaultLanguage);
+  const [lang, { flashDeals, featured }] = await Promise.all([
+    getServerLang(s.uiConfig.defaultLanguage), homeProducts(db, s.storeId, s.uiConfig.homeSections),
+  ]);
   const ArrowIcon = lang === "en" ? ArrowRight : ArrowLeft;
-  const allProducts = (
-    result.error?.code === "42703"
-      ? checked(
-          await db
-            .from("products")
-            .select(productFields)
-            .eq("store_id", s.storeId)
-            .eq("is_active", true)
-            .order("name")
-            .limit(48),
-        )
-      : checked(result)
-  ) as Product[];
   const displayName = localizedText(lang, s.nameAr, s.nameEn) || s.name;
   const href = (path: string) => storeHref(s.basePath, path);
 
@@ -62,13 +38,12 @@ export default async function Home() {
   const firstHeroId = preview || s.uiConfig.pages.home.hero_visible
     ? visibleSections.find((sec) => sec.type === "hero_banner")?.id
     : undefined;
-  const activeFlashDeals = filterActiveFlashDeals(allProducts);
   const flashDealsNode =
-    activeFlashDeals.length > 0 ? (
+    flashDeals.length > 0 ? (
       <FlashDealsSection
         preset={appearance.preset}
         key="flash-deals-strip"
-        products={activeFlashDeals}
+        products={flashDeals}
         currency={s.currency}
         lang={lang}
         basePath={s.basePath}
@@ -135,10 +110,7 @@ export default async function Home() {
 
           case "featured_products": {
             const anchorId = sec.id === firstFeaturedId ? "latest" : undefined;
-            const filtered = sec.categoryId
-              ? allProducts.filter((p) => p.category_id === sec.categoryId)
-              : allProducts;
-            const slice = filtered.slice(0, sec.limit);
+            const slice = (featured.get(sec.categoryId.toLowerCase()) ?? []).slice(0, sec.limit);
             const moreHref = href(
               sec.categoryId
                 ? "/products?category=" + encodeURIComponent(sec.categoryId)

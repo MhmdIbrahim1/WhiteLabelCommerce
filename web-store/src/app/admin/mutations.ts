@@ -420,7 +420,10 @@ async function applyOrderUpdate(f: FormData, expectedStore?: string) {
     updatePayload.delivered_at = new Date().toISOString();
   }
 
-  const result = await db
+  // When this transition issues a private link, write it with the status in one
+  // operation, scoped to the store authorized by requireAdmin("manage_orders").
+  const orderDb = updatePayload.delivery_token ? adminDb() : db;
+  const result = await orderDb
     .from("orders")
     .update(updatePayload)
     .eq("id", id)
@@ -509,16 +512,10 @@ async function issueDeliveryToken(f: FormData, expectedStore?: string) {
   const { db, storeId } = await requireAdmin("manage_orders"),
     id = text(f, "id");
   if (!id || (expectedStore && expectedStore !== storeId)) return false;
-  const token = randomBytes(24).toString("hex");
-  const result = await db
-    .from("orders")
-    .update({ delivery_token: token })
-    .eq("id", id)
-    .eq("store_id", storeId)
-    .is("delivery_token", null)
-    .select("id")
-    .maybeSingle();
-  return !result.error;
+  const { data, error } = await db.rpc("merchant_order_delivery_token", {
+    p_store_id: storeId, p_order_id: id, p_issue: true,
+  });
+  return !error && Boolean(data);
 }
 
 export async function saveOrderInDrawer(storeId: string, action: "status" | "token", form: FormData) {
