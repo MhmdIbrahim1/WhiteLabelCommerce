@@ -10,6 +10,8 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.whitelabel.commerce.core.data.local.SavedOrderReceiptEntity
 import com.whitelabel.commerce.core.data.remote.PhoneNormalizer
+import com.whitelabel.commerce.core.data.remote.validCheckoutBase
+import com.whitelabel.commerce.BuildConfig
 import com.whitelabel.commerce.core.data.remote.dto.CheckoutLineDto
 import com.whitelabel.commerce.core.data.remote.dto.CheckoutResultDto
 import com.whitelabel.commerce.core.data.remote.dto.CheckoutRpcParamsDto
@@ -17,6 +19,7 @@ import com.whitelabel.commerce.core.data.remote.dto.GuestOrderInsertDto
 import com.whitelabel.commerce.core.data.remote.dto.GuestOrderTrackParamsDto
 import com.whitelabel.commerce.core.data.remote.dto.GuestOrderTrackingDto
 import com.whitelabel.commerce.core.data.remote.dto.OrderDto
+import com.whitelabel.commerce.core.data.remote.dto.OrderCardPaymentDto
 import com.whitelabel.commerce.core.data.remote.dto.ReturnRequestDto
 import com.whitelabel.commerce.core.data.remote.dto.SubmitReturnItemParamDto
 import com.whitelabel.commerce.core.data.remote.dto.SubmitReturnParamsDto
@@ -32,6 +35,7 @@ import com.whitelabel.commerce.core.domain.model.ReturnRequest
 import com.whitelabel.commerce.core.domain.model.ReturnRequestType
 import com.whitelabel.commerce.core.domain.model.ReturnSubmissionItem
 import com.whitelabel.commerce.core.domain.model.SavedOrderReceipt
+import com.whitelabel.commerce.core.domain.model.trackingSummary
 import com.whitelabel.commerce.core.domain.repository.OrderRepository
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
@@ -54,7 +58,7 @@ class OrderRepositoryImpl @Inject constructor(
     private val supabase: SupabaseClient,
     private val dataStore: DataStore<Preferences>,
     private val json: Json,
-    private val cart: com.whitelabel.commerce.core.domain.repository.CartRepository,
+    private val cart: CartRepositoryImpl,
 ) : OrderRepository {
 
     override val savedLocalOrders: Flow<List<SavedOrderReceipt>> = dataStore.data.map { prefs ->
@@ -78,6 +82,7 @@ class OrderRepositoryImpl @Inject constructor(
         method: com.whitelabel.commerce.core.domain.model.PaymentMethod,
         coupon: String?,
         name: String,
+        expectedTotal: Double,
         requestKey: String,
         useWallet: Boolean,
         delivery: com.whitelabel.commerce.core.domain.model.DeliveryPin,
@@ -100,6 +105,8 @@ class OrderRepositoryImpl @Inject constructor(
             coupon = coupon,
             name = name,
             useWallet = useWallet || method == PaymentMethod.STORE_WALLET,
+            expectedTotal = expectedTotal,
+            checkoutBase = validCheckoutBase(BuildConfig.WEB_STORE_BASE_URL, BuildConfig.STORE_SLUG),
             lines = items.map { line ->
                 CheckoutLineDto(
                     id = line.productId,
@@ -112,7 +119,7 @@ class OrderRepositoryImpl @Inject constructor(
 
         val result = supabase.postgrest
             .rpc(
-                function = "checkout_delivery",
+                function = "checkout_reviewed",
                 parameters = json.encodeToJsonElement(params).jsonObject,
             )
             .decodeList<CheckoutResultDto>()
@@ -140,23 +147,24 @@ class OrderRepositoryImpl @Inject constructor(
                 null
             }
 
-        if (tracked != null) syncReceipt(tracked.id, tracked.status, tracked.paymentStatus, tracked.method,
-            tracked.carrier, tracked.trackingNumber, tracked.createdAt)
+        if (tracked != null) syncReceipt(tracked)
         tracked
     }
 
-    private suspend fun syncReceipt(id: String, status: OrderStatus, payment: String, method: String,
-        carrier: String?, tracking: String?, created: String) {
-        var paid: SavedOrderReceipt? = null
-        dataStore.edit { prefs ->
+    private suspend fun syncReceipt(tracking: GuestOrderTracking, fromAccount: Boolean = false) {
+        cart.editWithSettlement { prefs ->
             val current = decodeSavedOrders(prefs[KEY_SAVED_ORDERS])
-            val old = current.find { it.orderNumber == id } ?: return@edit
-            val next = old.copy(status = status.rawValue, paymentStatus = payment, method = method,
-                carrier = carrier, trackingNumber = tracking, createdAt = created)
-            if (next != old) prefs[KEY_SAVED_ORDERS] = encodeSavedOrders(current.map { if (it.orderNumber == id) next else it })
-            if (payment == "paid") paid = next.toDomain()
+            val old = current.find { it.orderNumber == tracking.id } ?: return@editWithSettlement null
+            val next = old.copy(
+                status = tracking.status.rawValue, paymentStatus = tracking.paymentStatus, method = tracking.method,
+                carrier = tracking.carrier, trackingNumber = tracking.trackingNumber, createdAt = tracking.createdAt,
+                reservationExpiresAt = if (fromAccount) tracking.reservationExpiresAt else old.reservationExpiresAt,
+                paymentReview = if (fromAccount) tracking.paymentReview else old.paymentReview,
+            )
+            if (next != old) prefs[KEY_SAVED_ORDERS] = encodeSavedOrders(current.map { if (it.orderNumber == tracking.id) next else it })
+            val confirmedConversion = old.method in setOf("paymob_card", "paymob_wallet") && tracking.method == "cod"
+            next.toDomain().takeIf { tracking.paymentStatus == "paid" || confirmedConversion }
         }
-        paid?.let { cart.settleReceipt(it) }
     }
 
     private suspend fun runGuestTrackRpc(orderId: String, phone: String): GuestOrderTracking? {
@@ -177,12 +185,28 @@ class OrderRepositoryImpl @Inject constructor(
 
     override suspend fun getMyOrders(filter: String, after: OrderCardSummary?): Result<List<OrderCardSummary>> = runSuspendCatching {
         val owner = supabase.auth.currentUserOrNull()?.id ?: return@runSuspendCatching emptyList()
-        supabase.postgrest.rpc("my_order_cards", buildJsonObject {
+        val cards = supabase.postgrest.rpc("my_order_cards", buildJsonObject {
             put("p_store_id", com.whitelabel.commerce.BuildConfig.STORE_ID)
             put("p_filter", filter)
             put("p_limit", 13)
             if (after != null) { put("p_before", after.createdAt); put("p_before_id", after.id) }
-        }).decodeList<OrderCardSummary>().map { it.copy(userId = owner) }
+        }).decodeList<OrderCardSummary>()
+        if (cards.isEmpty()) return@runSuspendCatching emptyList()
+        // my_order_cards provides paginated items and thumbnails but omits payment method and review.
+        val payments = supabase.from("orders").select(Columns.list("id", "status", "payment_method", "payment_status", "payment_review")) {
+            filter {
+                eq("store_id", BuildConfig.STORE_ID)
+                eq("user_id", owner)
+                isIn("id", cards.map { it.id })
+            }
+        }.decodeList<OrderCardPaymentDto>().associateBy { it.id }
+        cards.map { card ->
+            val payment = payments[card.id]
+            card.copy(
+                userId = owner, status = payment?.status ?: card.status, paymentMethod = payment?.method,
+                paymentStatus = payment?.paymentStatus ?: card.paymentStatus, paymentReview = payment?.paymentReview,
+            )
+        }
     }
 
     override suspend fun getAccountCounts(): Result<AccountCounts> = runSuspendCatching {
@@ -199,6 +223,7 @@ class OrderRepositoryImpl @Inject constructor(
             .select(columns = Columns.raw(
                 "id,user_id,status,shipping_address,phone,payment_method,currency,subtotal,shipping_fee," +
                     "wallet_discount,cashback_earned,total,guest_tracking,created_at,payment_status," +
+                    "discount_amount,reservation_expires_at,payment_review," +
                     "tracking_number,shipping_carrier,lat,lng,order_items(id,order_id,product_id,product_name,unit_price,quantity,size,color)",
             )) {
                 filter { eq("id", id); eq("user_id", userId)
@@ -206,16 +231,17 @@ class OrderRepositoryImpl @Inject constructor(
                 limit(1)
             }
             .decodeList<OrderDto>()
-            .singleOrNull()?.toDomainOrNull()?.also { syncReceipt(it.id, it.status, it.paymentStatus, it.paymentMethod?.rawValue ?: "cod", it.carrier, it.trackingNumber, it.createdAt) }
+            .singleOrNull()?.toDomainOrNull()?.also { syncReceipt(it.trackingSummary(), fromAccount = true) }
     }
 
     override suspend fun saveLocalOrderReceipt(receipt: SavedOrderReceipt) {
-        dataStore.edit { prefs ->
+        cart.editWithSettlement { prefs ->
             val current = decodeSavedOrders(prefs[KEY_SAVED_ORDERS]).toMutableList()
             current.removeAll { it.orderNumber == receipt.orderNumber }
             current.add(0, SavedOrderReceiptEntity.fromDomain(receipt))
             val trimmed = current.take(MAX_LOCAL_ORDERS)
             prefs[KEY_SAVED_ORDERS] = encodeSavedOrders(trimmed)
+            receipt.takeUnless { it.requiresOnlinePayment }
         }
     }
 
@@ -239,18 +265,15 @@ class OrderRepositoryImpl @Inject constructor(
     }
 
     override suspend fun confirmLocalPaymentSuccess(orderNumber: String) {
-        var settledReceipt: SavedOrderReceipt? = null
-        dataStore.edit { prefs ->
+        cart.editWithSettlement { prefs ->
             val current = decodeSavedOrders(prefs[KEY_SAVED_ORDERS]).toMutableList()
             val idx = current.indexOfFirst { it.orderNumber.equals(orderNumber, ignoreCase = true) }
-            if (idx >= 0) {
-                val updated = current[idx].copy(paymentStatus = "paid")
-                current[idx] = updated
-                prefs[KEY_SAVED_ORDERS] = encodeSavedOrders(current)
-                settledReceipt = updated.toDomain()
-            }
+            if (idx < 0) return@editWithSettlement null
+            val updated = current[idx].copy(paymentStatus = "paid")
+            current[idx] = updated
+            prefs[KEY_SAVED_ORDERS] = encodeSavedOrders(current)
+            updated.toDomain()
         }
-        settledReceipt?.let { cart.settleReceipt(it) }
     }
 
     override suspend fun updateLocalOrderPaymentMethod(orderNumber: String, method: String) {
@@ -274,22 +297,20 @@ class OrderRepositoryImpl @Inject constructor(
                 put("p_phone", cleanPhone)
             },
         )
-        var settledReceipt: SavedOrderReceipt? = null
-        dataStore.edit { prefs ->
+        cart.editWithSettlement { prefs ->
             val current = decodeSavedOrders(prefs[KEY_SAVED_ORDERS]).toMutableList()
             val idx = current.indexOfFirst { it.orderNumber.equals(orderNumber, ignoreCase = true) }
-            if (idx >= 0) {
-                val updated = current[idx].copy(
-                    method = "cod",
-                    paymentStatus = "cod_pending",
-                    status = OrderStatus.CONFIRMED.rawValue,
-                )
-                current[idx] = updated
-                prefs[KEY_SAVED_ORDERS] = encodeSavedOrders(current)
-                settledReceipt = updated.toDomain()
-            }
+            if (idx < 0) return@editWithSettlement null
+            val updated = current[idx].copy(
+                method = "cod",
+                paymentStatus = "cod_pending",
+                reservationExpiresAt = null,
+                status = OrderStatus.CONFIRMED.rawValue,
+            )
+            current[idx] = updated
+            prefs[KEY_SAVED_ORDERS] = encodeSavedOrders(current)
+            updated.toDomain()
         }
-        settledReceipt?.let { cart.settleReceipt(it) }
     }
 
     override suspend fun getReturnRequestForOrder(orderId: String): Result<ReturnRequest?> = runSuspendCatching {

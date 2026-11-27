@@ -1,6 +1,8 @@
 package com.whitelabel.commerce.feature.support
 
 import com.whitelabel.commerce.core.domain.model.SupportTicket
+import com.whitelabel.commerce.core.domain.model.SupportTicketMessage
+import com.whitelabel.commerce.core.domain.model.TicketStatus
 import java.text.DateFormat
 import java.text.ParsePosition
 import java.text.SimpleDateFormat
@@ -12,6 +14,35 @@ private val legacyOrder = Regex("""^(?:Order|رقم الطلب): (?:#)?($UUID_PA
 private val uuid = Regex(UUID_PATTERN)
 
 internal data class TicketPresentation(val subject: String, val body: String, val orderNumber: String?)
+
+internal fun SupportTicket.canReply(userId: String?): Boolean =
+    userId != null && customerId == userId && status != TicketStatus.CLOSED
+
+internal fun SupportTicket.conversation(messages: List<SupportTicketMessage>): List<SupportTicketMessage> =
+    messages.ifEmpty {
+        buildList {
+            add(SupportTicketMessage("original", id, "customer", presentation().body, createdAt))
+            if (adminReply.isNotBlank()) add(SupportTicketMessage("legacy-reply", id, "merchant", adminReply, ""))
+        }
+    }
+
+internal enum class SupportError(val arabic: String, val english: String) {
+    RateLimit(
+        "أرسلت عدة تذاكر مؤخراً. يرجى الانتظار 15 دقيقة قبل إرسال تذكرة جديدة.",
+        "You have sent several tickets recently. Please wait 15 minutes before sending another.",
+    ),
+    InvalidMessage(
+        "تحقق من العنوان (حتى 160 حرفًا) ونص الرسالة (من 1 إلى 4000 حرف).",
+        "Check the subject (up to 160 characters) and message (1–4,000 characters).",
+    ),
+    Unavailable("تعذر إرسال الرسالة. يرجى المحاولة مرة أخرى.", "Unable to send your message. Please try again."),
+}
+
+internal fun mapSupportError(raw: String): SupportError = when {
+    raw.contains("rate_limit_exceeded", ignoreCase = true) -> SupportError.RateLimit
+    raw.contains("invalid_support_message", ignoreCase = true) -> SupportError.InvalidMessage
+    else -> SupportError.Unavailable
+}
 
 internal fun SupportTicket.presentation(): TicketPresentation {
     val prefix = legacyOrder.find(message)

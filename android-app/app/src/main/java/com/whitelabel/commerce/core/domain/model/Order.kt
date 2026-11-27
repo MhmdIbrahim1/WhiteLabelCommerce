@@ -25,7 +25,8 @@ enum class PaymentMethod(val rawValue: String, val arabicLabel: String) {
     COD("cod", "الدفع عند الاستلام"),
     CARD("paymob_card", "بطاقة ائتمان"),
     WALLET("paymob_wallet", "محفظة إلكترونية"),
-    STORE_WALLET("wallet", "محفظة المتجر");
+    STORE_WALLET("wallet", "محفظة المتجر"),
+    COUPON("coupon", "كوبون خصم");
 
     companion object {
         fun fromRaw(value: String?): PaymentMethod? =
@@ -68,15 +69,24 @@ data class Order(
     val guestTracking: Boolean = false,
     val createdAt: String,
     val items: List<OrderItem> = emptyList(),
+    val reservationExpiresAt: String? = null,
+    val paymentReview: String? = null,
+    val discountAmount: Double = 0.0,
 )
 
 /**
- * Result returned by the trusted `public.store_checkout` PostgreSQL RPC.
+ * Receipt returned by public.checkout_reviewed, including idempotent replays.
  */
 data class CheckoutResult(
     val orderNumber: String,
     val amount: Double,
     val currency: String,
+    val method: String,
+    val paymentStatus: String,
+    val fulfillmentStatus: OrderStatus,
+    val reservationExpiresAt: String?,
+    val created: Boolean,
+    val guest: Boolean,
 )
 
 /**
@@ -90,4 +100,12 @@ data class GuestOrderTracking(
     val id: String,
     val status: OrderStatus,
     val createdAt: String,
+    val reservationExpiresAt: String? = null,
+    val paymentReview: String? = null,
+)
+
+internal fun Order.trackingSummary() = GuestOrderTracking(
+    id = id, status = status, createdAt = createdAt, method = paymentMethod?.rawValue ?: "cod",
+    paymentStatus = paymentStatus, trackingNumber = trackingNumber, carrier = carrier,
+    reservationExpiresAt = reservationExpiresAt, paymentReview = paymentReview,
 )

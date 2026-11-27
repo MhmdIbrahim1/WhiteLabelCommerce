@@ -2,6 +2,7 @@ package com.whitelabel.commerce.core.data.repository
 
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.whitelabel.commerce.BuildConfig
@@ -12,6 +13,7 @@ import com.whitelabel.commerce.core.data.remote.dto.MarkAbandonedCartRecoveredPa
 import com.whitelabel.commerce.core.data.remote.dto.UpsertAbandonedCartParamsDto
 import com.whitelabel.commerce.core.domain.model.CartItem
 import com.whitelabel.commerce.core.domain.model.Product
+import com.whitelabel.commerce.core.domain.model.SavedOrderReceipt
 import com.whitelabel.commerce.core.domain.repository.CartRepository
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
@@ -40,8 +42,16 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @Serializable
-private data class InventoryRow(val id: String, val stock: Int, @SerialName("max_order_qty") val limit: Int? = null,
-    @SerialName("product_variants") val variants: List<VariantDto> = emptyList()) {
+private data class InventoryRow(
+    val id: String,
+    val stock: Int,
+    val price: Double,
+    @SerialName("flash_sale_price") val salePrice: Double? = null,
+    @SerialName("flash_sale_starts_at") val saleStartsAt: String? = null,
+    @SerialName("flash_sale_ends_at") val saleEndsAt: String? = null,
+    @SerialName("max_order_qty") val limit: Int? = null,
+    @SerialName("product_variants") val variants: List<VariantDto> = emptyList(),
+) {
     fun stockFor(color: String?, size: String?): Int = if (variants.isEmpty()) stock
         else variants.find { it.color == color.orEmpty() && it.size == size.orEmpty() }?.stock ?: 0
 }
@@ -136,7 +146,9 @@ class CartRepositoryImpl @Inject constructor(
     }
 
     private suspend fun inventory(ids: List<String>) = runSuspendCatching {
-        supabase.from("products").select(Columns.raw("id,stock,max_order_qty,product_variants(color,size,stock)")) {
+        supabase.from("products").select(Columns.raw(
+            "id,stock,price,flash_sale_price,flash_sale_starts_at,flash_sale_ends_at,max_order_qty,product_variants(color,size,stock)"
+        )) {
             filter { eq("store_id", BuildConfig.STORE_ID); eq("is_active", true); isIn("id", ids) }
         }.decodeList<InventoryRow>().associateBy { it.id }
     }
@@ -149,8 +161,19 @@ class CartRepositoryImpl @Inject constructor(
             lines.replaceAll { line ->
                 if (line.productId !in ids) line else {
                     val row = live[line.productId]
-                    line.copy(maxStock = row?.stockFor(line.selectedColor, line.selectedSize) ?: 0,
-                        productStock = row?.stock ?: 0, maxOrderQty = row?.limit)
+                    if (row == null) line.copy(maxStock = 0, productStock = 0)
+                    else line.copy(
+                        regularPrice = row.price,
+                        unitPrice = com.whitelabel.commerce.core.domain.model.FlashSalePricing.effectivePrice(
+                            row.price, row.salePrice, row.saleStartsAt, row.saleEndsAt,
+                        ),
+                        flashSalePrice = row.salePrice,
+                        flashSaleStartsAt = row.saleStartsAt,
+                        flashSaleEndsAt = row.saleEndsAt,
+                        maxStock = row.stockFor(line.selectedColor, line.selectedSize),
+                        productStock = row.stock,
+                        maxOrderQty = row.limit,
+                    )
                 }
             }
         }
@@ -178,12 +201,16 @@ class CartRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun settleReceipt(receipt: com.whitelabel.commerce.core.domain.model.SavedOrderReceipt) {
-        val marker = androidx.datastore.preferences.core.booleanPreferencesKey(
-            "${BuildConfig.STORE_ID}_settled_${receipt.orderNumber}",
-        )
-        var newlySettled = false
+    override suspend fun settleReceipt(receipt: SavedOrderReceipt) = editWithSettlement { receipt }
+
+    /** Store the receipt update and subtract its purchased quantities in one DataStore transaction. */
+    internal suspend fun editWithSettlement(updateReceipt: suspend (MutablePreferences) -> SavedOrderReceipt?) {
+        var settledOrder: String? = null
         dataStore.edit { prefs ->
+            val receipt = updateReceipt(prefs) ?: return@edit
+            val marker = androidx.datastore.preferences.core.booleanPreferencesKey(
+                "${BuildConfig.STORE_ID}_settled_${receipt.orderNumber}",
+            )
             if (prefs[marker] == true) return@edit
             val remaining = decodeItems(prefs[KEY_CART_ITEMS]).mapNotNull { line ->
                 val purchased = receipt.items.filter { it.productId == line.productId && it.size == line.selectedSize && it.color == line.selectedColor }.sumOf { it.quantity }
@@ -195,9 +222,9 @@ class CartRepositoryImpl @Inject constructor(
                 prefs[KEY_CART_ITEMS] = json.encodeToString(remaining)
             }
             prefs[marker] = true
-            newlySettled = true
+            settledOrder = receipt.orderNumber
         }
-        if (newlySettled) markAbandonedCartRecoveredAsync(receipt.orderNumber)
+        settledOrder?.let(::markAbandonedCartRecoveredAsync)
     }
 
     override suspend fun clearCart() {

@@ -121,6 +121,13 @@ require(Regex("[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}").matches(reso
 require(resolvedStoreId.equals(NOVA_STORE_ID, ignoreCase = true) || resolvedAppIdSuffix != null) { "Custom storeId requires appIdSuffix" }
 require(resolvedAppIdSuffix?.matches(Regex("([.][a-zA-Z][a-zA-Z0-9_]*)+")) != false) { "Invalid appIdSuffix" }
 val isWhiteLabelTenant = resolvedAppIdSuffix != null || !resolvedStoreId.equals(NOVA_STORE_ID, ignoreCase = true)
+val resolvedStoreSlug = resolveConfigValue(
+    "storeSlug",
+    resolveConfigValue("STORE_SLUG", if (isWhiteLabelTenant) "" else "nova-store"),
+)
+require(resolvedStoreSlug.isEmpty() || Regex("^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$").matches(resolvedStoreSlug)) {
+    "Invalid storeSlug"
+}
 
 val resolvedStoreName = (
     (project.findProperty("storeName") as? String)
@@ -152,6 +159,7 @@ android {
 
         buildConfigField("boolean", "EMAIL_PASSWORD_RESET_ENABLED", resolveConfigValue("EMAIL_PASSWORD_RESET_ENABLED", "false").equals("true", true).toString())
         buildConfigField("String", "STORE_ID", "\"$resolvedStoreId\"")
+        buildConfigField("String", "STORE_SLUG", "\"$resolvedStoreSlug\"")
         buildConfigField("Boolean", "IS_WHITE_LABEL_TENANT", isWhiteLabelTenant.toString())
         buildConfigField("String", "WEB_STORE_BASE_URL", "\"${resolveConfigValue("WEB_STORE_BASE_URL", "http://10.0.2.2:3000")}\"")
         buildConfigField(

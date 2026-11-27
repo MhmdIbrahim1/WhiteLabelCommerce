@@ -5,6 +5,7 @@ import com.whitelabel.commerce.core.domain.model.BrandColors
 import com.whitelabel.commerce.core.domain.model.BrandPresets
 import com.whitelabel.commerce.core.domain.model.HeroConfig
 import com.whitelabel.commerce.core.domain.model.StoreSettings
+import com.whitelabel.commerce.core.domain.model.StoreThemeTemplate
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -48,10 +49,10 @@ data class StoreSettingsDto(
     @SerialName("store_name") val storeName: String,
     @SerialName("currency") val currency: String,
     @SerialName("locale") val locale: String,
-    @SerialName("primary_color") val primaryColor: String,
-    @SerialName("secondary_color") val secondaryColor: String,
-    @SerialName("surface_color") val surfaceColor: String,
-    @SerialName("border_radius") val borderRadius: Int,
+    @SerialName("primary_color") val primaryColor: String? = null,
+    @SerialName("secondary_color") val secondaryColor: String? = null,
+    @SerialName("surface_color") val surfaceColor: String? = null,
+    @SerialName("border_radius") val borderRadius: Int? = null,
     @SerialName("whatsapp_number") val whatsappNumber: String = "",
     @SerialName("support_email") val supportEmail: String = "",
     @SerialName("shipping_fee") val shippingFee: Double = 0.0,
@@ -59,7 +60,7 @@ data class StoreSettingsDto(
     @SerialName("free_shipping_threshold") val freeShippingThreshold: Double = 1000.0,
     @SerialName("cashback_enabled") val cashbackEnabled: Boolean = true,
     @SerialName("cashback_percentage") val cashbackPercentage: Double = 5.0,
-    @SerialName("theme_template") val themeTemplate: String = "modern-minimal",
+    @SerialName("theme_template") val themeTemplate: String? = null,
     @SerialName("banners") val banners: List<String> = emptyList(),
 ) {
     fun toDomain(presetsFallback: BrandPresets): StoreSettings {
@@ -74,6 +75,14 @@ data class StoreSettingsDto(
             },
         )
         val heroSectionEntry = uiConfig?.homeSections?.firstOrNull { it.type == "hero_banner" }
+        val template = StoreThemeTemplate.resolve(themeTemplate)
+        val global = uiConfig?.global
+        // Existing merchant rows inherited modern-minimal when the template column was added.
+        val legacy = themeTemplate.isNullOrBlank() || themeTemplate == StoreThemeTemplate.MODERN.id
+        fun color(override: String?, legacyColor: String?, templateColor: String) =
+            override?.takeIf { it.isNotBlank() }
+                ?: legacyColor?.takeIf { legacy && it.isNotBlank() }
+                ?: templateColor
 
         return StoreSettings(
             defaultMaxOrderQty = defaultMaxOrderQty,
@@ -87,13 +96,14 @@ data class StoreSettingsDto(
             paymobCardEnabled = paymobCardEnabled,
             paymobWalletEnabled = paymobWalletEnabled,
             colors = BrandColors(
-                primary = uiConfig?.global?.primaryButtonBg ?: primaryColor,
-                secondary = uiConfig?.global?.accentBadge ?: secondaryColor,
-                page = uiConfig?.global?.pageBg ?: "#F8FAFC",
-                surface = uiConfig?.global?.cardSurface ?: surfaceColor,
+                primary = color(global?.primaryButtonBg, primaryColor, template.primary),
+                secondary = color(global?.accentBadge, secondaryColor, template.accent),
+                page = color(global?.pageBg, null, template.background),
+                surface = color(global?.cardSurface, surfaceColor, template.surface),
+                line = template.line,
             ),
-            themeTemplate = themeTemplate,
-            borderRadius = (uiConfig?.global?.borderRadius ?: borderRadius).coerceIn(0, 24),
+            themeTemplate = template.id,
+            borderRadius = (global?.borderRadius ?: borderRadius?.takeIf { legacy } ?: template.radius).coerceIn(0, 24),
             whatsappNumber = whatsappNumber,
             supportEmail = supportEmail,
             shippingFee = shippingFee.coerceAtLeast(0.0),

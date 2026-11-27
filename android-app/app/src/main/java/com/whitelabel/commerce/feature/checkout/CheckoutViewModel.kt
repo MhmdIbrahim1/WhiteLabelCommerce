@@ -20,7 +20,6 @@ import com.whitelabel.commerce.core.data.remote.PhoneNormalizer
 import com.whitelabel.commerce.core.designsystem.localized
 import com.whitelabel.commerce.core.domain.model.AuthSessionState
 import com.whitelabel.commerce.core.domain.model.CartItem
-import com.whitelabel.commerce.core.domain.model.OrderStatus
 import com.whitelabel.commerce.core.domain.model.PaymentMethod
 import com.whitelabel.commerce.core.domain.model.SavedOrderLine
 import com.whitelabel.commerce.core.domain.model.SavedOrderReceipt
@@ -39,12 +38,12 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
+import java.math.BigDecimal
+import java.math.RoundingMode
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
 import javax.inject.Inject
-
-private val WALLET_REGEX = Regex("^01[0125][0-9]{8}$")
 
 @Serializable
 private data class ShippingRate(val governorate: String, val fee: Double)
@@ -95,10 +94,22 @@ data class CheckoutUiState(
         }
 
     val grandTotal: Double
-        get() = (preWalletTotal - walletApplied).coerceAtLeast(0.0)
+        get() = BigDecimal.valueOf((preWalletTotal - walletApplied).coerceAtLeast(0.0))
+            .setScale(2, RoundingMode.HALF_UP).toDouble()
 
     val fullyPaidByWallet: Boolean
         get() = walletApplied > 0.0 && grandTotal <= 0.0
+
+    val fullyCoveredByCoupon: Boolean
+        get() = appliedDiscount > 0.0 && walletApplied <= 0.0 && grandTotal <= 0.0
+
+    val paymentMethod: PaymentMethod
+        get() = when {
+            fullyCoveredByCoupon -> PaymentMethod.COUPON
+            fullyPaidByWallet -> PaymentMethod.STORE_WALLET
+            form.paymentMethod in storeSettings.paymentMethods -> form.paymentMethod
+            else -> storeSettings.paymentMethods.firstOrNull() ?: PaymentMethod.COD
+        }
 }
 
 @HiltViewModel
@@ -115,7 +126,7 @@ class CheckoutViewModel @Inject constructor(
     private val formState = MutableStateFlow(CheckoutFormState())
     private val walletBalanceState = MutableStateFlow(0.0)
 
-    // Held stable across retries for identical cart + form so `mobile_checkout` stays idempotent.
+    // Keep the same request key when the server's response may have been lost.
     private var idempotencyKey: String = UUID.randomUUID().toString()
 
     init {
@@ -127,7 +138,7 @@ class CheckoutViewModel @Inject constructor(
             authRepository.sessionState.collect { session ->
                 if (session is AuthSessionState.SignedIn) {
                     val profile = session.profile
-                    val normalizedPhone = PhoneNormalizer.normalize(profile.phone)
+                    val normalizedPhone = PhoneNormalizer.normalizeForEgyptCheckout(profile.phone)
                     formState.update { current ->
                         current.copy(
                             delivery = if (current.delivery == CustomerAddress()) CustomerAddress(
@@ -135,7 +146,7 @@ class CheckoutViewModel @Inject constructor(
                                 governorate = EgyptLocations.findGovernorate(profile.governorate)?.id.orEmpty(),
                                 city = profile.city, street = profile.address,
                             ) else current.delivery,
-                            wallet = current.wallet.ifBlank { normalizedPhone.takeIf(WALLET_REGEX::matches).orEmpty() },
+                            wallet = current.wallet.ifBlank { normalizedPhone.takeIf(PhoneNormalizer::isValidEgyptianPhone).orEmpty() },
                         )
                     }
                     refreshWalletBalance()
@@ -169,17 +180,13 @@ class CheckoutViewModel @Inject constructor(
     val uiState: StateFlow<CheckoutUiState> = combine(
         formState,
         cartRepository.cartItems,
-        cartRepository.subtotal,
         storeRepository.storeSettings,
         combine(authRepository.sessionState, walletBalanceState) { s, bal -> s to bal },
-    ) { form, items, subtotal, settings, (session, walletBal) ->
-        val resolvedMethod = form.paymentMethod.takeIf { it in settings.paymentMethods }
-            ?: settings.paymentMethods.firstOrNull()
-            ?: PaymentMethod.COD
+    ) { form, items, settings, (session, walletBal) ->
         CheckoutUiState(
-            form = form.copy(paymentMethod = resolvedMethod),
+            form = form,
             cartItems = items,
-            subtotal = subtotal,
+            subtotal = items.sumOf { it.lineTotal },
             storeSettings = settings,
             signedInEmail = (session as? AuthSessionState.SignedIn)?.email?.takeIf { it.isNotBlank() },
             walletBalance = walletBal,
@@ -199,7 +206,7 @@ class CheckoutViewModel @Inject constructor(
     }
 
     fun wallet(value: String) {
-        val normalized = PhoneNormalizer.normalize(value)
+        val normalized = PhoneNormalizer.normalizeForEgyptCheckout(value)
         formState.update { it.copy(wallet = normalized, submitError = null) }
     }
 
@@ -247,17 +254,14 @@ class CheckoutViewModel @Inject constructor(
 
     fun submitOrder() {
         val current = uiState.value
-        val form = formState.value
+        val form = current.form
+        if (form != formState.value) return
         if (form.isSubmitting || form.shippingRates == null || form.confirmedReceipt != null) return
 
-        val effectiveMethod = if (current.fullyPaidByWallet) {
-            PaymentMethod.STORE_WALLET
-        } else {
-            form.paymentMethod
-        }
+        val effectiveMethod = current.paymentMethod
 
         if (!current.storeSettings.isSyncedFromRemote ||
-            (!current.fullyPaidByWallet && effectiveMethod !in current.storeSettings.paymentMethods)
+            (!current.fullyPaidByWallet && !current.fullyCoveredByCoupon && effectiveMethod !in current.storeSettings.paymentMethods)
         ) {
             formState.update {
                 it.copy(submitError = localized("طريقة الدفع المختارة غير متاحة حالياً.", "Selected payment method is currently unavailable."))
@@ -265,8 +269,7 @@ class CheckoutViewModel @Inject constructor(
             return
         }
 
-        val cleanWallet = PhoneNormalizer.normalize(form.wallet)
-        if (effectiveMethod == PaymentMethod.WALLET && !WALLET_REGEX.matches(cleanWallet)) {
+        if (effectiveMethod == PaymentMethod.WALLET && !PhoneNormalizer.isValidEgyptianPhone(form.wallet)) {
             formState.update {
                 it.copy(
                     submitError = localized(
@@ -352,6 +355,7 @@ class CheckoutViewModel @Inject constructor(
                 method = effectiveMethod,
                 coupon = couponToSend,
                 name = cleanName,
+                expectedTotal = current.grandTotal,
                 shippingAddress = cleanAddress,
                 customerPhone = normalizedPhone,
                 items = cartSnapshot,
@@ -359,17 +363,11 @@ class CheckoutViewModel @Inject constructor(
                 useWallet = useWalletFlag,
                 delivery = DeliveryPin(cleanGov, form.delivery.lat, form.delivery.lng),
             ).onSuccess { result ->
-                val isPaidViaWallet = effectiveMethod == PaymentMethod.STORE_WALLET || result.amount <= 0.0
-                val receiptMethod = if (isPaidViaWallet) PaymentMethod.STORE_WALLET.rawValue else effectiveMethod.rawValue
-                val receiptPaymentStatus = when {
-                    isPaidViaWallet -> "paid"
-                    effectiveMethod == PaymentMethod.COD -> "unpaid"
-                    else -> "pending"
-                }
                 val receipt = SavedOrderReceipt(
                     orderNumber = result.orderNumber,
-                    method = receiptMethod,
-                    paymentStatus = receiptPaymentStatus,
+                    method = result.method,
+                    paymentStatus = result.paymentStatus,
+                    reservationExpiresAt = result.reservationExpiresAt,
                     customerName = cleanName,
                     phone = normalizedPhone,
                     shippingAddress = cleanAddress,
@@ -377,14 +375,14 @@ class CheckoutViewModel @Inject constructor(
                     subtotal = subtotalSnapshot,
                     shippingFee = shippingSnapshot,
                     total = result.amount,
-                    status = if (isPaidViaWallet) OrderStatus.CONFIRMED else OrderStatus.PENDING,
+                    status = result.fulfillmentStatus,
                     createdAt = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date()),
                     items = cartSnapshot.map { line ->
                         SavedOrderLine(
                             productId = line.productId,
                             productName = line.productName,
                             productNameEn = line.productNameEn,
-                            unitPrice = line.unitPrice,
+                            unitPrice = line.effectiveUnitPrice(),
                             quantity = line.quantity,
                             size = line.selectedSize,
                             color = line.selectedColor,
@@ -393,10 +391,6 @@ class CheckoutViewModel @Inject constructor(
                     },
                 )
                 orderRepository.saveLocalOrderReceipt(receipt)
-                // COD & full Store Wallet clear cart immediately; Paymob online methods keep cart intact until paid!
-                if (effectiveMethod == PaymentMethod.COD || isPaidViaWallet) {
-                    cartRepository.settleReceipt(receipt)
-                }
                 if (useWalletFlag) {
                     refreshWalletBalance()
                 }
@@ -414,8 +408,14 @@ class CheckoutViewModel @Inject constructor(
                 val allowed = limitError?.description?.let { detail ->
                     runCatching { Json.parseToJsonElement(detail).jsonObject["allowed"]?.jsonPrimitive?.intOrNull }.getOrNull()
                 }
-                if (limitError != null) cartRepository.refreshInventory()
-                if ("checkout_key_conflict" in rawMessage) {
+                val quoteChanged = "checkout_quote_changed" in rawMessage || "coupon_does_not_cover_order" in rawMessage
+                if (quoteChanged) {
+                    formState.update { it.copy(couponSubtotal = null, discount = 0.0, shippingRates = null) }
+                    loadShippingRates()
+                    if (useWalletFlag) refreshWalletBalance()
+                }
+                if (limitError != null || quoteChanged) cartRepository.refreshInventory()
+                if ("checkout_key_conflict" in rawMessage || quoteChanged) {
                     idempotencyKey = UUID.randomUUID().toString()
                 }
                 formState.update {
@@ -429,42 +429,51 @@ class CheckoutViewModel @Inject constructor(
         }
     }
 
-    private fun mapCheckoutError(raw: String): String = when {
-        "insufficient_wallet_balance" in raw -> localized(
-            "رصيد المحفظة لم يعد كافياً لتغطية كامل قيمة الطلب.",
-            "Your wallet balance is no longer sufficient to cover the full order.",
-        )
-        "max_order_qty_exceeded" in raw -> localized("خفّض كمية المنتج في السلة ثم حاول مجدداً.", "Reduce the quantity in your cart and try again.")
-        "stock_unavailable" in raw -> localized(
-            "بعض المنتجات غير متوفرة حالياً بالكمية المطلوبة. يرجى مراجعة السلة.",
-            "Some items are no longer available in this quantity.",
-        )
-        "invalid_variant" in raw -> localized(
-            "المقاس أو اللون المختار لم يعد متاحاً لأحد المنتجات.",
-            "A selected size or color is unavailable.",
-        )
-        "invalid_coupon" in raw -> localized(
-            "كود الخصم غير صالح أو انتهت صلاحيته.",
-            "Promo code is invalid or expired.",
-        )
-        "payment_method_disabled" in raw -> localized(
-            "طريقة الدفع المختارة غير مفعّلة لهذا المتجر.",
-            "Selected payment method is disabled for this store.",
-        )
-        "invalid_checkout" in raw -> localized(
-            "يرجى التأكد من صحة رقم الهاتف وعنوان التوصيل.",
-            "Check your phone and delivery address.",
-        )
-        "invalid_cart" in raw -> localized("السلة غير صالحة أو فارغة.", "Invalid or empty cart.")
-        "checkout_key_conflict" in raw -> localized(
-            "تغيرت تفاصيل الطلب. يرجى المحاولة مرة أخرى.",
-            "Order details changed. Please try again.",
-        )
-        "function public.mobile_checkout" in raw || "PGRST202" in raw ->
-            localized("خدمة تأكيد الطلبات غير متاحة حالياً.", "Checkout is currently unavailable.")
-        else -> localized(
-            "تعذر إتمام الطلب حالياً. يرجى المحاولة مرة أخرى.",
-            "Unable to complete checkout. Please try again.",
-        )
-    }
+}
+
+internal fun mapCheckoutError(raw: String): String = when {
+    "checkout_quote_changed" in raw -> localized(
+        "تغيّر إجمالي الطلب. راجع الأسعار والشحن وأعد تطبيق أي كود خصم قبل التأكيد.",
+        "Your order total changed. Review prices and shipping, then reapply any promo code before confirming.",
+    )
+    "coupon_does_not_cover_order" in raw -> localized(
+        "لم يعد كود الخصم يغطي الطلب بالكامل. راجع الإجمالي واختر طريقة دفع للمبلغ المتبقي.",
+        "Your promo code no longer covers the full order. Review the total and choose how to pay the balance.",
+    )
+    "insufficient_wallet_balance" in raw -> localized(
+        "رصيد المحفظة لم يعد كافياً لتغطية كامل قيمة الطلب.",
+        "Your wallet balance is no longer sufficient to cover the full order.",
+    )
+    "max_order_qty_exceeded" in raw -> localized("خفّض كمية المنتج في السلة ثم حاول مجدداً.", "Reduce the quantity in your cart and try again.")
+    "stock_unavailable" in raw -> localized(
+        "بعض المنتجات غير متوفرة حالياً بالكمية المطلوبة. يرجى مراجعة السلة.",
+        "Some items are no longer available in this quantity.",
+    )
+    "invalid_variant" in raw -> localized(
+        "المقاس أو اللون المختار لم يعد متاحاً لأحد المنتجات.",
+        "A selected size or color is unavailable.",
+    )
+    "invalid_coupon" in raw -> localized(
+        "كود الخصم غير صالح أو انتهت صلاحيته.",
+        "Promo code is invalid or expired.",
+    )
+    "payment_method_disabled" in raw -> localized(
+        "طريقة الدفع المختارة غير مفعّلة لهذا المتجر.",
+        "Selected payment method is disabled for this store.",
+    )
+    "invalid_checkout" in raw -> localized(
+        "يرجى التأكد من صحة رقم الهاتف وعنوان التوصيل.",
+        "Check your phone and delivery address.",
+    )
+    "invalid_cart" in raw -> localized("السلة غير صالحة أو فارغة.", "Invalid or empty cart.")
+    "checkout_key_conflict" in raw -> localized(
+        "تغيرت تفاصيل الطلب. يرجى المحاولة مرة أخرى.",
+        "Order details changed. Please try again.",
+    )
+    "function public.checkout_reviewed" in raw || "PGRST202" in raw ->
+        localized("خدمة تأكيد الطلبات غير متاحة حالياً.", "Checkout is currently unavailable.")
+    else -> localized(
+        "تعذر إتمام الطلب حالياً. يرجى المحاولة مرة أخرى.",
+        "Unable to complete checkout. Please try again.",
+    )
 }

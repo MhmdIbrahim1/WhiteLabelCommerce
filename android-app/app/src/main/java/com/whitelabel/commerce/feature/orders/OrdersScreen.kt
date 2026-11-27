@@ -60,6 +60,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -91,10 +92,9 @@ import com.whitelabel.commerce.core.domain.model.SavedOrderReceipt
 import com.whitelabel.commerce.core.domain.model.StoreSettings
 import com.whitelabel.commerce.feature.checkout.PaymentFlow
 import com.whitelabel.commerce.feature.checkout.PaymentFlowOutcome
+import com.whitelabel.commerce.feature.checkout.orderIneligibleMessage
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
-
-private val RETRY_WALLET_REGEX = Regex("^01[0125][0-9]{8}$")
 
 data class OrderRetrySelection(
     val orderId: String,
@@ -139,6 +139,7 @@ fun OrdersScreen(
     var pendingRetryChooser by remember { mutableStateOf<OrderRetrySelection?>(null) }
     var activeRetrySession by remember { mutableStateOf<ActiveRetrySession?>(null) }
     var paymentBanner by remember { mutableStateOf<PaymentFlowOutcome?>(null) }
+    var paymentBannerOrderId by remember { mutableStateOf<String?>(null) }
     var showGuestCodSignInPrompt by remember { mutableStateOf(false) }
 
     LaunchedEffect(initialRetry) {
@@ -169,6 +170,7 @@ fun OrdersScreen(
             onExit = { outcome ->
                 activeRetrySession = null
                 paymentBanner = outcome
+                paymentBannerOrderId = session.orderId
                 viewModel.prefillAndTrack(session.orderId, session.orderPhone)
                 viewModel.loadAccountOrders()
             },
@@ -176,7 +178,9 @@ fun OrdersScreen(
         return
     }
 
-    val onlineReceipts = state.localReceipts.filter { it.method != "cod" && it.paymentStatus == "pending" }
+    val onlineReceipts = state.localReceipts.filter {
+        it.method in setOf("paymob_card", "paymob_wallet") && it.paymentStatus in setOf("unpaid", "pending")
+    }
     LaunchedEffect(onlineReceipts.map { it.orderNumber }) {
         if (onlineReceipts.isEmpty()) return@LaunchedEffect
         launch { com.whitelabel.commerce.core.data.remote.runSuspendCatching { viewModel.observePayments(onlineReceipts) } }
@@ -189,6 +193,7 @@ fun OrdersScreen(
     LaunchedEffect(initialOrderNumber, initialPhone, initialPaymentOutcome) {
         if (initialPaymentOutcome != null) {
             paymentBanner = initialPaymentOutcome
+            paymentBannerOrderId = initialOrderNumber
         }
         if (!initialOrderNumber.isNullOrBlank() && !initialPhone.isNullOrBlank()) {
             viewModel.prefillAndTrack(initialOrderNumber, initialPhone)
@@ -211,8 +216,18 @@ fun OrdersScreen(
         // 0. Payment Confirmation / Retry Status Banner
         paymentBanner?.let { outcome ->
             item {
+                val receipt = state.localReceipts.firstOrNull { it.orderNumber == paymentBannerOrderId }
+                val tracked = state.tracking.trackedResult?.takeIf { it.id == paymentBannerOrderId }
+                val resolvedOutcome = if (outcome == PaymentFlowOutcome.PENDING) {
+                    when (receipt?.paymentStatus ?: tracked?.paymentStatus) {
+                        "paid" -> PaymentFlowOutcome.SUCCESS
+                        "failed" -> PaymentFlowOutcome.FAILED
+                        "cod_pending" -> PaymentFlowOutcome.SWITCHED_TO_COD
+                        else -> outcome
+                    }
+                } else outcome
                 PaymentOutcomeBanner(
-                    outcome = outcome,
+                    outcome = resolvedOutcome,
                     onDismiss = { paymentBanner = null },
                 )
             }
@@ -416,6 +431,9 @@ fun OrdersScreen(
 
                         PaymentAndShippingSummary(
                             paymentStatus = tracked.paymentStatus,
+                            fulfillmentStatus = tracked.status,
+                            reservationExpiresAt = tracked.reservationExpiresAt ?: state.matchedReceiptForTracked?.reservationExpiresAt,
+                            paymentReview = tracked.paymentReview ?: state.matchedReceiptForTracked?.paymentReview,
                             method = tracked.method,
                             carrier = tracked.carrier,
                             trackingNumber = tracked.trackingNumber,
@@ -552,6 +570,7 @@ fun OrdersScreen(
                                     onOpenAccount,
                                 )
                             }
+                            SwitchToCodOutcome.Ineligible -> onShowMessage(orderIneligibleMessage())
                             SwitchToCodOutcome.Failure -> {
                                 onShowMessage(
                                     localized(
@@ -595,7 +614,7 @@ private fun RetryPaymentMethodSheet(
     var selectedMethod by remember(resolvedInitial) { mutableStateOf(resolvedInitial) }
     var walletPhone by remember(defaultPhone) {
         val prefill = PhoneNormalizer.normalizeForEgyptCheckout(defaultPhone)
-        mutableStateOf(if (RETRY_WALLET_REGEX.matches(prefill)) prefill else "")
+        mutableStateOf(prefill.takeIf(PhoneNormalizer::isValidEgyptianPhone).orEmpty())
     }
 
     ModalBottomSheet(
@@ -645,13 +664,14 @@ private fun RetryPaymentMethodSheet(
                     val icon = when (method) {
                         PaymentMethod.CARD -> Icons.Rounded.CreditCard
                         PaymentMethod.WALLET, PaymentMethod.STORE_WALLET -> Icons.Rounded.AccountBalanceWallet
-                        PaymentMethod.COD -> Icons.Rounded.Payments
+                        PaymentMethod.COD, PaymentMethod.COUPON -> Icons.Rounded.Payments
                     }
                     val title = when (method) {
                         PaymentMethod.CARD -> localized("بطاقة بنكية (فيزا / ماستركارد)", "Bank Card (Visa / Mastercard)")
                         PaymentMethod.WALLET -> localized("محفظة إلكترونية", "Mobile Wallet")
                         PaymentMethod.STORE_WALLET -> localized("رصيد محفظة المتجر", "Store Credit Wallet")
                         PaymentMethod.COD -> localized("الدفع عند الاستلام (كاش)", "Cash on Delivery (COD)")
+                        PaymentMethod.COUPON -> localized("كوبون خصم", "Promo coupon")
                     }
                     val subtitle = when (method) {
                         PaymentMethod.CARD -> localized("دفع فوري وآمن عبر Paymob.", "Instant encrypted card checkout via Paymob.")
@@ -661,6 +681,7 @@ private fun RetryPaymentMethodSheet(
                             "حوّل الطلب فوراً إلى الدفع نقداً عند الاستلام وابدأ التجهيز.",
                             "Switch immediately to pay cash on delivery and start processing.",
                         )
+                        PaymentMethod.COUPON -> localized("مغطّى بالكامل بكود الخصم", "Covered in full by promo code")
                     }
 
                     Surface(
@@ -712,10 +733,10 @@ private fun RetryPaymentMethodSheet(
                 }
 
                 if (selectedMethod == PaymentMethod.WALLET) {
-                    val walletValid = RETRY_WALLET_REGEX.matches(walletPhone)
+                    val walletValid = PhoneNormalizer.isValidEgyptianPhone(walletPhone)
                     OutlinedTextField(
                         value = walletPhone,
-                        onValueChange = { walletPhone = PhoneNormalizer.normalize(it) },
+                        onValueChange = { walletPhone = PhoneNormalizer.normalizeForEgyptCheckout(it) },
                         singleLine = true,
                         label = { Text(localized("رقم المحفظة الإلكترونية", "Wallet phone number")) },
                         placeholder = { Text("010xxxxxxxx") },
@@ -737,7 +758,7 @@ private fun RetryPaymentMethodSheet(
                 }
 
                 val canProceed = selectedMethod != null && (
-                    selectedMethod != PaymentMethod.WALLET || RETRY_WALLET_REGEX.matches(walletPhone)
+                    selectedMethod != PaymentMethod.WALLET || PhoneNormalizer.isValidEgyptianPhone(walletPhone)
                 )
 
                 Button(
@@ -780,8 +801,8 @@ private fun PaymentOutcomeBanner(
     }
     val fg = when (outcome) {
         PaymentFlowOutcome.SUCCESS, PaymentFlowOutcome.SWITCHED_TO_COD -> brandColors.success
-        PaymentFlowOutcome.PENDING -> MaterialTheme.colorScheme.secondary
-        PaymentFlowOutcome.FAILED, PaymentFlowOutcome.CANCELLED -> MaterialTheme.colorScheme.error
+        PaymentFlowOutcome.PENDING -> MaterialTheme.colorScheme.onSecondaryContainer
+        PaymentFlowOutcome.FAILED, PaymentFlowOutcome.CANCELLED -> MaterialTheme.colorScheme.onErrorContainer
     }
 
     Surface(
@@ -823,6 +844,10 @@ private fun PaymentOutcomeBanner(
                             "تم تأكيد طلبك بالدفع نقداً عند الاستلام وجاري تجهيزه الآن.",
                             "Your order is now confirmed for Cash on Delivery and being processed.",
                         )
+                        PaymentFlowOutcome.PENDING -> localized(
+                            "سنحدّث حالة الدفع عند وصول التأكيد.",
+                            "Your payment status will update when confirmation arrives.",
+                        )
                         else -> localized(
                             "سلة التسوق لا تزال محفوظة، ويمكنك الضغط على \"إعادة محاولة الدفع\" أسفل الطلب.",
                             "Your cart is preserved. Tap \"Retry Payment\" on your order below to try again.",
@@ -845,6 +870,9 @@ private fun PaymentOutcomeBanner(
 @Composable
 internal fun PaymentAndShippingSummary(
     paymentStatus: String,
+    fulfillmentStatus: OrderStatus,
+    reservationExpiresAt: String?,
+    paymentReview: String? = null,
     method: String,
     carrier: String?,
     trackingNumber: String?,
@@ -856,13 +884,7 @@ internal fun PaymentAndShippingSummary(
     val context = LocalContext.current
 
     val methodLabel = orderMethodLabel(method)
-    val statusLabel = when (paymentStatus.lowercase()) {
-        "paid" -> localized("مدفوع", "Paid")
-        "failed" -> localized("فشل الدفع", "Payment failed")
-        "refunded" -> localized("تم رد المبلغ", "Refunded")
-        "pending" -> localized("قيد الدفع", "Payment pending")
-        else -> localized("عند الاستلام", "Pay on delivery")
-    }
+    val statusLabel = paymentStatusLabel(paymentStatus, method)
     val badgeBg = when (paymentStatus.lowercase()) {
         "paid" -> brandColors.success.copy(alpha = 0.14f)
         "failed" -> MaterialTheme.colorScheme.errorContainer
@@ -870,15 +892,22 @@ internal fun PaymentAndShippingSummary(
     }
     val badgeFg = when (paymentStatus.lowercase()) {
         "paid" -> brandColors.success
-        "failed" -> MaterialTheme.colorScheme.error
-        else -> MaterialTheme.colorScheme.secondary
+        "failed" -> MaterialTheme.colorScheme.onErrorContainer
+        else -> MaterialTheme.colorScheme.onSecondaryContainer
     }
 
     val localizedCarrier = CarrierLocalizer.displayCarrier(carrier)
     val externalUrl = CarrierLocalizer.buildTrackingUrl(carrier, trackingNumber)
-    val canRetry = hasOnlinePaymentEnabled &&
-        method.lowercase() in setOf("paymob_card", "paymob_wallet") &&
-        paymentStatus.lowercase() in setOf("pending", "failed")
+    val window by produceState(
+        initialValue = orderPaymentWindow(method, paymentStatus, fulfillmentStatus, reservationExpiresAt, System.currentTimeMillis()),
+        method, paymentStatus, fulfillmentStatus, reservationExpiresAt,
+    ) {
+        while (true) {
+            value = orderPaymentWindow(method, paymentStatus, fulfillmentStatus, reservationExpiresAt, System.currentTimeMillis())
+            val remaining = value.remainingMillis ?: break
+            delay((remaining - 1) % 60_000 + 1)
+        }
+    }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(
@@ -980,7 +1009,17 @@ internal fun PaymentAndShippingSummary(
             }
         }
 
-        if (canRetry) {
+        if (paymentReview != null) PaymentReviewBanner()
+        if (window.ended) {
+            Text(localized("انتهت صلاحية حجز الدفع لهذا الطلب.", "The payment reservation for this order has ended."),
+                style = MaterialTheme.typography.bodySmall)
+        }
+        window.remainingMillis?.let { remaining ->
+            val minutes = (remaining + 59_999) / 60_000
+            Text(localized("الوقت المتبقي للدفع: ⁦$minutes⁩ دقيقة", "Payment window: $minutes min remaining"),
+                style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"))
+        }
+        if (hasOnlinePaymentEnabled && window.canRetry) {
             Button(
                 onClick = onRetryPayment,
                 shape = MaterialTheme.shapes.small,
@@ -1023,6 +1062,8 @@ private fun SavedReceiptCard(
             OrderCardSummary(
                 id = receipt.orderNumber, status = receipt.status.rawValue, createdAt = receipt.createdAt,
                 total = receipt.total, currency = receipt.currency, paymentStatus = receipt.paymentStatus,
+                paymentMethod = receipt.method,
+                paymentReview = receipt.paymentReview,
                 itemCount = receipt.items.sumOf { it.quantity },
                 thumbnails = receipt.items.mapNotNull { it.imageUrl }.take(3),
             )
@@ -1079,6 +1120,9 @@ private fun SavedReceiptCard(
             TextButton(onClick = { expanded = false }) { Text(localized("إخفاء التفاصيل", "Hide details")) }
             PaymentAndShippingSummary(
                 paymentStatus = receipt.paymentStatus,
+                fulfillmentStatus = receipt.status,
+                reservationExpiresAt = receipt.reservationExpiresAt,
+                paymentReview = receipt.paymentReview,
                 method = receipt.method,
                 carrier = receipt.carrier,
                 trackingNumber = receipt.trackingNumber,
@@ -1194,6 +1238,8 @@ private fun HistoryCard(row: OrderCardSummary, locale: String, open: () -> Unit)
                 Column { Text(formatOrderNumber(row.id), fontWeight = FontWeight.Bold); Text(day, style = MaterialTheme.typography.bodySmall) }
                 OrderStatusBadge(status)
             }
+            Text(paymentStatusLabel(row.paymentStatus, row.paymentMethod), style = MaterialTheme.typography.labelMedium)
+            if (row.paymentReview != null) PaymentReviewBanner()
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 row.thumbnails.forEach { path -> coil.compose.AsyncImage(
                     com.whitelabel.commerce.core.data.remote.SupabaseStorageUrls.resolveProductImageUrl(path), null, Modifier.size(38.dp)) }
@@ -1209,8 +1255,22 @@ private fun HistoryCard(row: OrderCardSummary, locale: String, open: () -> Unit)
 }
 
 internal fun orderMethodLabel(method: String): String = when (method.lowercase()) {
+    "coupon" -> localized("كوبون خصم", "Promo coupon")
     "paymob_card" -> localized("بطاقة بنكية", "Card")
     "wallet" -> localized("محفظة المتجر", "Store Wallet")
     "paymob_wallet" -> localized("محفظة إلكترونية", "Wallet")
     else -> localized("الدفع عند الاستلام", "COD")
+}
+
+@Composable
+private fun PaymentReviewBanner() {
+    Surface(
+        modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer,
+    ) {
+        Text(
+            localized("يراجع المتجر دفعة هذا الطلب. تواصل مع الدعم للاستفسار.", "The store is reviewing this payment. Contact support if you have questions."),
+            style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(10.dp),
+        )
     }
+}

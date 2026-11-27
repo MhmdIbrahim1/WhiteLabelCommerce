@@ -24,7 +24,7 @@ interface OrderRepository {
     val savedLocalOrders: Flow<List<SavedOrderReceipt>>
 
     /**
-     * Trusted transactional COD checkout via `public.store_checkout` RPC.
+     * Transactional checkout via public.checkout_reviewed with the total shown to the customer.
      * Prices, stock checks, variant validation, and shipping fee are enforced server-side.
      * Pass a stable [requestKey] across retries to guarantee idempotency.
      */
@@ -35,6 +35,7 @@ interface OrderRepository {
         method: com.whitelabel.commerce.core.domain.model.PaymentMethod,
         coupon: String?,
         name: String,
+        expectedTotal: Double,
         requestKey: String = UUID.randomUUID().toString(),
         useWallet: Boolean = false,
         delivery: com.whitelabel.commerce.core.domain.model.DeliveryPin = com.whitelabel.commerce.core.domain.model.DeliveryPin("", null, null),

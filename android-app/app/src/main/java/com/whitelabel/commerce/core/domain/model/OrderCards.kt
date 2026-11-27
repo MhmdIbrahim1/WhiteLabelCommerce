@@ -14,6 +14,8 @@ data class OrderCardSummary(
     @SerialName("item_count") val itemCount: Int,
     val thumbnails: List<String> = emptyList(),
     val userId: String = "",
+    @SerialName("payment_method") val paymentMethod: String? = null,
+    @SerialName("payment_review") val paymentReview: String? = null,
 )
 @Immutable
 @Serializable

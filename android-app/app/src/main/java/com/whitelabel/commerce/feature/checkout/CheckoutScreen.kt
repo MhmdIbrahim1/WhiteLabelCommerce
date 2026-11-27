@@ -1,5 +1,7 @@
 package com.whitelabel.commerce.feature.checkout
 
+import com.whitelabel.commerce.core.data.remote.PhoneNormalizer
+
 import com.whitelabel.commerce.core.designsystem.components.BannerFeedback
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
@@ -73,7 +75,6 @@ import com.whitelabel.commerce.core.designsystem.localized
 import com.whitelabel.commerce.core.domain.model.PaymentMethod
 import com.whitelabel.commerce.core.domain.model.SavedOrderReceipt
 
-private val WALLET_INPUT_REGEX = Regex("^01[0125][0-9]{8}$")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -93,13 +94,7 @@ fun CheckoutScreen(
     var addressBusy by remember { mutableStateOf(false) }
     val confirmedReceipt = state.form.confirmedReceipt
 
-    // Online payment flow (Paymob Card / Wallet): opens in-app WebView while preserving local cart
-    // Skip Paymob when paid via COD or Store Wallet (total == 0)
-    if (confirmedReceipt != null &&
-        confirmedReceipt.method != "cod" &&
-        confirmedReceipt.method != "wallet" &&
-        confirmedReceipt.total > 0.0
-    ) {
+    if (confirmedReceipt != null && confirmedReceipt.requiresOnlinePayment) {
         PaymentFlow(
             id = confirmedReceipt.orderNumber,
             phone = confirmedReceipt.phone,
@@ -112,7 +107,6 @@ fun CheckoutScreen(
         return
     }
 
-    // COD or Full Store Wallet order confirmation receipt (local cart already cleared)
     if (confirmedReceipt != null) {
         OrderConfirmationScreen(
             receipt = confirmedReceipt,
@@ -125,9 +119,8 @@ fun CheckoutScreen(
         return
     }
 
-    val walletValid = state.fullyPaidByWallet ||
-        state.form.paymentMethod != PaymentMethod.WALLET ||
-        WALLET_INPUT_REGEX.matches(state.form.wallet)
+    val walletValid = state.paymentMethod != PaymentMethod.WALLET ||
+        PhoneNormalizer.isValidEgyptianPhone(state.form.wallet)
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -192,7 +185,7 @@ fun CheckoutScreen(
                             enabled = online && !addressBusy && state.form.shippingRates != null && !state.form.isSubmitting &&
                                 state.cartItems.isNotEmpty() &&
                                 state.storeSettings.isSyncedFromRemote &&
-                                (state.fullyPaidByWallet || state.form.paymentMethod in state.storeSettings.paymentMethods) &&
+                                (state.fullyPaidByWallet || state.fullyCoveredByCoupon || state.paymentMethod in state.storeSettings.paymentMethods) &&
                                 walletValid,
                             shape = MaterialTheme.shapes.small,
                             modifier = Modifier
@@ -208,11 +201,12 @@ fun CheckoutScreen(
                             } else {
                                 Text(
                                     text = when {
+                                        state.fullyCoveredByCoupon -> localized("تأكيد الطلب المجاني", "Confirm free order")
                                         state.fullyPaidByWallet -> localized(
                                             "إتمام الطلب برصيد المحفظة",
                                             "Complete with Store Wallet",
                                         )
-                                        state.form.paymentMethod == PaymentMethod.COD -> localized(
+                                        state.paymentMethod == PaymentMethod.COD -> localized(
                                             "تأكيد الطلب",
                                             "Confirm order",
                                         )
@@ -436,7 +430,7 @@ fun CheckoutScreen(
                 }
             }
 
-            if (state.fullyPaidByWallet) {
+            if (state.fullyPaidByWallet || state.fullyCoveredByCoupon) {
                 Surface(
                     color = brandColors.success.copy(alpha = 0.14f),
                     contentColor = brandColors.success,
@@ -455,7 +449,10 @@ fun CheckoutScreen(
                             modifier = Modifier.size(22.dp),
                         )
                         Text(
-                            text = localized(
+                            text = if (state.fullyCoveredByCoupon) localized(
+                                "مغطّى بالكامل بكود الخصم — لا يلزم دفع إضافي",
+                                "Covered in full by promo code — no payment required",
+                            ) else localized(
                                 "مغطّى بالكامل برصيد محفظة المتجر — لا يلزم دفع إضافي.",
                                 "Paid in full via Store Wallet — no extra payment required.",
                             ),
@@ -483,20 +480,23 @@ fun CheckoutScreen(
                         )
 
                         state.storeSettings.paymentMethods.forEach { option ->
-                            val isSelected = state.form.paymentMethod == option
+                            val isSelected = state.paymentMethod == option
                             val icon = when (option) {
                                 PaymentMethod.COD -> Icons.Rounded.Payments
+                                PaymentMethod.COUPON -> Icons.Rounded.ConfirmationNumber
                                 PaymentMethod.CARD -> Icons.Rounded.CreditCard
                                 PaymentMethod.WALLET, PaymentMethod.STORE_WALLET -> Icons.Rounded.AccountBalanceWallet
                             }
                             val title = when (option) {
                                 PaymentMethod.COD -> localized("الدفع عند الاستلام", "Cash on delivery")
+                                PaymentMethod.COUPON -> localized("كوبون خصم", "Promo coupon")
                                 PaymentMethod.CARD -> localized("بطاقة بنكية (فيزا / ماستركارد)", "Credit / Debit card")
                                 PaymentMethod.WALLET -> localized("محفظة إلكترونية (فودافون / اتصالات / أورنج)", "Mobile wallet")
                                 PaymentMethod.STORE_WALLET -> localized("محفظة المتجر", "Store wallet")
                             }
                             val subtitle = when (option) {
                                 PaymentMethod.COD -> localized("ادفع نقداً للمندوب عند استلام طلبك.", "Pay in cash upon delivery.")
+                                PaymentMethod.COUPON -> localized("مغطّى بالكامل بكود الخصم", "Covered in full by promo code")
                                 PaymentMethod.CARD -> localized("دفع إلكتروني آمن ومشفّر عبر Paymob.", "Encrypted online card checkout via Paymob.")
                                 PaymentMethod.WALLET -> localized("استلم طلب التأكيد على محفظتك المصرية.", "Confirm payment directly on your Egyptian wallet.")
                                 PaymentMethod.STORE_WALLET -> localized("الدفع برصيد محفظتك في المتجر.", "Pay using your store wallet balance.")
@@ -550,8 +550,8 @@ fun CheckoutScreen(
                             }
                         }
 
-                        if (state.form.paymentMethod == PaymentMethod.WALLET) {
-                            val walletInvalid = !WALLET_INPUT_REGEX.matches(state.form.wallet)
+                        if (state.paymentMethod == PaymentMethod.WALLET) {
+                            val walletInvalid = !PhoneNormalizer.isValidEgyptianPhone(state.form.wallet)
                             OutlinedTextField(
                                 value = state.form.wallet,
                                 onValueChange = viewModel::wallet,

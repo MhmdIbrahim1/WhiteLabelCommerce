@@ -37,4 +37,9 @@ data class SavedOrderReceipt(
     val status: OrderStatus = OrderStatus.PENDING,
     val createdAt: String,
     val items: List<SavedOrderLine> = emptyList(),
-)
+    val reservationExpiresAt: String? = null,
+    val paymentReview: String? = null,
+) {
+    val requiresOnlinePayment: Boolean
+        get() = method !in setOf("cod", "wallet", "coupon") && paymentStatus != "paid" && total > 0.0
+}

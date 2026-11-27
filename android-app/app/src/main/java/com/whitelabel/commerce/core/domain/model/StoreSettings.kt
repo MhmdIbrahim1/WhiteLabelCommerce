@@ -3,11 +3,26 @@ package com.whitelabel.commerce.core.domain.model
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
+enum class StoreThemeTemplate(
+    val id: String, val primary: String, val accent: String, val surface: String,
+    val background: String, val line: String, val radius: Int,
+) {
+    MODERN("modern-minimal", "#164E63", "#C2410C", "#FFFFFF", "#F6F8F9", "#DCE5E7", 12),
+    LUXURY("luxury-boutique", "#242322", "#856425", "#FFFDFA", "#F5F1EA", "#C9BA9D", 4),
+    VIBRANT("vibrant-pop", "#752AA0", "#B92D59", "#FFFCFF", "#FAF2FC", "#E5C7EB", 20),
+    TECH("tech-grid", "#303D87", "#17677A", "#FAFCFF", "#EDF1F8", "#ABB9CE", 8);
+
+    companion object {
+        fun resolve(id: String?): StoreThemeTemplate = entries.firstOrNull { it.id == id } ?: MODERN
+    }
+}
+
 data class BrandColors(
-    val primary: String = "#164E63",
-    val secondary: String = "#C2410C",
-    val page: String = "#F8FAFC",
-    val surface: String = "#FFFFFF",
+    val primary: String = StoreThemeTemplate.MODERN.primary,
+    val secondary: String = StoreThemeTemplate.MODERN.accent,
+    val page: String = StoreThemeTemplate.MODERN.background,
+    val surface: String = StoreThemeTemplate.MODERN.surface,
+    val line: String = StoreThemeTemplate.MODERN.line,
 )
 
 data class BrandPresets(
@@ -31,7 +46,7 @@ data class StoreSettings(
     val currency: String = "EGP",
     val locale: String = "ar-EG",
     val colors: BrandColors = BrandColors(),
-    val borderRadius: Int = 12,
+    val borderRadius: Int = StoreThemeTemplate.MODERN.radius,
     val whatsappNumber: String = "",
     val supportEmail: String = "support@example.com",
     val shippingFee: Double = 50.0,
@@ -42,7 +57,7 @@ data class StoreSettings(
     val banners: List<String> = emptyList(),
     val presets: BrandPresets = BrandPresets(),
     val isSyncedFromRemote: Boolean = false,
-    val themeTemplate: String = "modern-minimal",
+    val themeTemplate: String = StoreThemeTemplate.MODERN.id,
 ) {
     fun effectiveShippingFee(subtotal: Double): Double =
         if (cartIncentiveEnabled && freeShippingThreshold > 0.0 && subtotal >= freeShippingThreshold) {

@@ -133,9 +133,12 @@ export async function POST(req: Request) {
       serverDb(),
       resolveActiveStoreOrDefault(),
     ]);
-    const {
-      data: { user },
-    } = await userDb.auth.getUser();
+    const cookieSession = await userDb.auth.getUser();
+    let user = cookieSession.data.user;
+    if (!user) {
+      const token = /^Bearer[ \t]+([^\s,]+)$/i.exec(req.headers.get("authorization") ?? "")?.[1];
+      if (token) user = (await userDb.auth.getUser(token)).data.user;
+    }
 
     const db = adminDb();
 
@@ -186,7 +189,7 @@ export async function POST(req: Request) {
     // Reject closed, already-paid, or non-online orders
     if (order.status === "cancelled" || order.status === "delivered") {
       return Response.json(
-        { error: "Order is closed and cannot be paid." },
+        { error: "Order is closed and cannot be paid.", code: "order_ineligible" },
         { status: 409, headers: { "Cache-Control": "no-store" } },
       );
     }
@@ -289,6 +292,7 @@ export async function POST(req: Request) {
       p_method: paymentMethod, p_checkout_base: origin ? origin + activeStore.basePath : null
     });
     const a = reservation.data;
+    if (reservation.error?.message === "order_ineligible") return json({ error: "order_ineligible", code: "order_ineligible" }, 409);
     if (reservation.error || !a) return json({ error: "Payment reservation unavailable." }, reservation.error?.code === "P0001" ? 409 : 503);
     if (a.action === "redirect") return json({ redirect_url: a.redirect_url });
     if (a.action === "pending") return json({ state: "pending", pending_wallet_prompt: true }, 202);

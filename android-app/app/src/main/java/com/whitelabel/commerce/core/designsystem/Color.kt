@@ -14,10 +14,10 @@ val DefaultPrimaryHex = Color(0xFF164E63)
 val DefaultSecondaryHex = Color(0xFFC2410C)
 val DefaultSurfaceLight = Color(0xFFFFFFFF)
 
-private val LightWash = Color(0xFFF8FAFC)
+private val LightWash = Color(0xFFF6F8F9)
 private val LightInk = Color(0xFF17242A)
 private val LightMuted = Color(0xFF4E626B)
-private val LightLine = Color(0xFFD7E1E5)
+private val LightLine = Color(0xFFDCE5E7)
 private val LightSurfaceVariant = Color(0xFFEEF3F6)
 
 private val DarkWash = Color(0xFF101A20)
@@ -72,48 +72,74 @@ fun parseHexColorOrDefault(raw: String?, fallback: Color): Color {
     }.getOrDefault(fallback)
 }
 
-private fun contrastingOnColor(background: Color): Color =
-    if (background.luminance() > 0.42f) LightInk else Color.White
+private fun contrast(a: Color, b: Color): Float {
+    val first = a.luminance()
+    val second = b.luminance()
+    return (maxOf(first, second) + 0.05f) / (minOf(first, second) + 0.05f)
+}
 
-private fun adaptForDarkTheme(brandColor: Color): Color =
-    if (brandColor.luminance() < 0.24f) {
-        lerp(brandColor, Color.White, 0.36f)
-    } else {
-        brandColor
+private data class ControlColors(val fill: Color, val ink: Color)
+
+// Same WCAG foreground selection and one-channel-step adjustment as the storefront.
+private fun controlColors(accent: Color): ControlColors {
+    val matte = Color(0xFF0B0B0C)
+    val ink = if (contrast(accent, Color.White) >= contrast(accent, matte)) Color.White else matte
+    val step = (if (ink == Color.White) -1f else 1f) / 255f
+    var fill = accent.copy(alpha = 1f)
+    while (contrast(fill, ink) < 4.5f) {
+        fill = fill.copy(
+            red = (fill.red + step).coerceIn(0f, 1f),
+            green = (fill.green + step).coerceIn(0f, 1f),
+            blue = (fill.blue + step).coerceIn(0f, 1f),
+        )
     }
+    return ControlColors(fill, ink)
+}
+
+private fun adaptForDarkTheme(brandColor: Color): Color {
+    var color = brandColor
+    while (contrast(color, DarkSurface) < 4.5f) {
+        color = lerp(color, Color.White, 0.1f)
+    }
+    return color
+}
 
 fun buildLightBrandColorScheme(colors: BrandColors): ColorScheme {
     val primary = parseHexColorOrDefault(colors.primary, DefaultPrimaryHex)
     val secondary = parseHexColorOrDefault(colors.secondary, DefaultSecondaryHex)
     val surface = parseHexColorOrDefault(colors.surface, DefaultSurfaceLight)
+    val page = parseHexColorOrDefault(colors.page, LightWash)
+    val line = parseHexColorOrDefault(colors.line, LightLine)
+    val primaryControl = controlColors(primary)
+    val secondaryControl = controlColors(secondary)
 
     val primaryContainer = lerp(primary, surface, 0.86f)
     val secondaryContainer = lerp(secondary, surface, 0.86f)
 
     return lightColorScheme(
-        primary = primary,
-        onPrimary = contrastingOnColor(primary),
+        primary = primaryControl.fill,
+        onPrimary = primaryControl.ink,
         primaryContainer = primaryContainer,
         onPrimaryContainer = LightInk,
-        secondary = secondary,
-        onSecondary = contrastingOnColor(secondary),
+        secondary = secondaryControl.fill,
+        onSecondary = secondaryControl.ink,
         secondaryContainer = secondaryContainer,
         onSecondaryContainer = LightInk,
-        tertiary = secondary,
-        onTertiary = contrastingOnColor(secondary),
-        background = parseHexColorOrDefault(colors.page, LightWash),
+        tertiary = secondaryControl.fill,
+        onTertiary = secondaryControl.ink,
+        background = page,
         onBackground = LightInk,
         surface = surface,
         onSurface = LightInk,
         surfaceVariant = LightSurfaceVariant,
         onSurfaceVariant = LightMuted,
         surfaceContainerLowest = surface,
-        surfaceContainerLow = LightWash,
+        surfaceContainerLow = page,
         surfaceContainer = surface,
         surfaceContainerHigh = LightSurfaceVariant,
-        surfaceContainerHighest = LightLine,
+        surfaceContainerHighest = line,
         outline = LightMuted,
-        outlineVariant = LightLine,
+        outlineVariant = line,
         error = LightError,
         onError = Color.White,
         errorContainer = LightErrorContainer,
@@ -125,22 +151,22 @@ fun buildDarkBrandColorScheme(colors: BrandColors): ColorScheme {
     val rawPrimary = parseHexColorOrDefault(colors.primary, DefaultPrimaryHex)
     val rawSecondary = parseHexColorOrDefault(colors.secondary, DefaultSecondaryHex)
 
-    val primary = adaptForDarkTheme(rawPrimary)
-    val secondary = adaptForDarkTheme(rawSecondary)
+    val primary = controlColors(adaptForDarkTheme(rawPrimary))
+    val secondary = controlColors(adaptForDarkTheme(rawSecondary))
     val primaryContainer = lerp(rawPrimary, DarkSurface, 0.45f)
     val secondaryContainer = lerp(rawSecondary, DarkSurface, 0.45f)
 
     return darkColorScheme(
-        primary = primary,
-        onPrimary = contrastingOnColor(primary),
+        primary = primary.fill,
+        onPrimary = primary.ink,
         primaryContainer = primaryContainer,
         onPrimaryContainer = DarkInk,
-        secondary = secondary,
-        onSecondary = contrastingOnColor(secondary),
+        secondary = secondary.fill,
+        onSecondary = secondary.ink,
         secondaryContainer = secondaryContainer,
         onSecondaryContainer = DarkInk,
-        tertiary = secondary,
-        onTertiary = contrastingOnColor(secondary),
+        tertiary = secondary.fill,
+        onTertiary = secondary.ink,
         background = DarkWash,
         onBackground = DarkInk,
         surface = DarkSurface,
@@ -184,7 +210,7 @@ fun buildExtendedBrandColors(colors: BrandColors, darkTheme: Boolean): BrandExte
             surfaceCard = rawSurface,
             ink = LightInk,
             mutedInk = LightMuted,
-            hairline = LightLine,
+            hairline = parseHexColorOrDefault(colors.line, LightLine),
             primaryBrand = rawPrimary,
             secondaryAccent = rawSecondary,
             success = LightSuccess,
