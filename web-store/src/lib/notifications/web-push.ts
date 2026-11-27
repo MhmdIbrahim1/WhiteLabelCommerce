@@ -1,5 +1,6 @@
 "use client";
 
+import { cartScope } from "@/lib/cart-session";
 import { getGuestSessionId } from "@/components/shop/cart-store";
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
@@ -43,7 +44,7 @@ function getFirebaseWebConfig() {
  */
 export async function syncWebPushSubscription(
   lang: "ar" | "en",
-  storeId: string,
+  storeId: string, userId: string, signal: AbortSignal,
 ): Promise<{ ok: boolean; reason?: "unavailable" | "failed" }> {
   if (
     typeof window === "undefined" ||
@@ -106,14 +107,16 @@ export async function syncWebPushSubscription(
       return { ok: false, reason: "failed" };
     }
 
+    if (signal.aborted) return { ok: false, reason: "unavailable" };
     const res = await fetch("/api/notifications/register", {
+      signal,
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         platform: "web",
         token,
         locale: lang,
-        guest_session_id: getGuestSessionId(storeId),
+        guest_session_id: getGuestSessionId(cartScope(storeId, userId)),
       }),
     });
 

@@ -7,6 +7,8 @@ import { getServerLang, getStudioPreviewLang } from "@/lib/i18n-server";
 import { STORE_ID_HEADER } from "@/lib/tenant-shared";
 import { settings } from "@/lib/shop";
 import { LanguageProvider } from "@/components/language-provider";
+import { AuthSessionProvider } from "@/components/auth-session";
+import { requestUser } from "@/lib/db";
 import { FloatingToastHost } from "@/components/floating-toast";
 import "./globals.css";
 
@@ -21,6 +23,9 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
   }
   const lang = await getServerLang(defaultLang);
 
+  const preview = Boolean(await getStudioPreviewLang());
+  const user = preview ? null : await requestUser();
+
   const tokens = {
     "--primary": brand.colors.primary,
     "--secondary": brand.colors.secondary,
@@ -31,8 +36,8 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang={langHtmlAttr(lang)} dir={langDir(lang)} style={tokens}>
       <body>
-        <LanguageProvider initialLang={lang} defaultLang={defaultLang} preview={Boolean(await getStudioPreviewLang())}>
-          {children}
+        <LanguageProvider initialLang={lang} defaultLang={defaultLang} preview={preview}>
+          {preview ? children : <AuthSessionProvider initialUser={user?.id ?? null}>{children}</AuthSessionProvider>}
           <FloatingToastHost />
         </LanguageProvider>
       </body>

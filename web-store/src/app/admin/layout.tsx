@@ -12,7 +12,7 @@ import { getServerLang } from "@/lib/i18n-server";
 import { merchantStorefrontUrl } from "@/lib/tenant";
 import { LanguageToggle } from "@/components/language-provider";
 import { NotificationBell } from "@/components/notifications/notification-bell";
-import { logout } from "../login/actions";
+import { LogoutForm } from "@/components/auth-session";
 import Navigation from "./nav";
 import { AdminStoreSwitcher } from "./store-switcher";
 import { AdminGuidedTour, AdminTourTrigger } from "./guided-tour";
@@ -58,7 +58,7 @@ export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
     <div className="ws-sidebar-foot">
       {(managedStores.length > 1 || isSuperAdmin) && <Link href="/create-store"><Plus size={16}/>{isEn ? "Create store" : "إنشاء متجر"}</Link>}
       {user.email && <bdi dir="ltr" title={user.email}>{user.email}</bdi>}
-      <form action={logout}><button type="submit"><LogOut size={16} />{t(lang, "navLogout")}</button></form>
+      <LogoutForm><LogOut size={16} />{t(lang, "navLogout")}</LogoutForm>
     </div></>;
   return <WorkspaceSurface><WorkspaceFrame sidebar={sidebar} store={<AdminStoreSwitcher title={storeTitle}
     planName={billing ? localizedText(lang, billing.plan.name_ar, billing.plan.name_en) : null} activeStore={activeStore}

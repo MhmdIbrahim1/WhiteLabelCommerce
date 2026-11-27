@@ -1,5 +1,6 @@
 "use server";
 
+import { verifiedEmailUser } from "@/lib/auth-flow";
 import { actionError } from "@/lib/action-error";
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
@@ -23,6 +24,7 @@ export async function checkSlugAvailability(
 
   if (!isStoreSlug(slug)) return { available: false, reason: "reserved" };
   const db = await serverDb();
+  if (!verifiedEmailUser((await db.auth.getUser()).data.user)) return { available: false, reason: "error" };
   const { data, error } = await db
     .rpc("check_store_slug_available", { p_slug: slug })
     .maybeSingle<{ available: boolean; reason: string }>();
@@ -47,6 +49,7 @@ export type CreateStoreResult =
   | { ok: false; errorCode: string };
 
 export async function createStoreAction(input: {
+  expectedUserId: string;
   nameAr: string;
   nameEn: string;
   slug: string;
@@ -58,9 +61,11 @@ export async function createStoreAction(input: {
   const {
     data: { user },
   } = await db.auth.getUser();
-  if (!user) {
+  if (!verifiedEmailUser(user)) {
     return { ok: false, errorCode: "auth_required" };
   }
+
+  if (user.id !== input.expectedUserId) return { ok: false, errorCode: "account_changed" };
 
   const nameAr = (input.nameAr ?? "").trim().slice(0, 120);
   const nameEn = ((input.nameEn ?? "").trim() || nameAr).slice(0, 120);

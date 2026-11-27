@@ -32,6 +32,11 @@ export const serverDb = cache(async () => {
   );
 });
 
+export const requestUser = cache(async () => {
+  if (!(await cookies()).getAll().some(cookie => cookie.name.startsWith("sb-"))) return null;
+  return (await (await serverDb()).auth.getUser()).data.user;
+});
+
 const adminContext = cache(async () => {
   const [db, jar] = await Promise.all([serverDb(), cookies()]);
   const {

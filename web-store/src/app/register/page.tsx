@@ -1,57 +1,17 @@
-import Link from "next/link";
-import { Store, UserPlus, PhoneCall } from "lucide-react";
-import { settings } from "@/lib/shop";
-import { t } from "@/lib/i18n";
-import { getServerLang } from "@/lib/i18n-server";
-import { LanguageToggle } from "@/components/language-provider";
+import { TenantAuthShell } from "@/components/shop/tenant-auth-shell";
 import { HybridAuthPanel } from "@/components/shop/hybrid-auth-panel";
 import { storeHref } from "@/lib/tenant-shared";
+import { settings } from "@/lib/shop";
+import { safeAuthNext } from "@/lib/auth-flow";
+import { getServerLang } from "@/lib/i18n-server";
+import { t } from "@/lib/i18n";
 
-export default async function Register({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
-  const [params, store, lang] = await Promise.all([
-    searchParams,
-    settings(),
-    getServerLang(),
-  ]);
-  const errorKey = typeof params.error === "string" ? params.error : "";
-  const next = typeof params.next === "string" ? params.next : "";
-
-  return (
-    <main className="auth-shell">
-      <section className="auth-glass-card">
-        <div className="auth-top-row">
-          <Link href={storeHref(store.basePath, "/")} className="brand" style={{ textDecoration: "none" }}>
-            <span className="mark">
-              <Store size={20} />
-            </span>
-            <b dir="auto">{store.name}</b>
-          </Link>
-          <div className="auth-top-actions">
-            <LanguageToggle className="lang-toggle-pill" />
-            <Link href={storeHref(store.basePath, "/")} className="auth-back-link">
-              {t(lang, "backToStore")}
-            </Link>
-          </div>
-        </div>
-
-        <div className="auth-heading">
-          <span className="auth-pill">
-            <UserPlus size={13} /> {t(lang, "registerPill")}
-          </span>
-          <h1>{t(lang, "registerHeading")}</h1>
-          <p>{t(lang, "registerSubtitle")}</p>
-        </div>
-
-        <HybridAuthPanel initialSignup nextPath={next} basePath={store.basePath} storeName={store.name} initialError={errorKey} />
-
-        <footer className="auth-footer">
-          <PhoneCall size={14} /> {t(lang, "registerFooterNote")}
-        </footer>
-      </section>
-    </main>
-  );
+export default async function Register({ searchParams }: PageProps<"/register">) {
+  const [query, store] = await Promise.all([searchParams, settings()]);
+  const lang = await getServerLang(store.uiConfig.defaultLanguage);
+  return <TenantAuthShell><div className="auth-heading"><h1>{t(lang, "registerHeading")}</h1></div>
+    <HybridAuthPanel basePath={store.basePath} nextPath={safeAuthNext(query.next, store.basePath, store.slug) || storeHref(store.basePath, "/account")}
+      initialSignup initialOtp={query.method === "otp"}
+      initialError={typeof query.error === "string" ? query.error : ""} />
+  </TenantAuthShell>;
 }

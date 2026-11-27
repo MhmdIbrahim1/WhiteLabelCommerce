@@ -1,3 +1,6 @@
+import { safeRelativePath } from "./security.ts";
+import { storePath } from "./host-routing.ts";
+
 export const DEFAULT_STORE_ID = "00000000-0000-0000-0000-000000000001";
 export const DEFAULT_STORE_SLUG = "nova-store";
 export const STORE_SLUG_COOKIE = "nova_store_slug";
@@ -7,6 +10,7 @@ export const STORE_ID_HEADER = "x-store-id";
 export const STORE_CANONICAL_HEADER = "x-store-canonical";
 export const PLATFORM_ORIGIN_HEADER = "x-platform-origin";
 export const REQUEST_ORIGIN_HEADER = "x-wlc-request-origin";
+export const PASSWORD_RECOVERY_HEADER = "x-wlc-password-recovery";
 export const STORE_BASE_PATH_HEADER = "x-store-base-path";
 export const STUDIO_LOCALE_HEADER = "x-wlc-studio-locale";
 export const STUDIO_PREVIEW_QUERY = "studioPreview";
@@ -65,8 +69,10 @@ export function storefrontPath(slug: string) {
 
 // Older storefront links carry their tenant in the relative return path.
 export function tenantAuthEntry(basePath: string, route: "/login" | "/register", next: string) {
-  const prefix = /^\/(?:s|store)\/[a-z0-9-]+(?=[/?#]|$)/i.exec(next)?.[0];
-  return prefix && !basePath ? prefix + route + "?next=" + encodeURIComponent(next) : null;
+  const safe = safeRelativePath(next);
+  if (!safe || basePath) return null;
+  const alias = storePath(new URL(safe, "https://internal.invalid").pathname);
+  return alias && alias !== "invalid" ? alias.basePath + route + "?next=" + encodeURIComponent(safe) : null;
 }
 
 const PLATFORM_PREFIXES = [

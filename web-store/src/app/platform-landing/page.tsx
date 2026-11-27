@@ -7,6 +7,9 @@ import { ArrowRight, ArrowUp, ArrowUpRight, Box, Check, Fingerprint, Layers, Rou
 import { LanguageToggle } from "@/components/language-provider";
 import { PlanComparison } from "@/components/plan-comparison";
 import { PlatformBrand } from "@/components/platform-brand";
+import { requestUser, serverDb } from "@/lib/db";
+import { adminUser } from "@/lib/access";
+import { LogoutForm } from "@/components/auth-session";
 import { getPlanCatalog } from "@/lib/billing-data";
 import { langDir, type Lang } from "@/lib/i18n";
 import { getServerLang } from "@/lib/i18n-server";
@@ -105,7 +108,8 @@ function Architecture({ lang }: { lang: Lang }) {
 }
 
 export default async function PlatformLanding() {
-  const [lang, plans, theme] = await Promise.all([getServerLang(), getPlanCatalog().catch(() => null), getPublishedTheme()]);
+  const [lang, plans, theme, user] = await Promise.all([getServerLang(), getPlanCatalog().catch(() => null), getPublishedTheme(), requestUser()]);
+  const merchant = user && await adminUser(await serverDb(), undefined, user);
   const c = copy[lang];
   const demo = storefrontPath(DEFAULT_STORE_SLUG);
   return <div className="pt-shell landing" id="top" lang={lang} dir={langDir(lang)}
@@ -117,8 +121,11 @@ export default async function PlatformLanding() {
       <nav className="landing-links" aria-label={c.nav}>
         <a href="#features">{c.features}</a><a href="#verticals">{c.verticals}</a><a href="#pricing">{c.pricing}</a>
       </nav>
-      <div className="landing-account"><LanguageToggle className="pt-lang" /><Link href="/login?next=/admin">{c.login}</Link>
-        <Link href="/create-store" className="pt-action">{c.start}<ArrowRight className="pt-directional" size={15} /></Link></div>
+      <div className="landing-account"><LanguageToggle className="pt-lang" />{user ? <>
+        <LogoutForm>{lang === "en" ? "Sign out" : "تسجيل الخروج"}</LogoutForm>
+        <Link className="pt-action" href={merchant ? "/admin" : "/account"}>{merchant ? (lang === "en" ? "Dashboard" : "لوحة التحكم") : (lang === "en" ? "My account" : "حسابي")}</Link>
+      </> : <><Link href="/login?next=/admin">{c.login}</Link>
+        <Link href="/create-store" className="pt-action">{c.start}<ArrowRight className="pt-directional" size={15} /></Link></>}</div>
     </div></header>
     <main id="platform-content">
       <section className="landing-hero" aria-labelledby="platform-title">

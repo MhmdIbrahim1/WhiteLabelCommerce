@@ -11,19 +11,19 @@ import { quantityLimitHint } from "@/lib/variant-stock";
 import { storeHref } from "@/lib/tenant-shared";
 import { storefrontImageSrc } from "@/lib/storefront-media";
 import { photo } from "@/lib/product-photo";
-import { change, lineEffectivePrice, refreshCartInventory, remainingQuantity, useCart, useCartTenant, useDefaultOrderLimit } from "./cart-store";
+import { change, lineEffectivePrice, refreshCartInventory, remainingQuantity, useCart, useCartScope, useDefaultOrderLimit } from "./cart-store";
 import { useSaleClock } from "./use-sale-clock";
 import { StoreCopy } from "./store-copy";
 
 export function useBasketContents() {
-  const tenant = useCartTenant();
+  const tenant = useCartScope();
   const limit = useDefaultOrderLimit();
   const lines = useCart();
   const now = useSaleClock(lines);
   const productIds = [...new Set(lines.map(line => line.id))].sort().join(",");
   const [attempt, setAttempt] = useState(0);
   const [checked, setChecked] = useState({ key: "", ok: false });
-  const key = tenant + ":" + productIds + ":" + attempt;
+  const key = tenant.key + ":" + productIds + ":" + attempt;
   useEffect(() => {
     if (!productIds) return;
     let current = true;

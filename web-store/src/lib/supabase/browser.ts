@@ -10,6 +10,8 @@ export function browserDb(): SupabaseClient {
   browserClient = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    // Auth routes handle emailed proofs explicitly, including legacy PKCE links.
+    { auth: { detectSessionInUrl: false } },
   );
   return browserClient;
 }

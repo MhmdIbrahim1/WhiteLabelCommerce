@@ -70,7 +70,8 @@ export function safeRelativePath(
   }
   try {
     const parsed = new URL(s, "https://internal.invalid");
-    if (parsed.origin !== "https://internal.invalid") return fallback;
+    if (parsed.origin !== "https://internal.invalid" || parsed.pathname.includes("//") ||
+        /%(?:2f|5c|25|0[0-9a-f]|1[0-9a-f]|7f)/i.test(parsed.pathname)) return fallback;
     return `${parsed.pathname}${parsed.search}${parsed.hash}`;
   } catch {
     return fallback;

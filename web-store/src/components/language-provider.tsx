@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import { useRouter } from "next/navigation";
+import { useHydrated } from "@/components/use-hydrated";
 import { Globe } from "lucide-react";
 import {
   DICT,
@@ -130,6 +131,7 @@ export function LanguageToggle({
 }: {
   className?: string;
 }) {
+  const interactive = useHydrated();
   const { lang, toggleLang } = useLanguage();
   const nextLabel = lang === "ar" ? "EN" : "عربي";
   const aria =
@@ -140,6 +142,7 @@ export function LanguageToggle({
     <button
       type="button"
       className={className}
+      disabled={!interactive}
       onClick={toggleLang}
       aria-label={aria}
       title={aria}

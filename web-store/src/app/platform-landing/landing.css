@@ -14,6 +14,8 @@
 .landing .landing-bar > div { min-block-size: 76px; justify-content: space-between; gap: 1.3rem; }
 .landing .landing-brand:hover { text-decoration: none; }
 .landing .landing-links { gap: clamp(1rem, 2.3vw, 2.1rem); }
+.landing .landing-account .session-logout { margin: 0; }
+.landing .session-logout button { background: transparent; color: var(--pt-ink); padding-inline: .2rem; min-block-size: 44px; font: inherit; }
 .landing .landing-account { gap: clamp(.55rem, 1.4vw, 1.3rem); }
 .landing .landing-links a, .landing .landing-account > a, .landing .landing-footer nav a { display: inline-flex; align-items: center; min-block-size: 44px; font-size: .88rem; }
 .landing .landing-links a { font-weight: 550; }

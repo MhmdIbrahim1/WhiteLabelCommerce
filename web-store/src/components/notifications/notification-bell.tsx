@@ -22,6 +22,7 @@ import {
   RefreshCw,
   Trash2,
 } from "lucide-react";
+import { useSessionUser } from "@/components/auth-session";
 import { useLanguage } from "@/components/language-provider";
 import { browserDb } from "@/lib/supabase/browser";
 import { syncWebPushSubscription } from "@/lib/notifications/web-push";
@@ -116,17 +117,15 @@ function CategoryIcon({ category }: { category: InboxItem["category"] }) {
   }
 }
 
-export function NotificationBell({
-  storeId,
-  userId = null,
-  scope = "customer",
-  basePath = "",
-}: {
-  storeId: string;
-  userId?: string | null;
-  scope?: "customer" | "admin";
-  basePath?: string;
-}) {
+type BellProps = { storeId: string; userId: string; scope?: "customer" | "admin"; basePath?: string };
+
+export function NotificationBell(props: BellProps) {
+  const user = useSessionUser();
+  if (!user || user !== props.userId) return null;
+  return <SignedInBell key={[props.storeId, props.scope, user].join(":")} {...props} />;
+}
+
+function SignedInBell({ storeId, userId, scope = "customer", basePath = "" }: BellProps) {
   const { lang, t } = useLanguage();
   const router = useRouter();
   const isClient = useSyncExternalStore(
@@ -145,8 +144,9 @@ export function NotificationBell({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const hasOpenedRef = useRef(false);
 
-  const localReadKey = `nova.notif.read.${storeId}.${scope}`;
-  const localDismissedKey = `nova.notif.dismissed.${storeId}.${scope}`;
+  const requests = useRef<AbortController | null>(null);
+  const localReadKey = `nova.notif.read.${storeId}.${scope}.${userId}`;
+  const localDismissedKey = `nova.notif.dismissed.${storeId}.${scope}.${userId}`;
 
   const hydrateInbox = useCallback(
     (rawItems: InboxItem[]) => {
@@ -163,39 +163,23 @@ export function NotificationBell({
   );
 
   const refreshInbox = useCallback(async () => {
+    const signal = requests.current?.signal;
+    if (!signal || signal.aborted) return;
     try {
-      const res = await fetch(`/api/notifications/inbox?scope=${scope}`, {
-        cache: "no-store",
-      });
+      const res = await fetch(basePath + `/api/notifications/inbox?scope=${scope}`, { cache: "no-store", signal });
       if (!res.ok) return;
-      const body = (await res.json()) as { items?: InboxItem[] };
-      if (Array.isArray(body.items)) {
-        setItems(hydrateInbox(body.items));
-      }
-    } catch {
-      // Silent network resilience
-    } finally {
-      setLoading(false);
-    }
-  }, [scope, hydrateInbox]);
+      const body = await res.json() as { items?: InboxItem[] };
+      if (!signal.aborted && Array.isArray(body.items)) setItems(hydrateInbox(body.items));
+    } catch { /* The inbox can be reopened after a network interruption. */ }
+    finally { if (!signal.aborted) setLoading(false); }
+  }, [scope, basePath, hydrateInbox]);
 
   useEffect(() => {
-    let active = true;
-    fetch(`/api/notifications/inbox?scope=${scope}`, { cache: "no-store" })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((body: { items?: InboxItem[] } | null) => {
-        if (active && body && Array.isArray(body.items)) {
-          setItems(hydrateInbox(body.items));
-        }
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [scope, hydrateInbox]);
+    const controller = new AbortController();
+    requests.current = controller;
+    void refreshInbox();
+    return () => { controller.abort(); requests.current = null; };
+  }, [refreshInbox]);
 
   // Auto-mark notification as read if opened from an external Web Push link (?notif_id=<uuid>)
   useEffect(() => {
@@ -205,10 +189,10 @@ export function NotificationBell({
     if (!notifId || !/^[0-9a-f-]{36}$/i.test(notifId)) return;
 
     addLocalIds(localReadKey, [notifId]);
-    void fetch("/api/notifications/inbox", {
+    void fetch(basePath + "/api/notifications/inbox", {
+      signal: requests.current?.signal,
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      keepalive: true,
       body: JSON.stringify({ id: notifId, scope }),
     })
       .then(() => {
@@ -222,7 +206,7 @@ export function NotificationBell({
     const nextSearch = params.toString();
     const cleanUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}${window.location.hash}`;
     window.history.replaceState(null, "", cleanUrl);
-  }, [localReadKey, scope]);
+  }, [basePath, localReadKey, scope]);
 
   // Auto-register / refresh Web Push subscription on mount & language/user changes when permission is granted
   useEffect(() => {
@@ -233,7 +217,7 @@ export function NotificationBell({
     ) {
       return;
     }
-    void syncWebPushSubscription(lang, storeId);
+    if (requests.current) void syncWebPushSubscription(lang, storeId, userId, requests.current.signal);
   }, [lang, userId, storeId]);
 
   function syncBrowserPermission() {
@@ -367,10 +351,10 @@ export function NotificationBell({
     );
     addLocalIds(localReadKey, [item.id]);
     // Persist read_at for both personal AND broadcast (user_id === null) rows via SECURITY DEFINER RPC
-    void fetch("/api/notifications/inbox", {
+    void fetch(basePath + "/api/notifications/inbox", {
+      signal: requests.current?.signal,
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      keepalive: true,
       body: JSON.stringify({ id: item.id, scope }),
     }).catch(() => {});
     setOpen(false);
@@ -388,7 +372,8 @@ export function NotificationBell({
     const ids = items.map((n) => n.id);
     addLocalIds(localReadKey, ids);
     setItems((prev) => prev.map((n) => ({ ...n, is_read: true })));
-    void fetch("/api/notifications/inbox", {
+    void fetch(basePath + "/api/notifications/inbox", {
+      signal: requests.current?.signal,
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ markAll: true, mark_all: true, scope }),
@@ -401,8 +386,8 @@ export function NotificationBell({
     setItems((prev) => prev.filter((n) => n.id !== item.id));
     if (item.user_id || scope === "admin") {
       void fetch(
-        `/api/notifications/inbox?id=${encodeURIComponent(item.id)}&scope=${scope}`,
-        { method: "DELETE" },
+        basePath + `/api/notifications/inbox?id=${encodeURIComponent(item.id)}&scope=${scope}`,
+        { method: "DELETE", signal: requests.current?.signal },
       ).catch(() => {});
     }
   }
@@ -412,8 +397,8 @@ export function NotificationBell({
     if (ids.length === 0) return;
     addLocalIds(localDismissedKey, ids);
     setItems([]);
-    void fetch(`/api/notifications/inbox?clearAll=true&scope=${scope}`, {
-      method: "DELETE",
+    void fetch(basePath + `/api/notifications/inbox?clearAll=true&scope=${scope}`, {
+      method: "DELETE", signal: requests.current?.signal,
     }).catch(() => {});
   }
 
@@ -436,7 +421,8 @@ export function NotificationBell({
     }
 
     setPushState("granted");
-    const result = await syncWebPushSubscription(lang, storeId);
+    if (!requests.current) return;
+    const result = await syncWebPushSubscription(lang, storeId, userId, requests.current.signal);
     setPushNotice(result.ok ? t("notifPushEnabled") : t("notifPushUnavailable"));
   }
 

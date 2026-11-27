@@ -1,5 +1,4 @@
 "use server";
-import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { serverDb } from "@/lib/db";
 import { getServerLang } from "@/lib/i18n-server";
@@ -132,22 +131,6 @@ export async function switchOrderToCodAction(
   revalidatePath("/account");
   revalidatePath("/admin/orders");
   return { ok: true, status: data?.status ?? "confirmed" };
-}
-
-export async function customerLogin(f: FormData) {
-  const db = await serverDb();
-  const { error } = await db.auth.signInWithPassword({
-    email: String(f.get("email") || "").trim(),
-    password: String(f.get("password") || ""),
-  });
-  redirect(error ? "/orders?login=failed" : "/orders");
-}
-
-export async function customerLogout() {
-  const db = await serverDb();
-  const { error } = await db.auth.signOut({ scope: "local" });
-  if (error) throw new Error("تعذر تسجيل الخروج");
-  redirect("/orders");
 }
 
 export type SubmitReturnInput = {

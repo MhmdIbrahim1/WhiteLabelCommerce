@@ -1,3 +1,6 @@
+import { authErrorCode, recoveryRedirect, validEmail } from "@/lib/auth-flow";
+import { REQUEST_ORIGIN_HEADER, STORE_BASE_PATH_HEADER } from "@/lib/tenant-shared";
+import { recoveryDb } from "@/lib/recovery-db";
 import { serverDb } from "@/lib/db";
 import { emailPasswordResetEnabled, matchesRequestOrigin } from "@/lib/password-policy";
 
@@ -7,8 +10,7 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     const email = typeof body.email === "string" ? body.email.trim() : "";
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) return Response.json({code:"invalid"}, {status:400});
-    const db = await serverDb();
+    if (!validEmail(email)) return Response.json({code:"invalid_email"}, {status:400});
     let redirectTo: string;
     if (body.package_name) {
       const pkg = body.package_name;
@@ -16,19 +18,21 @@ export async function POST(req: Request) {
         return Response.json({code:"invalid"},{status:400});
       const official = pkg === "com.whitelabel.commerce" && body.store_id === "00000000-0000-0000-0000-000000000001";
       if (!official) {
+        const db = await serverDb();
         const { data } = await db.rpc("get_latest_mobile_app_build", {p_store_id:body.store_id,p_package_name:pkg});
         if (data?.[0]?.package_name !== pkg) return Response.json({code:"invalid"},{status:400});
       }
       redirectTo = pkg + "://auth/reset-password";
     } else {
-      const origin = new URL(process.env.PASSWORD_RESET_ORIGIN || "");
-      if (origin.protocol !== "https:" && origin.hostname !== "localhost") return Response.json({code:"unavailable"},{status:503});
-      const store = typeof body.store_slug === "string" && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(body.store_slug) ? "/s/"+body.store_slug : "";
-      redirectTo = new URL(store+"/auth/reset-password",origin.origin).href;
+      const target = recoveryRedirect(req.headers.get(REQUEST_ORIGIN_HEADER), req.headers.get(STORE_BASE_PATH_HEADER) ?? "");
+      if (!target) return Response.json({code:"server"},{status:503});
+      redirectTo = target;
     }
-    const {error} = await db.auth.resetPasswordForEmail(email,{redirectTo});
-    if (error && (error.status ?? 0) >= 500) return Response.json({code:"unavailable"},{status:503});
-    if (error?.status === 429) return Response.json({code:"wait"},{status:429});
+    const {error} = await recoveryDb().auth.resetPasswordForEmail(email,{redirectTo});
+    if (error && error.code !== "user_not_found") {
+      const code = authErrorCode(error);
+      return Response.json({code}, {status: code === "rate_limit" ? 429 : 503});
+    }
     return Response.json({ok:true});
   } catch { return Response.json({code:"unavailable"},{status:400}); }
 }

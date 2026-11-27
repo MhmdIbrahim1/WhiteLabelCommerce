@@ -1,0 +1,116 @@
+.access-shell {
+  --access-panel: var(--pt-card, var(--group));
+  --access-action: var(--pt-fill, var(--primary));
+  --access-on-action: var(--pt-on-fill, var(--primary-ink));
+  --access-danger: var(--ws-danger, var(--error, #943a32));
+  display: grid; min-block-size: 100svh; min-inline-size: 0;
+  background: var(--surface); color: var(--ink); text-align: start;
+}
+.access-shell *, .access-shell *::before, .access-shell *::after { box-sizing: border-box; }
+.access-shell .lucide { stroke-width: 1.5; flex-shrink: 0; }
+.access-shell bdi { unicode-bidi: isolate; overflow-wrap: anywhere; }
+.access-shell :is(h1,h2,p,ul) { margin: 0; }
+.access-shell:lang(ar) { letter-spacing: 0; line-height: 1.8; }
+.access-shell a { color: inherit; }
+.access-shell :focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+.access-tenant .access-shell { --access-panel: var(--group); --access-action: var(--primary); --access-on-action: var(--primary-ink); }
+.access-editorial { display: none; }
+.access-workspace {
+  min-inline-size: 0; display: grid; grid-template-rows: auto 1fr;
+  padding: 0 clamp(1.25rem, 6vw, 5rem) clamp(1.5rem, 4vw, 3.5rem);
+}
+.access-utilities {
+  min-inline-size: 0; display: flex; align-items: center; justify-content: space-between; gap: .75rem;
+  border-block-end: 1px solid var(--line); min-block-size: 4.3rem;
+}
+.access-utilities :is(a,button) {
+  display: inline-flex; align-items: center; gap: .5rem; min-block-size: 2.75rem; padding: .25rem 0;
+  background: transparent; color: var(--ink); border: 0; border-radius: .2rem; font: inherit; font-size: .875rem;
+}
+.access-utilities a:hover, .access-language:hover { text-decoration: underline; text-underline-offset: .22em; }
+.access-shell:dir(rtl) .access-utilities a svg { transform: scaleX(-1); }
+.access-content { align-self: start; margin-inline: auto; inline-size: min(100%, 28.5rem); min-inline-size: 0; padding-block-start: clamp(1.8rem, 5vw, 4rem); }
+.access-mobile-brand { margin-block-end: 1.5rem; }
+.access-shell .access-store-mark { display: inline-flex; align-items: center; gap: .65rem; font-size: 1.18rem; font-weight: 700; }
+.access-store-mark img { inline-size: 2.15rem; block-size: 2.15rem; object-fit: contain; border-radius: .4rem; }
+.access-shell .access-content h1 { font-size: clamp(1.85rem, 3vw, 2.45rem); line-height: 1.2; font-weight: 650; color: var(--ink); }
+.access-shell:lang(ar) .access-content h1 { line-height: 1.35; }
+.access-shell .access-content > p, .access-content .password-form > p:not(.auth-error) { color: var(--muted); font-size: .95rem; }
+.access-content > h1 + p { margin-block-start: .4rem; }
+.access-content .auth-heading { margin: 0; text-align: start; }
+.access-content .hybrid-auth-root, .access-content .password-form { margin-block: 1.35rem 0; }
+.access-content :is(.hybrid-auth-root,.auth-form,.password-form) { display: grid; gap: 1rem; }
+.access-content :is(.auth-form,.password-form) { padding: 0; background: transparent; border: 0; }
+.access-content p[role="status"], .access-content p[role="alert"] { font-size: .92rem; overflow-wrap: anywhere; }
+.access-content p[role="alert"] { color: var(--access-danger); background: transparent; padding: .15rem .65rem; }
+.access-content .hybrid-auth-tabs {
+  display: flex; align-items: stretch; gap: .25rem; border: 1px solid var(--line); padding: .22rem;
+  border-radius: .8rem; background: var(--access-panel);
+}
+.access-content .hybrid-auth-tab {
+  position: relative; flex: 1; min-inline-size: 0; min-block-size: 2.65rem; padding: .35rem .55rem;
+  font: inherit; font-weight: 550; font-size: .91rem; border: 1px solid transparent; border-radius: .56rem;
+  background: transparent; color: var(--muted); box-shadow: none;
+}
+.access-content .hybrid-auth-tab.is-active {
+  background: var(--surface); border-color: var(--line); color: var(--ink); font-weight: 700;
+}
+.hybrid-auth-tab::after {
+  content: ""; position: absolute; inset-block-end: .2rem; inset-inline: calc(50% - .48rem);
+  block-size: 2px; background: currentColor; transform: scaleX(0); opacity: 0;
+}
+.hybrid-auth-tab.is-active::after { transform: scaleX(1); opacity: 1; }
+@media (prefers-reduced-motion: no-preference) {
+  :is([data-motion="on"],[data-motion-enabled="true"]) .hybrid-auth-tab::after { transition: transform .14s ease-out, opacity .14s ease-out; }
+}
+.auth-name-phone { display: grid; gap: 1rem; min-inline-size: 0; }
+.access-content label { min-inline-size: 0; display: grid; gap: .36rem; }
+.access-content label, .access-content .otp-field > span { color: var(--ink); font-size: .88rem; font-weight: 650; }
+.access-content :is(input[type="email"],input[type="tel"],input[name="full_name"],.auth-password-control input) {
+  min-inline-size: 0; inline-size: 100%; min-block-size: 2.85rem; margin: 0; padding-block: .55rem;
+  border: 1px solid var(--ws-control-line, var(--line)); border-radius: .55rem; background: var(--surface);
+  color: var(--ink); font: inherit; font-weight: 450; font-size: 1rem; box-shadow: none;
+}
+.access-content input:is([type="email"],[type="tel"],[name="full_name"]) { padding-inline: .8rem; }
+.access-content input[dir="ltr"] { text-align: left; unicode-bidi: isolate; font-variant-numeric: tabular-nums; }
+.access-content input::placeholder { color: var(--muted); opacity: .9; }
+.access-shell:dir(rtl) .auth-password-control input:placeholder-shown {
+  direction: rtl; text-align: right; padding-inline: .8rem 3rem;
+}
+.access-content input:-webkit-autofill { -webkit-text-fill-color: var(--ink); caret-color: var(--ink); box-shadow: 0 0 0 100px var(--surface) inset; }
+.access-content input[aria-invalid="true"] { border-color: var(--access-danger); }
+.access-content :is(.auth-submit-btn,.cta) {
+  display: block; min-block-size: 2.95rem; inline-size: 100%; margin: .15rem 0 0; padding: .58rem 1rem;
+  background: var(--access-action); color: var(--access-on-action); border: 0; border-radius: .65rem;
+  font: inherit; font-weight: 650; box-shadow: none;
+}
+.hybrid-auth-root button:disabled, .access-shell .access-content button:disabled { cursor: default; opacity: .58; }
+.hybrid-auth-root button[aria-busy="true"], .access-shell .access-content button[aria-busy="true"] { cursor: progress; }
+.access-content :is(.auth-label-line a,.hybrid-link-btn,.ws-text-link,.access-switch a,.hybrid-auth-root > a) {
+  color: var(--ink); font-size: .875rem; font-weight: 600; text-decoration: underline; text-underline-offset: .23em;
+}
+.access-switch, .access-content > .ws-text-link { display: block; margin-block-start: 1.2rem; font-size: .9rem; }
+.access-content .ws-feedback { margin: 0; }
+@media (min-width: 40rem) { .auth-name-phone { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media (min-width: 64rem) {
+  .access-shell { grid-template-columns: minmax(0, 46fr) minmax(0, 54fr); }
+  .access-editorial {
+    display: flex; flex-direction: column; position: relative; isolation: isolate; overflow: hidden;
+    padding: clamp(2.5rem, 5.4vw, 6rem); background: var(--access-panel); border-inline-end: 1px solid var(--line);
+  }
+  .access-editorial::before, .access-editorial::after {
+    content: ""; position: absolute; z-index: -1; pointer-events: none; border: 1px solid var(--line); border-radius: 50%;
+    inline-size: 40rem; block-size: 40rem; inset-inline-end: -26rem; inset-block-start: -24rem;
+  }
+  .access-editorial::after { inline-size: 34rem; block-size: 34rem; inset-inline-end: -23rem; inset-block-start: -21rem; }
+  .access-brand { align-self: start; display: inline-flex; align-items: center; min-block-size: 2.55rem; }
+  .access-story { margin-block: auto; padding-block: 3rem; }
+  .access-editorial .access-story h2 { max-inline-size: 13ch; font-size: clamp(3.2rem, 5.1vw, 5.4rem); font-weight: 550; line-height: 1.03; letter-spacing: -.055em; text-wrap: balance; }
+  .access-shell:lang(ar) .access-editorial .access-story h2 { font-weight: 600; line-height: 1.35; letter-spacing: 0; }
+  .access-story ul { list-style: none; padding: 0; margin-block-start: clamp(2rem, 4vw, 3.8rem); }
+  .access-story li { display: flex; align-items: center; gap: .85rem; padding-block: .9rem; border-block-start: 1px solid var(--line); font-size: .96rem; }
+  .access-story li:last-child { border-block-end: 1px solid var(--line); }
+  .access-content { align-self: center; padding-block: 1.5rem; }
+  .access-mobile-brand { display: none; }
+  .access-utilities { min-block-size: 5.15rem; }
+}

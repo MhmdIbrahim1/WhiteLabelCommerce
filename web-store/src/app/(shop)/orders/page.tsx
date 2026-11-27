@@ -11,7 +11,9 @@ import { getServerLang } from "@/lib/i18n-server";
 import { GuestTracking } from "@/components/shop/tracking";
 import { OrdersPaymentSync } from "@/components/shop/orders-payment-sync";
 import { OrderCards, type OrderCardRow, type OrderFilter } from "@/components/shop/order-cards";
-import { customerLogin } from "./actions";
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { authEntry } from "@/lib/auth-flow";
 import "./orders.css";
 
 export default async function Orders({ searchParams }: PageProps<"/orders">) {
@@ -31,6 +33,7 @@ export default async function Orders({ searchParams }: PageProps<"/orders">) {
     user && page.length ? db.from("orders").select("id,payment_method,reservation_expires_at")
       .eq("store_id", s.storeId).eq("user_id", user.id).in("id", page.map(o => o.id)) : null,
   ]);
+  if (!user && !receipt && params.guest !== "1") redirect(authEntry(s.basePath, "/login", "/orders"));
   if (details?.error) throw new Error("Order payment details unavailable");
   const byId = new Map(details?.data?.map(row => [row.id, row]));
   const cards = page.map(row => ({ ...row, ...byId.get(row.id) }));
@@ -47,34 +50,7 @@ export default async function Orders({ searchParams }: PageProps<"/orders">) {
       <OrderPaymentControls order={receipt} options={s.payment} basePath={s.basePath} /></article>}
     {user ? <OrderCards rows={cards} filter={filter} basePath={s.basePath} options={s.payment} next={next} /> : <section className="panel">
       <h2>{t(lang,"signInAccountTitle")}</h2>
-            <form action={customerLogin}>
-              <label>
-                {t(lang, "emailLabel")}
-                <input
-                  name="email"
-                  type="email"
-                  autoComplete="username"
-                  dir="ltr"
-                  required
-                />
-              </label>
-              <label>
-                {t(lang, "passwordLabel")}
-                <input
-                  name="password"
-                  type="password"
-                  autoComplete="current-password"
-                  dir="ltr"
-                  required
-                />
-              </label>
-              <button>{t(lang, "navLogin")}</button>
-              {params.login === "failed" && (
-                <p role="alert">
-                  {lang === "en" ? "Sign in failed." : "تعذر تسجيل الدخول."}
-                </p>
-              )}
-            </form></section>}
+      <Link className="sf-primary" href={authEntry(s.basePath, "/login", "/orders")}>{t(lang, "navLogin")}</Link></section>}
     <details className="panel guest-lookup" open={!user}><summary>{lang === "en" ? "Track a guest order" : "تتبع طلب زائر"}</summary><GuestTracking options={s.payment} basePath={s.basePath} /></details>
   </section>;
 }

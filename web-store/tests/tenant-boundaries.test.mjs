@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { NextRequest } from "next/server.js";
 import * as routing from "../src/lib/host-routing.ts";
 import * as tenant from "../src/lib/tenant-shared.ts";
+import * as cartSession from "../src/lib/cart-session.ts";
 import { createCartHeartbeat } from "../src/lib/cart-heartbeat.ts";
 import { loadSource } from "./helpers/load-source.mjs";
 
@@ -197,21 +198,22 @@ test("the cart provider releases scheduled and in-flight work on switch, pagehid
   let release;
   const { CartTenantProvider, clearCart } = loadSource("components/shop/cart-store.ts", {
     react: { createContext: () => ({}), createElement() {}, useMemo: fn => fn(), useLayoutEffect: fn => { release = fn(); } },
+    "@/lib/cart-session": cartSession, "@/components/auth-session": { useSessionUser: () => null, cartSessionEnded: "signed-out" },
     "@/lib/cart-heartbeat": { createCartHeartbeat }, "@/lib/supabase/browser": {}, "@/lib/variant-stock": {},
     "@/lib/flash-sale": {}, "./studio-preview-context": {},
   });
-  CartTenantProvider({ storeId: nova.id, slug: nova.slug });
-  clearCart(nova.id);
+  CartTenantProvider({ storeId: nova.id, slug: nova.slug, userId: null });
+  clearCart(cartSession.cartScope(nova.id, null));
   release();
-  CartTenantProvider({ storeId: omar.id, slug: omar.slug });
-  clearCart(nova.id);
-  clearCart(omar.id);
+  CartTenantProvider({ storeId: omar.id, slug: omar.slug, userId: null });
+  clearCart(cartSession.cartScope(nova.id, null));
+  clearCart(cartSession.cartScope(omar.id, null));
   t.mock.timers.tick(1500);
   assert.equal(calls.length, 2);
   assert.ok(calls.every(c => c.url.startsWith("/s/omar-a7a/") && !c.signal.aborted));
   window.dispatchEvent(new Event("pagehide"));
   assert.ok(calls.every(c => c.signal.aborted));
-  clearCart(omar.id);
+  clearCart(cartSession.cartScope(omar.id, null));
   t.mock.timers.tick(1500);
   assert.equal(calls.length, 4);
   release();
