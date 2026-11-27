@@ -13,13 +13,23 @@ import { OrdersPaymentSync } from "@/components/shop/orders-payment-sync";
 import { OrderCards, type OrderCardRow, type OrderFilter } from "@/components/shop/order-cards";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { authEntry } from "@/lib/auth-flow";
+import { authEntry, welcomeHref } from "@/lib/auth-flow";
+import { storeCustomerEnrolled } from "@/lib/storefront-auth";
+import { storeHref } from "@/lib/tenant";
 import "./orders.css";
 
 export default async function Orders({ searchParams }: PageProps<"/orders">) {
   const [params, s, db] = await Promise.all([searchParams,settings(),serverDb()]);
   const lang = await getServerLang(s.uiConfig.defaultLanguage);
   const { data: { user } } = await db.auth.getUser();
+  if (user && !(await storeCustomerEnrolled(db, s.storeId))) {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (typeof value === "string") query.set(key, value);
+    }
+    const current = storeHref(s.basePath, "/orders") + (query.size ? "?" + query : "");
+    redirect(welcomeHref(s.basePath, current));
+  }
   const filter: OrderFilter = params.filter === "completed" || params.filter === "cancelled" || params.filter === "active" ? params.filter : "all";
   const before = typeof params.before === "string" && Number.isFinite(Date.parse(params.before)) ? params.before : null;
   const id = typeof params.id === "string" && /^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i.test(params.id) ? params.id : null;

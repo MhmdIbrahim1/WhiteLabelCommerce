@@ -9,7 +9,7 @@ import { continueSignedInLogin } from "@/lib/auth-destination";
 import { safeAuthNext } from "@/lib/auth-flow";
 import { getServerLang } from "@/lib/i18n-server";
 
-export const metadata: Metadata = { referrer: "no-referrer", robots: { index: false, follow: false } };
+export const metadata: Metadata = { title: { absolute: "ShopStage" }, referrer: "no-referrer", robots: { index: false, follow: false } };
 
 export default async function PlatformAccess({ params, searchParams }: {
   params: Promise<{ screen: string }>; searchParams: Promise<Record<string, string | string[] | undefined>>;

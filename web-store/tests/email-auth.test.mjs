@@ -31,8 +31,8 @@ function actions(auth, currentStore = store) {
   const handlers = loadSource("app/login/actions.ts", {
     "@/lib/auth-flow": flow, "@/lib/email-otp": otp, "@/lib/phone": phone, "@/lib/db": { serverDb: async () => db },
     "@/lib/tenant": { ...tenant, resolveActiveStore: () => currentStore, resolveActiveStoreOrDefault: () => currentStore },
-    "@/lib/auth-destination": destinations,
-    "next/navigation": {}, "next/cache": { revalidatePath() {} }, "next/headers": {},
+    "@/lib/auth-destination": destinations, "@/lib/tenant-shared": tenant, "@/lib/storefront-auth": {},
+    "next/navigation": {}, "next/cache": { revalidatePath() {} }, "next/headers": { headers: () => new Headers({[tenant.PLATFORM_SURFACE_HEADER]: "platform"}) },
   });
   return { ...handlers, profiles };
 }
@@ -113,7 +113,7 @@ test("registration treats duplicate addresses and unconfirmed signups identicall
   }
   const a = actions({ signUp: () => good });
   assert.equal((await a.signUpWithPasswordAction(signup)).redirectTo, "/create-store");
-  assert.equal(a.profiles.length, 1);
+  assert.equal(a.profiles.length, 0, "platform signup does not initialize a default store customer");
   for (const other of [null, { ...user, email_confirmed_at: null }, { ...user, id: "another" }, { ...user, email: "someone@example.test" }]) {
     const stale = actions({ signUp: () => good, getUser: () => ({ data: { user: other } }) });
     assert.equal((await stale.signUpWithPasswordAction(signup)).ok, false);
@@ -125,6 +125,7 @@ test("registration panel stays on the confirmation step and isolates the email i
   for (const lang of ["ar", "en"]) {
     let calls = 0;
     const app = view("components/shop/hybrid-auth-panel.tsx", {
+      "./google-auth-button": { GoogleAuthButton: "google" }, "@/app/login/storefront-actions": {},
       "@/components/use-hydrated": { useHydrated: () => true },
       "next/link": "a", "@/lib/email-otp": otp, "@/lib/auth-flow": flow, "@/lib/password-policy": policy,
       "@/components/auth-session": { announceSessionChange: () => assert.fail("pending signup navigated") },
@@ -187,7 +188,7 @@ test("proxy binds recovery pages, confirmation and API posts to the actual apex,
       assert.equal(res.status,200); assert.equal(header(tenant.STORE_BASE_PATH_HEADER),prefix);
       assert.equal(flow.recoveryRedirect(header(tenant.REQUEST_ORIGIN_HEADER),prefix),"https://"+host+prefix+"/auth/confirm");
       if (path.includes("password") && !path.startsWith("/api/")) {
-        assert.equal(header(tenant.PASSWORD_RECOVERY_HEADER),"1");
+        assert.equal(header(tenant.STANDALONE_AUTH_HEADER),"1");
         assert.equal(res.headers.get("referrer-policy"),"no-referrer");
       }
     }
@@ -213,7 +214,7 @@ test("recovery uses the proxy-bound redirect and preserves the existing register
 
 test("opening a recovery link does not spend it; confirmation errors redirect to localized, same-tenant recovery",async()=>{
   let verifiedCalls=0;
-  const {GET}=loadSource("app/auth/confirm/route.ts",{"@/lib/auth-flow":flow,"@/lib/tenant-shared":tenant,
+  const {GET}=loadSource("app/auth/confirm/route.ts",{"@/lib/auth-flow":flow,"@/lib/tenant-shared":tenant,"@/lib/storefront-auth":{},
     "@/lib/db":{serverDb:()=>({auth:{verifyOtp:()=>{verifiedCalls++;return {error:{code:"otp_expired",status:403},data:{}};}}})}});
   const call=query=>GET(new Request("https://branch.vercel.app"+base+"/auth/confirm?"+query,{headers:{[tenant.STORE_BASE_PATH_HEADER]:base}}));
   const res=await call("type=recovery&token_hash="+hash);
@@ -334,6 +335,7 @@ for (const signup of [false, true]) for (const lang of ["en", "ar"]) {
   test(`${lang} ${signup ? "registration" : "login"} rejects invalid OTP email before a request or busy state`, async () => {
     let calls = 0, focused = 0;
     const app = view("components/shop/hybrid-auth-panel.tsx", {
+      "./google-auth-button": { GoogleAuthButton: "google" }, "@/app/login/storefront-actions": {},
       "@/components/use-hydrated": { useHydrated: () => true },
       "next/link": "a", "@/lib/email-otp": otp, "@/lib/auth-flow": flow, "@/lib/password-policy": policy,
       "@/components/auth-session": {}, "@/components/language-provider": { useLanguage: () => ({ lang }) },
@@ -341,7 +343,7 @@ for (const signup of [false, true]) for (const lang of ["en", "ar"]) {
       "./password-field": { PasswordField: "password" },
       "./otp-input": { useResendCooldown: () => ({ seconds: 0, start() {} }) },
     });
-    const draw = () => nodes(app.render("HybridAuthPanel", { basePath: "", initialOtp: true, initialSignup: signup }));
+    const draw = () => nodes(app.render("HybridAuthPanel", { platform: true, basePath: "", initialOtp: true, initialSignup: signup }));
     const field = () => draw().find(n => n.props.name === "email");
     field().props.ref.current = { focus() { focused++; }, validity: { typeMismatch: false } };
     for (const value of ["", "  ", "missing@", "two@@shop.test", "no@domain"]) {
@@ -359,6 +361,7 @@ for (const signup of [false, true]) for (const lang of ["en", "ar"]) {
 test("changing email or method invalidates an in-flight OTP response, including a network failure", async () => {
   let resolve, reject, calls = 0;
   const app = view("components/shop/hybrid-auth-panel.tsx", {
+    "./google-auth-button": { GoogleAuthButton: "google" }, "@/app/login/storefront-actions": {},
       "@/components/use-hydrated": { useHydrated: () => true },
     "next/link": "a", "@/lib/email-otp": otp, "@/lib/auth-flow": flow, "@/lib/password-policy": policy,
     "@/components/auth-session": {}, "@/components/language-provider": { useLanguage: () => ({ lang: "en" }) },
@@ -366,7 +369,7 @@ test("changing email or method invalidates an in-flight OTP response, including 
     "./password-field": { PasswordField: "password" },
     "./otp-input": { OtpInput: "otp", useResendCooldown: () => ({ seconds: 0, start() {} }) },
   });
-  const draw = () => nodes(app.render("HybridAuthPanel", { basePath: "", initialOtp: true }));
+  const draw = () => nodes(app.render("HybridAuthPanel", { platform: true, basePath: "", initialOtp: true }));
   const email = value => draw().find(n => n.props.name === "email").props.onChange({ target: { value } });
   const submit = () => draw().find(n => n.type === "form").props.onSubmit({ preventDefault() {} });
   const busy = () => draw().find(n => n.props.className === "auth-submit-btn").props["aria-busy"];

@@ -3,6 +3,7 @@ import { checked } from "@/lib/db";
 import { Basket } from "@/components/shop/basket";
 import { serverDb } from "@/lib/db";
 import { settings } from "@/lib/shop";
+import { storeCustomerEnrolled } from "@/lib/storefront-auth";
 
 export default async function Checkout() {
   const [s, db] = await Promise.all([settings(), serverDb()]);
@@ -14,10 +15,14 @@ export default async function Checkout() {
   let defaultGovernorate = "";
   let defaultCity = "";
   let defaultAddress = "";
-  const rates = checked(await db.from("governorate_shipping_rates").select("governorate,fee").eq("store_id", s.storeId));
-  const savedAddresses: SavedAddress[] = user ? checked(await db.rpc("my_addresses", { p_store_id: s.storeId })) : [];
+  const [ratesResult, enrolled] = await Promise.all([
+    db.from("governorate_shipping_rates").select("governorate,fee").eq("store_id", s.storeId),
+    user ? storeCustomerEnrolled(db, s.storeId) : false,
+  ]);
+  const rates = checked(ratesResult);
+  const savedAddresses: SavedAddress[] = enrolled ? checked(await db.rpc("my_addresses", { p_store_id: s.storeId })) : [];
   let walletBalance = 0;
-  if (user) {
+  if (user && enrolled) {
     const [profileRes, walletRes] = await Promise.all([
       db
         .from("store_customers")
@@ -53,7 +58,7 @@ export default async function Checkout() {
       storeId={s.storeId}
       buyer={user?.id ?? "guest"}
       addresses={savedAddresses}
-      signedIn={Boolean(user)}
+      canSaveAddress={enrolled}
       rates={Object.fromEntries(rates.map(r => [r.governorate, Number(r.fee)]))}
       order
       fee={s.fee}

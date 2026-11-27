@@ -91,6 +91,9 @@
 }
 .access-switch, .access-content > .ws-text-link { display: block; margin-block-start: 1.2rem; font-size: .9rem; }
 .access-content .ws-feedback { margin: 0; }
+.welcome-identity { display: grid; justify-items: start; gap: .2rem; margin-block: .9rem 1.4rem; }
+.welcome-identity button { padding: .35rem 0; border: 0; background: transparent; color: var(--ink); font: inherit;
+  text-decoration: underline; text-underline-offset: .2em; }
 @media (min-width: 40rem) { .auth-name-phone { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 @media (min-width: 64rem) {
   .access-shell { grid-template-columns: minmax(0, 46fr) minmax(0, 54fr); }

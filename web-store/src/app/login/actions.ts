@@ -1,17 +1,23 @@
 "use server";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { serverDb } from "@/lib/db";
 import { postAuthDestination } from "@/lib/auth-destination";
 import { normalizePhone } from "@/lib/phone";
 import { normalizeOtp, validOtp, RESEND_SECONDS } from "@/lib/email-otp";
-import { authEntry, authErrorCode, safeAuthNext, validEmail, verifiedEmailUser, type AuthErrorCode } from "@/lib/auth-flow";
+import { authEntry, authErrorCode, safeAuthNext, validEmail, verifiedEmailUser, welcomeHref, type AuthErrorCode } from "@/lib/auth-flow";
+import { PLATFORM_SURFACE_HEADER } from "@/lib/tenant-shared";
+import { storeCustomerEnrolled } from "@/lib/storefront-auth";
 import { ADMIN_STORE_COOKIE, resolveActiveStore, resolveActiveStoreOrDefault, storeHref } from "@/lib/tenant";
 
 export type AuthActionResult = {
   ok: boolean; errorCode?: AuthErrorCode; needsConfirmation?: boolean; redirectTo?: string; retryAfterSeconds?: number;
 };
+
+async function platformRequest() {
+  return (await headers()).get(PLATFORM_SURFACE_HEADER) === "platform";
+}
 
 function failure(error: Parameters<typeof authErrorCode>[0], fallback?: AuthErrorCode): AuthActionResult {
   const errorCode = authErrorCode(error, fallback);
@@ -30,15 +36,11 @@ async function finishSignIn(db: Awaited<ReturnType<typeof serverDb>>, nextRaw: u
   revalidatePath("/", "layout");
   if (/^\/invite\/[a-f0-9]{64}$/.test(next)) return { ok: true, redirectTo: next };
   const account = storeHref(store.basePath, "/account");
-  const { data, error } = await db.rpc("initialize_customer_profile", { p_store_id: store.id });
-  if (error || data === "phone_unavailable") {
-    if (error) console.error("Customer profile initialization failed", error.code);
-    if (!next) return { ok: true, redirectTo: account + "?result=" + (error ? "profile_setup" : "phone_unavailable") };
-  }
   return { ok: true, redirectTo: await postAuthDestination(db, user, next, account) };
 }
 
 export async function sendEmailOtpAction(emailRaw: string, purpose: "signin" | "signup" = "signin"): Promise<AuthActionResult> {
+  if (!(await platformRequest())) return { ok: false, errorCode: "server" };
   const email = emailRaw.trim().toLowerCase();
   if (!validEmail(email)) return { ok: false, errorCode: "invalid_email" };
   const db = await serverDb();
@@ -53,6 +55,7 @@ export async function sendEmailOtpAction(emailRaw: string, purpose: "signin" | "
 }
 
 export async function verifyEmailOtpAction(emailRaw: string, tokenRaw: string, nextRaw?: string, purpose: "signin" | "signup" = "signin"): Promise<AuthActionResult> {
+  if (!(await platformRequest())) return { ok: false, errorCode: "server" };
   const email = emailRaw.trim().toLowerCase();
   if (!validEmail(email)) return { ok: false, errorCode: "invalid_email" };
   if (!validOtp(tokenRaw)) return { ok: false, errorCode: "invalid_otp" };
@@ -63,6 +66,7 @@ export async function verifyEmailOtpAction(emailRaw: string, tokenRaw: string, n
 }
 
 export async function signInWithPasswordAction(emailRaw: string, password: string, nextRaw?: string): Promise<AuthActionResult> {
+  if (!(await platformRequest())) return { ok: false, errorCode: "server" };
   const email = emailRaw.trim().toLowerCase();
   if (!validEmail(email)) return { ok: false, errorCode: "invalid_email" };
   if (!password) return { ok: false, errorCode: "credentials" };
@@ -75,6 +79,7 @@ export async function signInWithPasswordAction(emailRaw: string, password: strin
 export async function signUpWithPasswordAction(input: {
   fullName: string; phone: string; email: string; password: string; nextPath?: string;
 }): Promise<AuthActionResult> {
+  if (!(await platformRequest())) return { ok: false, errorCode: "server" };
   const fullName = input.fullName.trim();
   const email = input.email.trim().toLowerCase();
   const phone = normalizePhone(input.phone).replace(/^0020/, "20").replace(/^200?(1[0125][0-9]{8})$/, "0$1");
@@ -82,10 +87,9 @@ export async function signUpWithPasswordAction(input: {
   if (!validEmail(email)) return { ok: false, errorCode: "invalid_email" };
   if (!/^01[0125][0-9]{8}$/.test(phone)) return { ok: false, errorCode: "phone" };
   if (input.password.length < 6) return { ok: false, errorCode: "password" };
-  const [db, store] = await Promise.all([serverDb(), resolveActiveStore()]);
-  if (!store) return { ok: false, errorCode: "server" };
+  const db = await serverDb();
   const { data, error } = await db.auth.signUp({ email, password: input.password,
-    options: { data: { full_name: fullName, phone, signup_store_id: store.id } } });
+    options: { data: { full_name: fullName, phone } } });
   const pending = { ok: true, needsConfirmation: true, retryAfterSeconds: RESEND_SECONDS };
   if (error) return ["user_already_exists", "email_exists"].includes(error.code ?? "") ? pending : failure(error);
   if (!data.session || !verifiedEmailUser(data.user) || data.user.identities?.length === 0 ||
@@ -123,6 +127,9 @@ export async function endSessionAction(form?: FormData): Promise<{ ok: true; red
     const next = safeAuthNext(form.get("next"), "") || "/create-store";
     return { ok: true, redirectTo: authEntry("", "/register", next) };
   }
+  if (form?.get("storeLogin") === "1" && store) {
+    return { ok: true, redirectTo: authEntry(store.basePath, "/login", String(form.get("next") ?? "")) };
+  }
   return { ok: true, redirectTo: storeHref(store?.basePath ?? "", "/") };
 }
 
@@ -142,6 +149,7 @@ export async function saveCustomerAccount(form: FormData) {
     data: { user },
   } = await db.auth.getUser();
   if (!user) redirect(accountBase);
+  if (!(await storeCustomerEnrolled(db, store.id))) redirect(welcomeHref(store.basePath, accountBase + "/profile"));
 
   const fullName = String(form.get("full_name") ?? "").trim().slice(0, 100);
   const phone = normalizePhone(String(form.get("phone") ?? ""));
