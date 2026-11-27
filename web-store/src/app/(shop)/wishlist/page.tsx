@@ -4,6 +4,8 @@ import { serverDb } from "@/lib/db";
 import { photo, productFields, settings, type Product } from "@/lib/shop";
 import { getServerLang } from "@/lib/i18n-server";
 import { storeHref } from "@/lib/tenant";
+import { serverNowMs } from "@/lib/flash-sale";
+import { storefrontImageSrc } from "@/lib/storefront-media";
 import { WishlistGrid, type WishlistCardProduct } from "@/components/shop/wishlist-grid";
 
 type WishlistProduct = Product & { is_active?: boolean };
@@ -69,7 +71,7 @@ export default async function WishlistPage() {
     .filter((p): p is WishlistProduct => Boolean(p && p.is_active !== false))
     .map((p) => ({
       ...p,
-      image_url: photo(p.image_path),
+      image_url: storefrontImageSrc(photo(p.image_path), 640),
     }));
 
   return (
@@ -88,6 +90,7 @@ export default async function WishlistPage() {
       </div>
 
       <WishlistGrid
+        initialNow={serverNowMs()}
         initialProducts={rows}
         currency={s.currency}
         basePath={s.basePath}

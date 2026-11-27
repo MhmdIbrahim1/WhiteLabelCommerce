@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowLeft, ArrowRight, Zap } from "lucide-react";
 import type { Product } from "@/lib/shop";
+import type { StorefrontPreset } from "@/lib/storefront-presets";
 import type { Lang } from "@/lib/i18n";
 import { storeHref } from "@/lib/tenant-shared";
 import { filterActiveFlashDeals } from "@/lib/flash-sale";
@@ -11,11 +12,13 @@ export function FlashDealsSection({
   currency,
   lang = "ar",
   basePath = "",
+  preset,
 }: {
   products: Product[];
   currency: string;
   lang?: Lang;
   basePath?: string;
+  preset: StorefrontPreset;
 }) {
   const activeDeals = filterActiveFlashDeals(products).slice(0, 8);
 
@@ -48,6 +51,7 @@ export function FlashDealsSection({
         </Link>
       </div>
       <Grid
+        preset={preset}
         rows={activeDeals}
         currency={currency}
         lang={lang}

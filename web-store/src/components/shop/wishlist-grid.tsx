@@ -31,10 +31,12 @@ export type WishlistCardProduct = Product & {
 
 export function WishlistGrid({
   initialProducts,
+  initialNow,
   currency,
   basePath = "",
 }: {
   initialProducts: WishlistCardProduct[];
+  initialNow: number;
   currency: string;
   basePath?: string;
 }) {
@@ -107,7 +109,7 @@ export function WishlistGrid({
                 </div>
               </Link>
 
-              <ProductDiscountBadge product={p} lang={lang} />
+              <ProductDiscountBadge product={p} lang={lang} initialNow={initialNow} />
 
               <button
                 type="button"
@@ -137,6 +139,7 @@ export function WishlistGrid({
                 </span>
               )}
               <ProductPriceDisplay
+                initialNow={initialNow}
                 product={p}
                 currency={currency}
                 lang={lang}

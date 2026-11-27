@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import Link from "next/link";
 import { ShoppingBag, Check, SlidersHorizontal, Ruler, BellRing } from "lucide-react";
 import type { Product } from "@/lib/shop";
@@ -14,23 +14,30 @@ import { showToast } from "@/components/floating-toast";
 import { indexVariants, quantityLimitHint, stockLabel, variantKey } from "@/lib/variant-stock";
 import { photo } from "@/lib/product-photo";
 import { SizeGuideModal } from "./size-guide-modal";
+import { money } from "@/lib/brand";
+import { storefrontImageSrc } from "@/lib/storefront-media";
+import { useSaleClock } from "./use-sale-clock";
 
 export function Buy({
   p,
   detail = false,
   onColorChange,
   basePath = "",
+  sticky,
 }: {
   p: Product;
   detail?: boolean;
   onColorChange?: (color: string) => void;
   basePath?: string;
+  sticky?: { currency: string; initialNow: number };
 }) {
   const { lang, t } = useLanguage();
   const tenantId = useCartTenant();
   const defaultLimit = useDefaultOrderLimit();
   const cart = useCart();
   const [requested, setRequested] = useState(1);
+  const inlineButton = useRef<HTMLButtonElement>(null);
+  const [selectionError, setSelectionError] = useState("");
   const [size, setSize] = useState(
       detail && p.sizes.length === 1 ? p.sizes[0] : "",
     ),
@@ -54,7 +61,9 @@ export function Buy({
   const remaining = remainingQuantity(cart, selection, defaultLimit);
   const quantity = Math.max(1, Math.min(requested, remaining));
   const optionsSelected = (!p.colors.length || !!color) && (!p.sizes.length || !!size);
-  const thumbnail = p.color_images?.[color] || photo(p.image_path);
+  const thumbnail = storefrontImageSrc(photo(p.color_images?.[color] || p.image_path), 128);
+  const disabled = selectedStock <= 0 || (optionsSelected && remaining <= 0 && p.max_order_qty !== undefined);
+  const buttonLabel = selectedStock > 0 ? detail ? t("addToBag") : t("quickAdd") : t("outOfStock");
 
   async function handleRestockSubscribe() {
     setRestockBusy(true);
@@ -99,12 +108,12 @@ export function Buy({
         className={detail ? "detail-buy" : "card-buy"}
         onSubmit={async (e) => {
           e.preventDefault();
-          if (detail && p.sizes.length > 0 && !size) {
-            showToast({ message: t("selectSizeFirst"), kind: "error" });
-            return;
-          }
-          if (detail && p.colors.length > 0 && !color) {
-            showToast({ message: t("selectColorFirst"), kind: "error" });
+          if (detail && !optionsSelected) {
+            const missingSize = p.sizes.length > 0 && !size;
+            setSelectionError(t(missingSize ? "selectSizeFirst" : "selectColorFirst"));
+            e.currentTarget.querySelector<HTMLButtonElement>(
+              missingSize ? '[data-option="size"] button.variant-chip:enabled' : '[data-option="color"] button.variant-chip:enabled',
+            )?.focus();
             return;
           }
           const effectiveUnit = resolveEffectivePrice(p);
@@ -124,6 +133,7 @@ export function Buy({
               ...inventory,
               name: p.name,
               name_en: p.name_en ?? null,
+              image_path: p.color_images?.[color] || p.image_path,
               size,
               color,
               price: effectiveUnit,
@@ -150,9 +160,9 @@ export function Buy({
             : { message: quantityLimitHint(lang), kind: "info" });
         }}
       >
-        {detail && <span className="stock-tier" data-tier={selectedStock <= 0 ? "out" : selectedStock <= 5 ? "low" : "in"}>{stockLabel(selectedStock, lang)}</span>}
+        {detail && <span className="stock-tier" role="status" data-tier={selectedStock <= 0 ? "out" : selectedStock <= 5 ? "low" : "in"}>{stockLabel(selectedStock, lang)}</span>}
         {detail && p.sizes.length > 0 && (
-          <div className="variant-group" role="radiogroup" aria-label={t("sizeLabel")}>
+          <div className="variant-group" data-option="size" role="group" aria-label={t("sizeLabel")}>
             <div className="variant-label-row">
               <span className="variant-label">{t("sizeLabel")}</span>
               <button
@@ -171,15 +181,14 @@ export function Buy({
                   <button
                     key={s}
                     type="button"
-                    role="radio"
-                    aria-checked={active}
+                    aria-pressed={active}
                     className="variant-chip"
                     data-selected={active ? "true" : "false"}
                     disabled={tracked && (color || !p.colors.length ? pairStock(color, s) : inventory.sizes.get(s) ?? 0) <= 0}
-                    onClick={() => { setSize(s); setRequested(1); }}
+                    onClick={() => { setSize(s); setRequested(1); setSelectionError(""); }}
                   >
                     {active && <Check size={14} />}
-                    {s}
+                    <bdi dir="ltr">{s}</bdi>
                   </button>
                 );
               })}
@@ -187,7 +196,7 @@ export function Buy({
           </div>
         )}
         {detail && p.colors.length > 0 && (
-          <div className="variant-group" role="radiogroup" aria-label={t("colorLabel")}>
+          <div className="variant-group" data-option="color" role="group" aria-label={t("colorLabel")}>
             <span className="variant-label">{t("colorLabel")}</span>
             <div className="variant-options">
               {p.colors.map((c) => {
@@ -196,13 +205,13 @@ export function Buy({
                   <button
                     key={c}
                     type="button"
-                    role="radio"
-                    aria-checked={active}
+                    aria-pressed={active}
                     className="variant-chip"
                     data-selected={active ? "true" : "false"}
                     disabled={tracked && (inventory.colors.get(c) ?? 0) <= 0}
                     onClick={() => {
                       setColor(c);
+                      setSelectionError("");
                       setRequested(1);
                       if (tracked && size && pairStock(c, size) === 0) setSize("");
                       onColorChange?.(c);
@@ -219,19 +228,23 @@ export function Buy({
         {detail && optionsSelected && selectedStock > 0 && <div className="purchase-quantity">
           <button type="button" aria-label={lang === "en" ? "Decrease quantity" : "إنقاص الكمية"}
             disabled={quantity <= 1} onClick={() => setRequested(quantity - 1)}>−</button>
-          <output aria-label={lang === "en" ? "Quantity" : "الكمية"}>{remaining <= 0 ? 0 : quantity}</output>
+          <output aria-label={lang === "en" ? "Quantity" : "الكمية"}><bdi dir="ltr">{(remaining <= 0 ? 0 : quantity).toLocaleString(lang)}</bdi></output>
           <button type="button" aria-label={lang === "en" ? "Increase quantity" : "زيادة الكمية"}
             disabled={quantity >= remaining} onClick={() => setRequested(quantity + 1)}>+</button>
           {quantity >= remaining && <small role="status">{quantityLimitHint(lang)}</small>}
         </div>}
+        {selectionError && <small role="alert" className="sf-field-error">{selectionError}</small>}
         <button
+          ref={inlineButton}
           type="submit"
           className={detail ? "detail-cta" : "atc-btn quick-add-pill"}
-          disabled={selectedStock <= 0 || (optionsSelected && remaining <= 0 && p.max_order_qty !== undefined)}
+          disabled={disabled}
         >
           <ShoppingBag size={detail ? 17 : 15} />
-          <span>{selectedStock > 0 ? detail ? t("addToBag") : t("quickAdd") : t("outOfStock")}</span>
+          <span>{buttonLabel}</span>
         </button>
+        {detail && sticky && <StickyPurchase product={p} anchor={inlineButton} {...sticky} disabled={disabled}
+          label={optionsSelected || disabled ? buttonLabel : t("chooseOptions")} />}
       </form>
       {detail && p.stock <= 0 && (
         <div className="restock-box">
@@ -286,4 +299,32 @@ export function Buy({
       )}
     </>
   );
+}
+
+function StickyPurchase({ product, anchor, currency, initialNow, disabled, label }: {
+  product: Product; anchor: RefObject<HTMLButtonElement | null>; currency: string; initialNow: number; disabled: boolean; label: string;
+}) {
+  const { lang } = useLanguage();
+  const now = useSaleClock([product], initialNow);
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    if (!anchor.current) return;
+    let inlineVisible = true, footerVisible = false;
+    const footer = anchor.current.closest(".shop")?.querySelector(".shop-footer-wrap");
+    const observer = new IntersectionObserver(entries => {
+      for (const entry of entries) {
+        if (entry.target === footer) footerVisible = entry.isIntersecting;
+        else inlineVisible = entry.isIntersecting;
+      }
+      setVisible(!inlineVisible && !footerVisible);
+    });
+    observer.observe(anchor.current);
+    if (footer) observer.observe(footer);
+    return () => observer.disconnect();
+  }, [anchor]);
+  if (!visible) return null;
+  return <div className="sf-sticky-buy">
+    <strong><bdi dir="ltr">{money(resolveEffectivePrice(product, now), currency, lang)}</bdi></strong>
+    <button type="submit" className="detail-cta" disabled={disabled}><ShoppingBag size={17}/>{label}</button>
+  </div>;
 }

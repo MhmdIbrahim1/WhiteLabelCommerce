@@ -139,7 +139,7 @@ export default async function CustomerOrderDetailPage({
           </span>
           <h1>
             {isEn ? "Order" : "طلب"}{" "}
-            <span dir="ltr">{formatOrderNumber(order.id)}</span>
+            <bdi dir="ltr">{formatOrderNumber(order.id)}</bdi>
           </h1>
         </div>
       </div>
@@ -185,8 +185,8 @@ export default async function CustomerOrderDetailPage({
 
         <section className="panel order-detail-summary-panel">
           <div className="invoice-heading">
-            <h1>{isEn ? "Invoice" : "فاتورة"} <bdi>{formatOrderNumber(order.id)}</bdi></h1>
-            <p>{store.name} · {date(order.created_at, lang)}</p>
+            <h1>{isEn ? "Invoice" : "فاتورة"} <bdi dir="ltr">{formatOrderNumber(order.id)}</bdi></h1>
+            <p>{store.name} · <bdi dir="ltr">{date(order.created_at, lang)}</bdi></p>
           </div>
           <h2>{isEn ? "Order Summary & Shipping" : "ملخص الطلب والتوصيل"}</h2>
 
@@ -196,7 +196,7 @@ export default async function CustomerOrderDetailPage({
             {order.phone && (
               <div className="order-detail-info-row">
                 <Phone size={15} />
-                <span dir="ltr">{order.phone}</span>
+                <bdi dir="ltr">{order.phone}</bdi>
               </div>
             )}
             <div className="order-detail-info-row">
@@ -210,7 +210,7 @@ export default async function CustomerOrderDetailPage({
               <li key={it.id} className="order-detail-line-row">
                 <div>
                   <strong>
-                    {it.product_name} × {it.quantity}
+                    {it.product_name} × <bdi dir="ltr">{it.quantity.toLocaleString(lang)}</bdi>
                   </strong>
                   {(it.size || it.color) && (
                     <div className="variant-badges-row" style={{ marginTop: "0.25rem" }}>
@@ -229,7 +229,7 @@ export default async function CustomerOrderDetailPage({
                   )}
                 </div>
                 <strong dir="ltr">
-                  {money(it.unit_price * it.quantity, order.currency, lang)}
+                  <bdi dir="ltr">{money(it.unit_price * it.quantity, order.currency, lang)}</bdi>
                 </strong>
               </li>
             ))}
@@ -239,7 +239,7 @@ export default async function CustomerOrderDetailPage({
             <div>
               <span>{isEn ? "Items Subtotal" : "قيمة المنتجات"}</span>
               <strong dir="ltr">
-                {money(displayItemsSubtotal, order.currency, lang)}
+                <bdi dir="ltr">{money(displayItemsSubtotal, order.currency, lang)}</bdi>
               </strong>
             </div>
             {couponDiscount > 0 && (
@@ -247,10 +247,10 @@ export default async function CustomerOrderDetailPage({
                 <span style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem" }}>
                   <TicketPercent size={14} />
                   {isEn ? "Coupon Discount" : "خصم الكوبون"}
-                  {order.coupon_code ? ` (${order.coupon_code})` : ""}
+                  {order.coupon_code && <> (<bdi dir="ltr">{order.coupon_code}</bdi>)</>}
                 </span>
                 <strong dir="ltr">
-                  -{money(couponDiscount, order.currency, lang)}
+                  <bdi dir="ltr">-{money(couponDiscount, order.currency, lang)}</bdi>
                 </strong>
               </div>
             )}
@@ -261,7 +261,7 @@ export default async function CustomerOrderDetailPage({
                   {isEn ? "Wallet Credit" : "خصم محفظة المتجر"}
                 </span>
                 <strong dir="ltr">
-                  -{money(Number(order.wallet_discount), order.currency, lang)}
+                  <bdi dir="ltr">-{money(Number(order.wallet_discount), order.currency, lang)}</bdi>
                 </strong>
               </div>
             )}
@@ -272,7 +272,7 @@ export default async function CustomerOrderDetailPage({
                   ? isEn
                     ? "Free"
                     : "مجاني"
-                  : money(order.shipping_fee, order.currency, lang)}
+                  : <bdi dir="ltr">{money(order.shipping_fee, order.currency, lang)}</bdi>}
               </strong>
             </div>
             {Number(order.cashback_earned ?? 0) > 0 && (
@@ -282,14 +282,14 @@ export default async function CustomerOrderDetailPage({
                   {isEn ? "Cashback Earned" : "الكاش باك المكتسب"}
                 </span>
                 <strong dir="ltr">
-                  +{money(Number(order.cashback_earned), order.currency, lang)}
+                  <bdi dir="ltr">+{money(Number(order.cashback_earned), order.currency, lang)}</bdi>
                 </strong>
               </div>
             )}
             <div className="order-detail-grand-total">
               <span>{isEn ? "Net Total" : "الإجمالي الصافي"}</span>
               <strong dir="ltr">
-                {money(order.total, order.currency, lang)}
+                <bdi dir="ltr">{money(order.total, order.currency, lang)}</bdi>
               </strong>
             </div>
           </div>

@@ -2,19 +2,24 @@ import { stockLabel } from "@/lib/variant-stock";
 import Link from "next/link";
 import Image from "next/image";
 import { Package, Star } from "lucide-react";
+import { serverNowMs } from "@/lib/flash-sale";
 import { photo, type Product } from "@/lib/shop";
+import { storefrontImageSrc } from "@/lib/storefront-media";
 import { localizedText, t, type Lang } from "@/lib/i18n";
 import { storeHref } from "@/lib/tenant-shared";
+import { normalizeSpecs } from "@/lib/specs";
+import type { StorefrontPreset } from "@/lib/storefront-presets";
 import { formatRatingScore } from "@/lib/reviews-wishlist";
 import { Buy } from "./buy";
 import { WishlistHeartButton } from "./wishlist-heart";
+import { StoreCopy } from "./store-copy";
 import {
   ProductDiscountBadge,
   ProductPriceDisplay,
 } from "./flash-countdown";
 
 export function Picture({ p, lang = "ar" }: { p: Product; lang?: Lang }) {
-  const src = photo(p.image_path);
+  const src = storefrontImageSrc(photo(p.image_path), 640);
   const alt = localizedText(lang, p.name, p.name_en);
   return (
     <div className="product-photo">
@@ -32,11 +37,13 @@ export function Price({
   currency,
   lang = "ar",
   variant = "card",
+  initialNow,
 }: {
   p: Product;
   currency: string;
   lang?: Lang;
   variant?: "card" | "detail";
+  initialNow?: number;
 }) {
   return (
     <ProductPriceDisplay
@@ -44,6 +51,7 @@ export function Price({
       currency={currency}
       lang={lang}
       variant={variant}
+      initialNow={initialNow ?? serverNowMs()}
     />
   );
 }
@@ -54,13 +62,16 @@ export function Grid({
   lang = "ar",
   basePath = "",
   layout = "grid",
+  preset,
 }: {
   rows: Product[];
   currency: string;
   lang?: Lang;
   basePath?: string;
   layout?: "grid" | "carousel";
+  preset: StorefrontPreset;
 }) {
+  const initialNow = serverNowMs();
   if (!rows.length) return <p className="panel shop-empty-state">{t(lang, "noMatchingProducts")}</p>;
   return (
     <div
@@ -70,15 +81,15 @@ export function Grid({
           : "product-grid"
       }
     >
-      {rows.map((p, idx) => {
+      {rows.map((p) => {
         const title = localizedText(lang, p.name, p.name_en);
         const detailHref = storeHref(basePath, "/products/" + p.id);
         const reviewCount = Number(p.review_count ?? 0);
         const avgRating = Number(p.avg_rating ?? 0);
+        const specs = preset === "tech_precision" ? normalizeSpecs(p.specifications).slice(0, 2) : [];
         return (
           <article
-            className="tile shop-animate"
-            style={{ animationDelay: `${Math.min(idx, 7) * 40}ms` }}
+            className="tile"
             key={p.id}
           >
             <div className="tile-media">
@@ -89,15 +100,12 @@ export function Grid({
               >
                 <Picture p={p} lang={lang} />
               </Link>
-              <ProductDiscountBadge product={p} lang={lang} />
+              <ProductDiscountBadge product={p} lang={lang} initialNow={initialNow} />
               <WishlistHeartButton productId={p.id} />
-              <div className="tile-quick-add">
-                <Buy p={p} basePath={basePath} />
-              </div>
             </div>
             <div className="tile-body">
               <Link href={detailHref} className="tile-title-link">
-                <h3>{title}</h3>
+                <h3><StoreCopy text={title} lang={lang}/></h3>
               </Link>
               {reviewCount > 0 && (
                 <span
@@ -105,13 +113,17 @@ export function Grid({
                   aria-label={`${formatRatingScore(avgRating)} (${reviewCount})`}
                 >
                   <Star size={12} fill="#F59E0B" stroke="#F59E0B" />
-                  <strong>{formatRatingScore(avgRating)}</strong>
-                  <span>({reviewCount})</span>
+                  <strong><bdi dir="ltr">{formatRatingScore(avgRating)}</bdi></strong>
+                  <bdi dir="ltr">({reviewCount})</bdi>
                 </span>
               )}
               <span className="stock-tier" data-tier={p.stock <= 0 ? "out" : p.stock <= 5 ? "low" : "in"}>{stockLabel(p.stock, lang)}</span>
-              <Price p={p} currency={currency} lang={lang} />
+              {specs.length > 0 && <dl className="sf-spec-badges">{specs.map((spec, index) =>
+                <div key={index}><dt><StoreCopy text={localizedText(lang, spec.key_ar, spec.key_en)} lang={lang}/></dt>
+                  <dd><StoreCopy text={localizedText(lang, spec.value_ar, spec.value_en)} lang={lang}/></dd></div>)}</dl>}
+              <Price p={p} currency={currency} lang={lang} initialNow={initialNow} />
             </div>
+            <div className="sf-card-action"><Buy p={p} basePath={basePath} /></div>
           </article>
         );
       })}

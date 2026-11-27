@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { storefrontMediaPatterns } from "./src/lib/storefront-media.ts";
 
 const securityHeaders = [
   { key: "X-Frame-Options", value: "SAMEORIGIN" },
@@ -15,6 +16,7 @@ const securityHeaders = [
 ];
 
 const config: NextConfig = {
+  images: { remotePatterns: storefrontMediaPatterns() },
   allowedDevOrigins: ["127.0.0.1"],
   // Auth Server Function arguments include passwords and email codes.
   logging: { serverFunctions: false },

@@ -1,13 +1,11 @@
 "use client";
 
-import { ToastFeedback } from "@/components/floating-toast";
+import { CartLines, useBasketContents } from "./cart-lines";
+import { StoreCopy } from "./store-copy";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useSyncExternalStore } from "react";
 import {
-  Plus,
-  Minus,
-  Trash2,
   TicketPercent,
   X,
   Banknote,
@@ -19,15 +17,12 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import {
-  useCart, useDefaultOrderLimit, remainingQuantity, refreshCartInventory,
-  change,
   purchased,
   setPendingOnlineOrder,
   lineEffectivePrice,
   syncAbandonedCartContact,
   markWebCartRecovered,
   checkoutAttemptKey,
-  useCartTenant,
 } from "./cart-store";
 import { trackInitiateCheckout, trackPurchase } from "@/lib/analytics";
 import {
@@ -35,9 +30,7 @@ import {
   previewCoupon,
   type CheckoutResult,
 } from "@/app/(shop)/checkout/action";
-import { quantityLimitHint } from "@/lib/variant-stock";
 import { money } from "@/lib/brand";
-import { localizedText, translateColor } from "@/lib/i18n";
 import type { StoreIncentives } from "@/lib/shop";
 import { storeHref } from "@/lib/tenant-shared";
 import { useLanguage } from "@/components/language-provider";
@@ -48,6 +41,7 @@ import { CartIncentiveBar } from "./cart-incentive-bar";
 import { CartUpsellStrip } from "./cart-upsell-strip";
 
 const EGYPT_WALLET_RE = /^01[0125][0-9]{8}$/;
+const subscribeToHydration = () => () => {};
 
 export type StorePaymentOptions = {
   codEnabled: boolean;
@@ -104,17 +98,10 @@ export function Basket({
 }) {
   const router = useRouter();
   const { lang, t } = useLanguage();
-  const tenantId = useCartTenant();
   const isEn = lang === "en";
-  const lines = useCart();
-  const defaultLimit = useDefaultOrderLimit();
-  const productIds = [...new Set(lines.map(line => line.id))].sort().join(",");
-  useEffect(() => {
-    let active = true;
-    if (productIds) void refreshCartInventory(tenantId, productIds.split(","), () => active).catch(() => {});
-    return () => { active = false; };
-  }, [tenantId, productIds]);
-  const overLimit = lines.some(line => remainingQuantity(lines, line, defaultLimit) < 0);
+  const hydrated = useSyncExternalStore(subscribeToHydration, () => true, () => false);
+  const basket = useBasketContents();
+  const { tenant: tenantId, lines, subtotal, overLimit } = basket;
 
   const availableMethods: SelectedPayment[] = [];
   if (paymentOptions.codEnabled) availableMethods.push("cod");
@@ -159,10 +146,6 @@ export function Basket({
     ? selectedPayment
     : defaultMethod;
 
-  const subtotal = lines.reduce(
-    (s, l) => s + lineEffectivePrice(l) * l.quantity,
-    0,
-  );
   const discount = appliedCoupon
     ? Math.min(subtotal, appliedCoupon.discount)
     : 0;
@@ -271,13 +254,18 @@ export function Basket({
       <section className="panel">
         <h1>{t("orderReceivedTitle")}</h1>
         <p>{t("orderReceivedNote")}</p>
-        <p dir="ltr">{result.id}</p>
-        <p>{money(result.total ?? null, result.currency, lang)}</p>
+        <p><bdi dir="ltr">{result.id}</bdi></p>
+        <p><bdi dir="ltr">{money(result.total ?? null, result.currency, lang)}</bdi></p>
         <Link className="cta" href={storeHref(basePath, "/orders")}>
           {t("trackOrderBtn")}
         </Link>
       </section>
     );
+
+  if (!hydrated) return <section className="panel" role="status" aria-busy="true">
+    <h1>{order ? t("checkoutTitle") : t("cartTitle")}</h1>
+    <p>{isEn ? "Loading your cart…" : "جارٍ تحميل سلتك…"}</p>
+  </section>;
 
   if (!lines.length)
     return (
@@ -291,22 +279,14 @@ export function Basket({
 
   return (
     <>
-      <h1>{order ? t("checkoutTitle") : t("cartTitle")}</h1>
-      <div className="checkout-progress" aria-label={t("checkoutTitle")}>
-        <div className="checkout-progress-steps">
-          <span data-active="true">{t("stepReviewCart")}</span>
-          <span data-active={order ? "true" : "false"}>
-            {t("stepShippingPay")}
-          </span>
-          <span data-active="false">{t("stepConfirm")}</span>
-        </div>
-        <div className="checkout-progress-track">
-          <div
-            className="checkout-progress-fill"
-            style={{ width: order ? "68%" : "34%" }}
-          />
-        </div>
-      </div>
+      <header className="sf-purchase-head">
+        <h1>{order ? t("checkoutTitle") : t("cartTitle")}</h1>
+        <ol aria-label={t("checkoutTitle")}>
+          <li aria-current={order ? undefined : "step"}><Link href={storeHref(basePath, "/cart")}>{t("stepReviewCart")}</Link></li>
+          <li aria-current={order ? "step" : undefined}>{t("stepShippingPay")}</li>
+          <li>{t("stepConfirm")}</li>
+        </ol>
+      </header>
       <CartIncentiveBar
         enabled={incentives.cartIncentiveEnabled}
         threshold={incentives.freeShippingThreshold}
@@ -323,126 +303,381 @@ export function Basket({
           basePath={basePath}
         />
       )}
-      <div className="details-grid">
-        <section className="panel">
-          <h2>{t("cartItemsTitle")}</h2>
-          {lines.map((l) => {
-            const remaining = remainingQuantity(lines, l, defaultLimit);
-            const unitPrice = lineEffectivePrice(l);
-            const regularPrice =
-              typeof l.regular_price === "number" && l.regular_price > unitPrice
-                ? l.regular_price
-                : null;
-            return (
-              <div
-                className="basket-line"
-                key={JSON.stringify([l.id, l.color, l.size])}
-              >
-                <div className="basket-line-info">
-                  <Link href={storeHref(basePath, "/products/" + l.id)}>
-                    {localizedText(lang, l.name, l.name_en)}
+      <div className="sf-checkout-grid" data-order={order}>
+        {order ? (
+          <form id="store-checkout" className="sf-checkout-form panel"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (
+                overLimit || lock.current ||
+                (!fullyPaidByWallet && availableMethods.length === 0)
+              )
+                return;
+
+              const effectivePaymentMethod = fullyPaidByWallet
+                ? "wallet"
+                : activePayment;
+              const cleanWallet = walletPhone.replace(/\s+/g, "");
+              if (
+                effectivePaymentMethod === "paymob_wallet" &&
+                !EGYPT_WALLET_RE.test(cleanWallet)
+              ) {
+                setWalletError(t("paymentWalletPhoneError"));
+                e.currentTarget.querySelector<HTMLInputElement>('input[name="wallet_phone"]')?.focus();
+                return;
+              }
+              setWalletError(null);
+              setResult({});
+
+              lock.current = true;
+              setBusy(true);
+              const f = new FormData(e.currentTarget);
+              if (e.currentTarget.querySelector(".address-book fieldset:disabled")) { lock.current = false; setBusy(false); return; }
+              const delivery = JSON.parse(String(f.get("delivery")));
+              const recipient = String(f.get("recipient_name") || "").trim();
+              const address = String(f.get("address")).trim(),
+                phone = String(f.get("phone")),
+                items = lines.map(({ id, quantity, size, color }) => ({
+                  id,
+                  quantity,
+                  size,
+                  color,
+                }));
+              try {
+                const couponCode = appliedCoupon?.code ?? "";
+                const useWalletFlag = canUseWallet && useWallet;
+                const payload = JSON.stringify([
+                  address,
+                  phone, delivery, recipient,
+                  items,
+                  couponCode,
+                  effectivePaymentMethod,
+                  useWalletFlag,
+                ]);
+                const hash = Array.from(
+                  new Uint8Array(
+                    await crypto.subtle.digest(
+                      "SHA-256",
+                      new TextEncoder().encode(payload),
+                    ),
+                  ),
+                )
+                  .map((b) => b.toString(16).padStart(2, "0"))
+                  .join("");
+                const key = checkoutAttemptKey(tenantId, hash);
+                const request =
+                  localStorage.getItem(key) || crypto.randomUUID();
+                localStorage.setItem(key, request);
+
+                const receipt = await checkout(
+                  request,
+                  address,
+                  phone,
+                  effectivePaymentMethod,
+                  items,
+                  couponCode || undefined,
+                  recipient || undefined,
+                  useWalletFlag,
+                  delivery,
+                );
+
+                if (!receipt.id) {
+                  setResult(receipt);
+                  return;
+                }
+
+                const purchasedPixelItems = lines.map((l) => ({
+                  id: l.id,
+                  name: l.name,
+                  price: lineEffectivePrice(l),
+                  quantity: l.quantity,
+                  variant:
+                    [l.size, l.color].filter(Boolean).join(" / ") || undefined,
+                }));
+
+                // Full Store Wallet Payment (remainingTotal === 0): skip Paymob, clear cart & confirm
+                if (
+                  effectivePaymentMethod === "wallet" ||
+                  Number(receipt.total ?? 0) <= 0
+                ) {
+                  markWebCartRecovered(tenantId, receipt.id);
+                  trackPurchase({
+                    orderId: receipt.id,
+                    value: Number(receipt.total ?? finalTotal),
+                    currency: receipt.currency ?? currency,
+                    items: purchasedPixelItems,
+                  });
+                  purchased(tenantId, lines);
+                  localStorage.removeItem(key);
+                  router.push(
+                    storeHref(
+                      basePath,
+                      "/orders?placed=wallet&order=" +
+                        encodeURIComponent(receipt.id),
+                    ),
+                  );
+                  return;
+                }
+
+                // Online Paymob Flow: keep cart intact and show full-screen redirecting state
+                // Cart is cleared ONLY when payment is confirmed on /orders (?payment=success or paid)
+                if (
+                  effectivePaymentMethod === "paymob_card" ||
+                  effectivePaymentMethod === "paymob_wallet"
+                ) {
+                  setRedirectingPayment(true);
+                  setPendingOnlineOrder(tenantId, receipt.id);
+                  const initRes = await fetch(
+                    "/api/payments/paymob/initiate",
+                    {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        order_id: receipt.id,
+                        method:
+                          effectivePaymentMethod === "paymob_card"
+                            ? "card"
+                            : "wallet",
+                        wallet_phone:
+                          effectivePaymentMethod === "paymob_wallet"
+                            ? cleanWallet
+                            : undefined,
+                        customer_phone: phone,
+                      }),
+                    },
+                  );
+                  const initData = (await initRes.json()) as {
+                    redirect_url?: string;
+                    error?: string;
+                  };
+                  if (!initRes.ok || !initData.redirect_url) {
+                    setRedirectingPayment(false);
+                    setResult({
+                      error: isEn
+                        ? "Order created, but online payment could not be initiated. You can retry from My Orders."
+                        : "تم إنشاء الطلب ولكن تعذر بدء الدفع الإلكتروني حالياً. يمكنك إعادة المحاولة من صفحة طلباتي.",
+                    });
+                    return;
+                  }
+                  localStorage.removeItem(key);
+                  window.location.assign(initData.redirect_url);
+                  return;
+                }
+
+                // Cash on Delivery Flow: clear cart immediately and redirect to /orders
+                markWebCartRecovered(tenantId, receipt.id);
+                trackPurchase({
+                  orderId: receipt.id,
+                  value: Number(receipt.total ?? finalTotal),
+                  currency: receipt.currency ?? currency,
+                  items: purchasedPixelItems,
+                });
+                purchased(tenantId, lines);
+                localStorage.removeItem(key);
+                router.push(
+                  storeHref(
+                    basePath,
+                    "/orders?placed=cod&order=" +
+                      encodeURIComponent(receipt.id),
+                  ),
+                );
+              } catch {
+                setRedirectingPayment(false);
+                setResult({
+                  error: isEn
+                    ? "Could not connect or submit your order. Please try again."
+                    : "تعذر الاتصال أو حفظ محاولة الشراء. أعد المحاولة.",
+                });
+              } finally {
+                setBusy(false);
+                lock.current = false;
+              }
+            }}
+          >
+            <div className="checkout-auth-banner">
+              {signedInEmail ? (
+                <span>{isEn ? "Signed in as " : "مسجّل الدخول بحساب "}<bdi dir="ltr">{signedInEmail}</bdi></span>
+              ) : (
+                <>
+                  <span>
+                    {isEn
+                      ? "Have an account? Sign in to auto-fill shipping details or continue as guest."
+                      : "لديك حساب؟ سجّل الدخول لملء بيانات الشحن تلقائياً أو أكمل كزائر."}
+                  </span>
+                  <Link
+                    href={`${basePath}/login?next=${encodeURIComponent(
+                      storeHref(basePath, "/checkout"),
+                    )}`}
+                  >
+                    {isEn ? "Sign in" : "تسجيل الدخول"}
                   </Link>
-                  {(l.size || l.color) && (
-                    <div className="variant-badges-row">
-                      {l.size && (
-                        <span className="variant-pill-badge">
-                          {t("sizeLabel")}: <b>{l.size}</b>
-                        </span>
+                </>
+              )}
+            </div>
+            <AddressBook storeId={storeId} checkout signedIn={signedIn} initial={addresses}
+              profile={{recipient_name:defaultName, phone:defaultPhone, governorate:defaultGovernorate, city:defaultCity, street:defaultAddress}}
+              onGovernorate={setGovernorate} onPhone={phone => syncAbandonedCartContact(tenantId, {
+                phone, name:defaultName, email:signedInEmail, currency,
+              })} />
+
+            {canUseWallet && (
+              <div
+                className={`wallet-checkout-toggle ${useWallet ? "is-active" : ""}`}
+              >
+                <label className="wallet-checkout-label">
+                  <span className="wallet-checkout-info">
+                    <Wallet size={18} aria-hidden="true" />
+                    <span>
+                      <strong>
+                        {isEn ? "Use wallet credit" : "استخدام رصيد المحفظة"} · <bdi dir="ltr">{money(walletBalance, currency, lang)}</bdi>
+                      </strong>
+                      <small>{useWallet ? <>{isEn ? "Credit applied" : "الرصيد المستخدم"} · <bdi dir="ltr">{money(walletApplied, currency, lang)}</bdi></>
+                        : isEn ? "Apply store credit to this order." : "استخدم رصيدك المتاح في هذا الطلب."}</small>
+                    </span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={useWallet}
+                    onChange={(e) => setUseWallet(e.target.checked)}
+                  />
+                </label>
+              </div>
+            )}
+
+            {fullyPaidByWallet ? (
+              <div className="wallet-full-cover-banner" role="status">
+                <CheckCircle2 size={18} aria-hidden="true" />
+                <span>
+                  {isEn
+                    ? "Paid in full via Store Wallet — no extra payment required."
+                    : "مغطّى بالكامل برصيد محفظة المتجر — لا يلزم دفع إضافي."}
+                </span>
+              </div>
+            ) : (
+              <>
+                <fieldset className="payment-options-group">
+                  <legend>{t("paymentMethodLabel")}</legend>
+                  {availableMethods.length === 0 ? (
+                    <p role="alert">{t("paymentNoMethods")}</p>
+                  ) : (
+                    <div className="payment-options-list">
+                      {paymentOptions.codEnabled && (
+                        <label
+                          className={`payment-option-card ${activePayment === "cod" ? "is-selected" : ""}`}
+                        >
+                          <input
+                            type="radio"
+                            name="payment"
+                            value="cod"
+                            checked={activePayment === "cod"}
+                            onChange={() => {
+                              setSelectedPayment("cod");
+                              setWalletError(null);
+                            }}
+                          />
+                          <Banknote size={18} aria-hidden="true" />
+                          <span>{t("paymentCod")}</span>
+                        </label>
                       )}
-                      {l.color && (
-                        <span className="variant-pill-badge">
-                          {t("colorLabel")}:{" "}
-                          <b>{translateColor(l.color, lang)}</b>
-                        </span>
-                      )}
+
+                      {paymentOptions.paymobEnabled &&
+                        paymentOptions.paymobCardEnabled && (
+                          <label
+                            className={`payment-option-card ${activePayment === "paymob_card" ? "is-selected" : ""}`}
+                          >
+                            <input
+                              type="radio"
+                              name="payment"
+                              value="paymob_card"
+                              checked={activePayment === "paymob_card"}
+                              onChange={() => {
+                                setSelectedPayment("paymob_card");
+                                setWalletError(null);
+                              }}
+                            />
+                            <CreditCard size={18} aria-hidden="true" />
+                            <span>{t("paymentCardOption")}</span>
+                          </label>
+                        )}
+
+                      {paymentOptions.paymobEnabled &&
+                        paymentOptions.paymobWalletEnabled && (
+                          <label
+                            className={`payment-option-card ${activePayment === "paymob_wallet" ? "is-selected" : ""}`}
+                          >
+                            <input
+                              type="radio"
+                              name="payment"
+                              value="paymob_wallet"
+                              checked={activePayment === "paymob_wallet"}
+                              onChange={() => {
+                                setSelectedPayment("paymob_wallet");
+                                setWalletError(null);
+                              }}
+                            />
+                            <Smartphone size={18} aria-hidden="true" />
+                            <span>{t("paymentWalletOption")}</span>
+                          </label>
+                        )}
                     </div>
                   )}
-                  {remaining <= 0 && <small role="status">{quantityLimitHint(lang)}</small>}
-                  <p className="basket-line-price">
-                    <span>{money(unitPrice, currency, lang)}</span>
-                    {regularPrice !== null && (
-                      <del className="basket-line-old-price">
-                        {money(regularPrice, currency, lang)}
-                      </del>
+                </fieldset>
+
+                {activePayment === "paymob_wallet" && (
+                  <label className="wallet-phone-field">
+                    {t("paymentWalletPhoneLabel")}
+                    <input
+                      type="tel"
+                      name="wallet_phone"
+                      aria-invalid={Boolean(walletError)} aria-describedby={walletError ? "wallet-phone-error" : undefined}
+                      onBlur={() => { if (walletPhone && !EGYPT_WALLET_RE.test(walletPhone.replace(/\s+/g, ""))) setWalletError(t("paymentWalletPhoneError")); }}
+                      dir="ltr"
+                      inputMode="numeric"
+                      maxLength={11}
+                      value={walletPhone}
+                      onChange={(e) => {
+                        setWalletPhone(e.target.value);
+                        if (walletError) setWalletError(null);
+                      }}
+                      placeholder={t("paymentWalletPhonePlaceholder")}
+                      required
+                    />
+                    {walletError && (
+                      <small role="alert" id="wallet-phone-error" className="sf-field-error">
+                        {walletError}
+                      </small>
                     )}
-                  </p>
-                </div>
-                <div className="actions">
-                  {!order && (
-                    <button
-                      aria-label={isEn ? "Decrease quantity" : "إنقاص الكمية"}
-                      onClick={() => change(tenantId, l, -1, defaultLimit)}
-                    >
-                      <Minus size={15} />
-                    </button>
-                  )}
-                  <b>
-                    {order ? `${t("qtyLabel")}: ${l.quantity}` : l.quantity}
-                  </b>
-                  {!order && (
-                    <>
-                      <button
-                        aria-label={isEn ? "Increase quantity" : "زيادة الكمية"}
-                        disabled={remaining <= 0}
-                        onClick={() => change(tenantId, l, 1, defaultLimit)}
-                      >
-                        <Plus size={15} />
-                      </button>
-                      <button
-                        aria-label={isEn ? "Remove item" : "حذف المنتج"}
-                        onClick={() => change(tenantId, l, -l.quantity, defaultLimit)}
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </section>
-        <section className="panel cart-summary-panel">
-          <h2>{t("orderSummaryTitle")}</h2>
-          <p>
-            {t("subtotalLabel")} · {money(subtotal, currency, lang)}
-          </p>
-          {appliedCoupon && (
-            <p className="coupon-discount-line">
-              {t("couponDiscountLabel")} ({appliedCoupon.code}) · -
-              {money(discount, currency, lang)}
-            </p>
-          )}
-          <p>
-            {t("shippingLabel")} ·{" "}
-            {freeShippingUnlocked || effectiveFee === 0 ? (
-              <span className="free-shipping-badge">
-                {isEn ? "Free" : "مجاني"}
-                {fee > 0 && (
-                  <del className="free-shipping-old">
-                    {money(deliveryFee, currency, lang)}
-                  </del>
+                  </label>
                 )}
-              </span>
-            ) : (
-              money(effectiveFee, currency, lang)
+              </>
             )}
-          </p>
-          {walletApplied > 0 && (
-            <p className="coupon-discount-line">
-              {isEn ? "Wallet Credit" : "خصم رصيد المحفظة"} · -
-              {money(walletApplied, currency, lang)}
-            </p>
-          )}
-          <strong>
-            {t("estimatedTotalLabel")} · {money(finalTotal, currency, lang)}
-          </strong>
+          </form>
+        ) : <section className="panel sf-basket-items">
+          <h2>{t("cartItemsTitle")}</h2>
+          <CartLines basket={basket} currency={currency} basePath={basePath} editable/>
+        </section>}
+        <aside className="panel cart-summary-panel sf-summary">
+          <h2>{t("orderSummaryTitle")}</h2>
+          {order && <CartLines basket={basket} currency={currency} basePath={basePath} editable={false}/>}
+          <dl className="sf-breakdown" aria-live="polite">
+            <div><dt>{t("subtotalLabel")}</dt><dd><bdi dir="ltr">{money(subtotal, currency, lang)}</bdi></dd></div>
+            {appliedCoupon && <div><dt>{t("couponDiscountLabel")} <bdi dir="ltr">{appliedCoupon.code}</bdi></dt>
+              <dd><bdi dir="ltr">−{money(discount, currency, lang)}</bdi></dd></div>}
+            <div><dt>{t("shippingLabel")}</dt><dd>
+              {freeShippingUnlocked || effectiveFee === 0 ? <>{isEn ? "Free" : "مجاني"}
+                {deliveryFee > 0 && <> <del><bdi dir="ltr">{money(deliveryFee, currency, lang)}</bdi></del></>}</>
+                : <bdi dir="ltr">{money(effectiveFee, currency, lang)}</bdi>}
+            </dd></div>
+            {walletApplied > 0 && <div><dt>{isEn ? "Wallet credit" : "رصيد المحفظة"}</dt><dd><bdi dir="ltr">−{money(walletApplied, currency, lang)}</bdi></dd></div>}
+            <div className="sf-total"><dt>{t("estimatedTotalLabel")}</dt><dd><bdi dir="ltr">{money(finalTotal, currency, lang)}</bdi></dd></div>
+          </dl>
           {order && (
             <div className="coupon-apply-box">
               {appliedCoupon ? (
                 <div className="coupon-applied-chip">
                   <span>
                     <TicketPercent size={14} /> {t("couponActivePrefix")}{" "}
-                    {appliedCoupon.code} {t("couponActiveSuffix")}
+                    <bdi dir="ltr">{appliedCoupon.code}</bdi> {t("couponActiveSuffix")}
                   </span>
                   <button
                     type="button"
@@ -463,7 +698,9 @@ export function Basket({
                     type="text"
                     dir={couponInput ? "ltr" : isEn ? "ltr" : "rtl"}
                     value={couponInput}
-                    onChange={(e) => setCouponInput(e.target.value)}
+                    aria-invalid={couponMsg?.ok === false}
+                    aria-describedby={couponMsg ? "coupon-feedback" : undefined}
+                    onChange={(e) => { setCouponInput(e.target.value); setCouponMsg(null); }}
                     placeholder={t("couponPlaceholder")}
                     aria-label={t("couponPlaceholder")}
                     maxLength={40}
@@ -479,377 +716,16 @@ export function Basket({
               )}
               {couponMsg && (
                 <small
-                  role="status"
-                  style={{
-                    color: couponMsg.ok ? "#15803d" : "#dc2626",
-                    fontWeight: 600,
-                  }}
+                  id="coupon-feedback" role="status" className={couponMsg.ok ? "sf-success" : "sf-field-error"}
                 >
-                  {couponMsg.text}
+                  <StoreCopy text={couponMsg.text} lang={lang}/>
                 </small>
               )}
             </div>
           )}
-          {order ? (
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault();
-                if (
-                  overLimit || lock.current ||
-                  (!fullyPaidByWallet && availableMethods.length === 0)
-                )
-                  return;
-
-                const effectivePaymentMethod = fullyPaidByWallet
-                  ? "wallet"
-                  : activePayment;
-                const cleanWallet = walletPhone.replace(/\s+/g, "");
-                if (
-                  effectivePaymentMethod === "paymob_wallet" &&
-                  !EGYPT_WALLET_RE.test(cleanWallet)
-                ) {
-                  setWalletError(t("paymentWalletPhoneError"));
-                  return;
-                }
-                setWalletError(null);
-                setResult({});
-
-                lock.current = true;
-                setBusy(true);
-                const f = new FormData(e.currentTarget);
-                if (e.currentTarget.querySelector(".address-book fieldset:disabled")) { lock.current = false; setBusy(false); return; }
-                const delivery = JSON.parse(String(f.get("delivery")));
-                const recipient = String(f.get("recipient_name") || "").trim();
-                const address = String(f.get("address")).trim(),
-                  phone = String(f.get("phone")),
-                  items = lines.map(({ id, quantity, size, color }) => ({
-                    id,
-                    quantity,
-                    size,
-                    color,
-                  }));
-                try {
-                  const couponCode = appliedCoupon?.code ?? "";
-                  const useWalletFlag = canUseWallet && useWallet;
-                  const payload = JSON.stringify([
-                    address,
-                    phone, delivery, recipient,
-                    items,
-                    couponCode,
-                    effectivePaymentMethod,
-                    useWalletFlag,
-                  ]);
-                  const hash = Array.from(
-                    new Uint8Array(
-                      await crypto.subtle.digest(
-                        "SHA-256",
-                        new TextEncoder().encode(payload),
-                      ),
-                    ),
-                  )
-                    .map((b) => b.toString(16).padStart(2, "0"))
-                    .join("");
-                  const key = checkoutAttemptKey(tenantId, hash);
-                  const request =
-                    localStorage.getItem(key) || crypto.randomUUID();
-                  localStorage.setItem(key, request);
-
-                  const receipt = await checkout(
-                    request,
-                    address,
-                    phone,
-                    effectivePaymentMethod,
-                    items,
-                    couponCode || undefined,
-                    recipient || undefined,
-                    useWalletFlag,
-                    delivery,
-                  );
-
-                  if (!receipt.id) {
-                    setResult(receipt);
-                    return;
-                  }
-
-                  const purchasedPixelItems = lines.map((l) => ({
-                    id: l.id,
-                    name: l.name,
-                    price: lineEffectivePrice(l),
-                    quantity: l.quantity,
-                    variant:
-                      [l.size, l.color].filter(Boolean).join(" / ") || undefined,
-                  }));
-
-                  // Full Store Wallet Payment (remainingTotal === 0): skip Paymob, clear cart & confirm
-                  if (
-                    effectivePaymentMethod === "wallet" ||
-                    Number(receipt.total ?? 0) <= 0
-                  ) {
-                    markWebCartRecovered(tenantId, receipt.id);
-                    trackPurchase({
-                      orderId: receipt.id,
-                      value: Number(receipt.total ?? finalTotal),
-                      currency: receipt.currency ?? currency,
-                      items: purchasedPixelItems,
-                    });
-                    purchased(tenantId, lines);
-                    localStorage.removeItem(key);
-                    router.push(
-                      storeHref(
-                        basePath,
-                        "/orders?placed=wallet&order=" +
-                          encodeURIComponent(receipt.id),
-                      ),
-                    );
-                    return;
-                  }
-
-                  // Online Paymob Flow: keep cart intact and show full-screen redirecting state
-                  // Cart is cleared ONLY when payment is confirmed on /orders (?payment=success or paid)
-                  if (
-                    effectivePaymentMethod === "paymob_card" ||
-                    effectivePaymentMethod === "paymob_wallet"
-                  ) {
-                    setRedirectingPayment(true);
-                    setPendingOnlineOrder(tenantId, receipt.id);
-                    const initRes = await fetch(
-                      "/api/payments/paymob/initiate",
-                      {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                          order_id: receipt.id,
-                          method:
-                            effectivePaymentMethod === "paymob_card"
-                              ? "card"
-                              : "wallet",
-                          wallet_phone:
-                            effectivePaymentMethod === "paymob_wallet"
-                              ? cleanWallet
-                              : undefined,
-                          customer_phone: phone,
-                        }),
-                      },
-                    );
-                    const initData = (await initRes.json()) as {
-                      redirect_url?: string;
-                      error?: string;
-                    };
-                    if (!initRes.ok || !initData.redirect_url) {
-                      setRedirectingPayment(false);
-                      setResult({
-                        error: isEn
-                          ? "Order created, but online payment could not be initiated. You can retry from My Orders."
-                          : "تم إنشاء الطلب ولكن تعذر بدء الدفع الإلكتروني حالياً. يمكنك إعادة المحاولة من صفحة طلباتي.",
-                      });
-                      return;
-                    }
-                    localStorage.removeItem(key);
-                    window.location.assign(initData.redirect_url);
-                    return;
-                  }
-
-                  // Cash on Delivery Flow: clear cart immediately and redirect to /orders
-                  markWebCartRecovered(tenantId, receipt.id);
-                  trackPurchase({
-                    orderId: receipt.id,
-                    value: Number(receipt.total ?? finalTotal),
-                    currency: receipt.currency ?? currency,
-                    items: purchasedPixelItems,
-                  });
-                  purchased(tenantId, lines);
-                  localStorage.removeItem(key);
-                  router.push(
-                    storeHref(
-                      basePath,
-                      "/orders?placed=cod&order=" +
-                        encodeURIComponent(receipt.id),
-                    ),
-                  );
-                } catch {
-                  setRedirectingPayment(false);
-                  setResult({
-                    error: isEn
-                      ? "Could not connect or submit your order. Please try again."
-                      : "تعذر الاتصال أو حفظ محاولة الشراء. أعد المحاولة.",
-                  });
-                } finally {
-                  setBusy(false);
-                  lock.current = false;
-                }
-              }}
-            >
-              <div className="checkout-auth-banner">
-                {signedInEmail ? (
-                  <span>
-                    {isEn
-                      ? `Signed in as ${signedInEmail} — your order will sync automatically.`
-                      : `مسجّل الدخول: ${signedInEmail} — سيتم مزامنة طلبك مع حسابك تلقائياً.`}
-                  </span>
-                ) : (
-                  <>
-                    <span>
-                      {isEn
-                        ? "Have an account? Sign in to auto-fill shipping details or continue as guest."
-                        : "لديك حساب؟ سجّل الدخول لملء بيانات الشحن تلقائياً أو أكمل كزائر."}
-                    </span>
-                    <Link
-                      href={`/login?next=${encodeURIComponent(
-                        storeHref(basePath, "/checkout"),
-                      )}`}
-                    >
-                      {isEn ? "Sign in" : "تسجيل الدخول"}
-                    </Link>
-                  </>
-                )}
-              </div>
-              <AddressBook storeId={storeId} checkout signedIn={signedIn} initial={addresses}
-                profile={{recipient_name:defaultName, phone:defaultPhone, governorate:defaultGovernorate, city:defaultCity, street:defaultAddress}}
-                onGovernorate={setGovernorate} onPhone={phone => syncAbandonedCartContact(tenantId, {
-                  phone, name:defaultName, email:signedInEmail, currency,
-                })} />
-
-              {canUseWallet && (
-                <div
-                  className={`wallet-checkout-toggle ${useWallet ? "is-active" : ""}`}
-                >
-                  <label className="wallet-checkout-label">
-                    <span className="wallet-checkout-info">
-                      <Wallet size={18} aria-hidden="true" />
-                      <span>
-                        <strong>
-                          {isEn
-                            ? `Use Wallet Credit (${money(walletBalance, currency, "en")})`
-                            : `استخدام رصيد المحفظة (${money(walletBalance, currency, "ar")})`}
-                        </strong>
-                        <small>
-                          {useWallet
-                            ? isEn
-                              ? `Deducting ${money(walletApplied, currency, "en")} from your order total`
-                              : `سيتم خصم ${money(walletApplied, currency, "ar")} من إجمالي الطلب`
-                            : isEn
-                              ? "Apply your available store credit instantly to this order"
-                              : "استخدم رصيدك المتاح في المحفظة للخصم الفوري على هذا الطلب"}
-                        </small>
-                      </span>
-                    </span>
-                    <input
-                      type="checkbox"
-                      checked={useWallet}
-                      onChange={(e) => setUseWallet(e.target.checked)}
-                    />
-                  </label>
-                </div>
-              )}
-
-              {fullyPaidByWallet ? (
-                <div className="wallet-full-cover-banner" role="status">
-                  <CheckCircle2 size={18} aria-hidden="true" />
-                  <span>
-                    {isEn
-                      ? "Paid in full via Store Wallet — no extra payment required."
-                      : "مغطّى بالكامل برصيد محفظة المتجر — لا يلزم دفع إضافي."}
-                  </span>
-                </div>
-              ) : (
-                <>
-                  <fieldset className="payment-options-group">
-                    <legend>{t("paymentMethodLabel")}</legend>
-                    {availableMethods.length === 0 ? (
-                      <p role="alert">{t("paymentNoMethods")}</p>
-                    ) : (
-                      <div className="payment-options-list">
-                        {paymentOptions.codEnabled && (
-                          <label
-                            className={`payment-option-card ${activePayment === "cod" ? "is-selected" : ""}`}
-                          >
-                            <input
-                              type="radio"
-                              name="payment"
-                              value="cod"
-                              checked={activePayment === "cod"}
-                              onChange={() => {
-                                setSelectedPayment("cod");
-                                setWalletError(null);
-                              }}
-                            />
-                            <Banknote size={18} aria-hidden="true" />
-                            <span>{t("paymentCod")}</span>
-                          </label>
-                        )}
-
-                        {paymentOptions.paymobEnabled &&
-                          paymentOptions.paymobCardEnabled && (
-                            <label
-                              className={`payment-option-card ${activePayment === "paymob_card" ? "is-selected" : ""}`}
-                            >
-                              <input
-                                type="radio"
-                                name="payment"
-                                value="paymob_card"
-                                checked={activePayment === "paymob_card"}
-                                onChange={() => {
-                                  setSelectedPayment("paymob_card");
-                                  setWalletError(null);
-                                }}
-                              />
-                              <CreditCard size={18} aria-hidden="true" />
-                              <span>{t("paymentCardOption")}</span>
-                            </label>
-                          )}
-
-                        {paymentOptions.paymobEnabled &&
-                          paymentOptions.paymobWalletEnabled && (
-                            <label
-                              className={`payment-option-card ${activePayment === "paymob_wallet" ? "is-selected" : ""}`}
-                            >
-                              <input
-                                type="radio"
-                                name="payment"
-                                value="paymob_wallet"
-                                checked={activePayment === "paymob_wallet"}
-                                onChange={() => {
-                                  setSelectedPayment("paymob_wallet");
-                                  setWalletError(null);
-                                }}
-                              />
-                              <Smartphone size={18} aria-hidden="true" />
-                              <span>{t("paymentWalletOption")}</span>
-                            </label>
-                          )}
-                      </div>
-                    )}
-                  </fieldset>
-
-                  {activePayment === "paymob_wallet" && (
-                    <label className="wallet-phone-field">
-                      {t("paymentWalletPhoneLabel")}
-                      <input
-                        type="tel"
-                        name="wallet_phone"
-                        dir="ltr"
-                        inputMode="numeric"
-                        maxLength={11}
-                        value={walletPhone}
-                        onChange={(e) => {
-                          setWalletPhone(e.target.value);
-                          if (walletError) setWalletError(null);
-                        }}
-                        placeholder={t("paymentWalletPhonePlaceholder")}
-                        required
-                      />
-                      {walletError && (
-                        <small role="alert" className="wallet-error-text">
-                          {walletError}
-                        </small>
-                      )}
-                    </label>
-                  )}
-                </>
-              )}
-
+          {order ? <>
               <button
-                className="checkout-cta"
+                className="checkout-cta" type="submit" form="store-checkout"
                 disabled={
                   overLimit || busy || (!fullyPaidByWallet && availableMethods.length === 0)
                 }
@@ -865,16 +741,9 @@ export function Basket({
                       : t("confirmOrderBtn")}
               </button>
               {overLimit && <Link href={storeHref(basePath, "/cart")}>{isEn ? "Reduce quantities in your cart" : "خفّض الكميات في السلة"}</Link>}
-              {result.error && <ToastFeedback kind="error" message={result.error} />}
-            </form>
-          ) : (
-            <p>
-              <Link className="cta checkout-cta" href={storeHref(basePath, "/checkout")}>
-                {t("proceedCheckoutBtn")}
-              </Link>
-            </p>
-          )}
-        </section>
+              {result.error && <p role="alert" className="sf-field-error"><StoreCopy text={result.error} lang={lang}/></p>}
+          </> : <Link className="cta checkout-cta" href={storeHref(basePath, "/checkout")}>{t("proceedCheckoutBtn")}</Link>}
+        </aside>
       </div>
     </>
   );

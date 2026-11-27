@@ -6,6 +6,8 @@ import Image from "next/image";
 import { showToast } from "@/components/floating-toast";
 import { Package, Plus, Sparkles, Zap } from "lucide-react";
 import { money } from "@/lib/brand";
+import { storefrontImageSrc } from "@/lib/storefront-media";
+import { useSaleClock } from "./use-sale-clock";
 import { localizedText } from "@/lib/i18n";
 import { storeHref } from "@/lib/tenant-shared";
 import { isFlashSaleActive, resolveEffectivePrice } from "@/lib/flash-sale";
@@ -59,6 +61,7 @@ export function CartUpsellStrip({
   const roundedGap = Math.round(remaining);
 
   const [items, setItems] = useState<UpsellProduct[]>([]);
+  const now = useSaleClock(items);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -120,6 +123,7 @@ export function CartUpsellStrip({
         id: item.id,
         name: item.name,
         name_en: item.name_en ?? null,
+        image_path: item.image_url,
         size: item.sizes[0] ?? "",
         color: item.colors[0] ?? "",
         price: effective,
@@ -132,7 +136,7 @@ export function CartUpsellStrip({
       },
       1, defaultLimit,
     );
-    showToast({ kind: ok ? "cart" : "info", image: item.image_url, message: ok
+    showToast({ kind: ok ? "cart" : "info", image: storefrontImageSrc(item.image_url, 128), message: ok
       ? (isEn ? "Added to cart" : "تمت الإضافة إلى السلة") : (isEn ? "Stock limit reached" : "بلغت الحد المتاح") });
   }
 
@@ -151,9 +155,7 @@ export function CartUpsellStrip({
           </h2>
         </div>
         <span className="cart-upsell-gap-pill">
-          {isEn
-            ? `${money(remaining, currency, "en")} away`
-            : `متبقي ${money(remaining, currency, "ar")}`}
+          {isEn ? "Remaining" : "المتبقي"} <bdi dir="ltr">{money(remaining, currency, lang)}</bdi>
         </span>
       </div>
 
@@ -161,8 +163,9 @@ export function CartUpsellStrip({
         {items.map((item) => {
           const title = localizedText(lang, item.name, item.name_en);
           const detailHref = storeHref(basePath, "/products/" + item.id);
-          const flashActive = isFlashSaleActive(item);
-          const effective = resolveEffectivePrice(item);
+          const image = storefrontImageSrc(item.image_url, 384);
+          const flashActive = isFlashSaleActive(item, now);
+          const effective = resolveEffectivePrice(item, now);
           const needsOptions = item.sizes.length > 0 || item.colors.length > 0;
 
           return (
@@ -172,8 +175,8 @@ export function CartUpsellStrip({
                 className="cart-upsell-thumb"
                 aria-label={title}
               >
-                {item.image_url ? (
-                  <Image fill unoptimized src={item.image_url} alt={title} />
+                {image ? (
+                  <Image fill unoptimized src={image} alt={title} />
                 ) : (
                   <Package size={20} strokeWidth={1.3} />
                 )}
@@ -190,10 +193,10 @@ export function CartUpsellStrip({
                 </Link>
                 <div className="cart-upsell-price-row">
                   <strong className={flashActive ? "is-flash" : ""}>
-                    {money(effective, currency, lang)}
+                    <bdi dir="ltr">{money(effective, currency, lang)}</bdi>
                   </strong>
                   {flashActive && (
-                    <del>{money(item.price, currency, lang)}</del>
+                    <del><bdi dir="ltr">{money(item.price, currency, lang)}</bdi></del>
                   )}
                 </div>
               </div>

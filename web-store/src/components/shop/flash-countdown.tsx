@@ -2,15 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Clock, Zap } from "lucide-react";
+import { useSaleClock } from "./use-sale-clock";
 import { money } from "@/lib/brand";
 import type { Lang } from "@/lib/i18n";
 import {
   formatFlashCountdown,
   getFlashRemainingMs,
-  getFlashSavingsPercent,
-  getRegularSavingsPercent,
-  isFlashSaleActive,
-  resolveEffectivePrice,
+  formatSavings,
+  productPricePresentation,
   type FlashSalePriceInput,
 } from "@/lib/flash-sale";
 
@@ -93,132 +92,39 @@ export function FlashSaleCountdownPill({
           {isEn ? "Ends in" : "ينتهي خلال"}
         </span>
       )}
-      <span className="flash-countdown-digits" dir="ltr">
+      <bdi className="flash-countdown-digits" dir="ltr">
         {display}
-      </span>
+      </bdi>
     </span>
   );
 }
 
-/**
- * Displays discount badge on product card media:
- * - Active Flash Sale -> compact `⚡ -XX%` badge (auto-hides on expiry)
- * - Otherwise regular `old_price` discount badge if applicable
- */
-export function ProductDiscountBadge({
-  product,
-  lang = "ar",
-}: {
-  product: FlashSalePriceInput;
-  lang?: Lang;
+export function ProductDiscountBadge({ product, lang = "ar", initialNow }: {
+  product: FlashSalePriceInput; lang?: Lang; initialNow: number;
 }) {
-  const [expiredForKey, setExpiredForKey] = useState<string | null>(null);
-  const flashKey = `${product.flash_sale_price ?? ""}|${product.flash_sale_ends_at ?? ""}`;
-
-  useEffect(() => {
-    if (!product.flash_sale_ends_at) return;
-    const left = getFlashRemainingMs(product.flash_sale_ends_at);
-    if (left > 2_147_000_000) return;
-    const timer = window.setTimeout(
-      () => setExpiredForKey(flashKey),
-      Math.max(0, left),
-    );
-    return () => window.clearTimeout(timer);
-  }, [product.flash_sale_ends_at, flashKey]);
-
-  const expired = expiredForKey === flashKey;
-
-  const flashPct = !expired ? getFlashSavingsPercent(product) : null;
-  if (flashPct !== null) {
-    return (
-      <span className="discount discount--flash">
-        <Zap size={11} aria-hidden="true" />
-        <span dir="ltr">
-          -{flashPct}
-          {lang === "en" ? "%" : "٪"}
-        </span>
-      </span>
-    );
-  }
-
-  const regularPct = getRegularSavingsPercent(product);
-  if (regularPct !== null) {
-    return (
-      <span className="discount">
-        -{regularPct}
-        {lang === "en" ? "%" : "٪"}
-      </span>
-    );
-  }
-
-  return null;
+  const now = useSaleClock([product], initialNow);
+  const { flash, savings } = productPricePresentation(product, now);
+  if (savings === null) return null;
+  return <span className={flash ? "discount discount--flash" : "discount"}>
+    {flash && <Zap size={12} aria-hidden="true" />}
+    <bdi dir="ltr">{formatSavings(savings, lang)}</bdi>
+  </span>;
 }
 
-/**
- * Live Flash-aware Price Block for Product Cards and Product Detail Pages.
- * Automatically reverts to regular price and hides the countdown if the deal expires on the client.
- */
-export function ProductPriceDisplay({
-  product,
-  currency,
-  lang = "ar",
-  variant = "card",
-}: {
-  product: FlashSalePriceInput;
-  currency: string;
-  lang?: Lang;
-  variant?: "card" | "detail";
+export function ProductPriceDisplay({ product, currency, lang = "ar", variant = "card", initialNow }: {
+  product: FlashSalePriceInput; currency: string; lang?: Lang; variant?: "card" | "detail"; initialNow: number;
 }) {
-  const [expired, setExpired] = useState(false);
-
-  const activeFlash = !expired && isFlashSaleActive(product);
-  const effectivePrice = activeFlash
-    ? resolveEffectivePrice(product)
-    : Number(product.price);
-  const strikePrice = activeFlash
-    ? Number(product.price)
-    : product.old_price !== null &&
-        product.old_price !== undefined &&
-        product.old_price > product.price
-      ? Number(product.old_price)
-      : null;
-  const flashPct = activeFlash ? getFlashSavingsPercent(product) : null;
-
-  return (
-    <div
-      className={`price-block price-block--${variant} ${activeFlash ? "is-flash" : ""}`}
-    >
-      <div className="price">
-        <strong
-          className={`price-badge ${activeFlash ? "price-badge--flash" : ""}`}
-        >
-          {money(effectivePrice, currency, lang)}
-        </strong>
-        {strikePrice !== null && (
-          <del>{money(strikePrice, currency, lang)}</del>
-        )}
-        {variant === "detail" && activeFlash && flashPct !== null && (
-          <span className="detail-flash-save-pill">
-            <Zap size={12} aria-hidden="true" />
-            <span dir="ltr">
-              -{flashPct}
-              {lang === "en" ? "%" : "٪"}
-            </span>
-          </span>
-        )}
-      </div>
-      {activeFlash && product.flash_sale_ends_at && (
-        <div className="price-countdown-row">
-          <FlashSaleCountdownPill
-            endsAt={product.flash_sale_ends_at}
-            startsAt={product.flash_sale_starts_at}
-            lang={lang}
-            size={variant === "detail" ? "md" : "sm"}
-            showLabel={variant === "detail"}
-            onExpire={() => setExpired(true)}
-          />
-        </div>
-      )}
+  const now = useSaleClock([product], initialNow);
+  const { flash, current, compareAt, savings } = productPricePresentation(product, now);
+  return <div className={`price-block price-block--${variant}${flash ? " is-flash" : ""}`}>
+    <div className="price">
+      <strong className="price-badge"><bdi dir="ltr">{money(current, currency, lang)}</bdi></strong>
+      {compareAt !== null && <del><bdi dir="ltr">{money(compareAt, currency, lang)}</bdi></del>}
+      {variant === "detail" && savings !== null && <span className="detail-flash-save-pill">
+        {flash && <Zap size={12} aria-hidden="true" />}<bdi dir="ltr">{formatSavings(savings, lang)}</bdi>
+      </span>}
     </div>
-  );
+    {flash && <FlashSaleCountdownPill endsAt={product.flash_sale_ends_at} lang={lang}
+      size={variant === "detail" ? "md" : "sm"} showLabel={variant === "detail"} />}
+  </div>;
 }

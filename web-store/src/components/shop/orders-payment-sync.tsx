@@ -63,7 +63,7 @@ export function OrdersPaymentSync({
               : "تم تأكيد طلبك وسداده بالكامل عبر رصيد محفظة المتجر!"}
           </strong>
         </span>
-        {callbackOrder && <code dir="ltr">{formatOrderNumber(callbackOrder)}</code>}
+        {callbackOrder && <code dir="ltr"><bdi dir="ltr">{formatOrderNumber(callbackOrder)}</bdi></code>}
       </div>
     );
   }
@@ -75,7 +75,7 @@ export function OrdersPaymentSync({
           <CheckCircle2 size={18} aria-hidden="true" />
           <strong>{t("paymentBannerCodSuccess")}</strong>
         </span>
-        {callbackOrder && <code dir="ltr">{formatOrderNumber(callbackOrder)}</code>}
+        {callbackOrder && <code dir="ltr"><bdi dir="ltr">{formatOrderNumber(callbackOrder)}</bdi></code>}
       </div>
     );
   }
@@ -110,7 +110,7 @@ export function OrdersPaymentSync({
               : t("paymentBannerFailed")}
         </strong>
       </span>
-      {callbackOrder && <code dir="ltr">{formatOrderNumber(callbackOrder)}</code>}
+      {callbackOrder && <code dir="ltr"><bdi dir="ltr">{formatOrderNumber(callbackOrder)}</bdi></code>}
     </div>
   );
 }

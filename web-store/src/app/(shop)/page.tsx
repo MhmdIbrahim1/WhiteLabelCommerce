@@ -12,12 +12,22 @@ import { storeHref } from "@/lib/tenant";
 import { localizedText, t, translateHomeCopy } from "@/lib/i18n";
 import { getServerLang } from "@/lib/i18n-server";
 import { Hero } from "@/components/shop/hero";
+import { StoreCopy } from "@/components/shop/store-copy";
 import { Grid } from "@/components/shop/cards";
 import { FlashDealsSection } from "@/components/shop/flash-deals-section";
 import { filterActiveFlashDeals } from "@/lib/flash-sale";
+import { storefrontAppearance } from "@/lib/storefront-appearance";
+import { accentContrast } from "@/lib/theme-contrast";
+import fashion from "../platform-landing/photos/fashion.webp";
+import audio from "../platform-landing/photos/audio.webp";
+import fragrance from "../platform-landing/photos/fragrance.webp";
+import coffee from "../platform-landing/photos/coffee.webp";
+import objects from "../platform-landing/photos/objects.webp";
+
+const art = { fashion_editorial: fashion, tech_precision: audio, beauty_maison: fragrance, gourmet_craft: coffee, commerce_signature: objects };
 
 export default async function Home() {
-  const [db, s, c] = await Promise.all([serverDb(), settings(), categories()]);
+  const [db, s, c, appearance] = await Promise.all([serverDb(), settings(), categories(), storefrontAppearance()]);
   const result = await db
     .from("products")
     .select(productFields)
@@ -48,13 +58,14 @@ export default async function Home() {
   const firstFeaturedId = visibleSections.find(
     (sec) => sec.type === "featured_products",
   )?.id;
-  const hasVisibleHero =
-    s.uiConfig.pages.home.hero_visible &&
-    visibleSections.some((sec) => sec.type === "hero_banner");
+  const firstHeroId = s.uiConfig.pages.home.hero_visible
+    ? visibleSections.find((sec) => sec.type === "hero_banner")?.id
+    : undefined;
   const activeFlashDeals = filterActiveFlashDeals(allProducts);
   const flashDealsNode =
     activeFlashDeals.length > 0 ? (
       <FlashDealsSection
+        preset={appearance.preset}
         key="flash-deals-strip"
         products={activeFlashDeals}
         currency={s.currency}
@@ -64,8 +75,8 @@ export default async function Home() {
     ) : null;
 
   return (
-    <div className="home-sections-stack flex flex-col gap-6">
-      {!hasVisibleHero && flashDealsNode}
+    <div className="home-sections-stack">
+      {!firstHeroId && flashDealsNode}
       {visibleSections.map((sec) => {
         switch (sec.type) {
           case "hero_banner":
@@ -73,10 +84,14 @@ export default async function Home() {
             return (
               <div
                 key={sec.id}
-                className="flex flex-col gap-6"
+                className="sf-hero-section"
                 data-home-section="hero_banner"
               >
                 <Hero
+                  preset={appearance.preset}
+                  motion={appearance.motionEnabled}
+                  artwork={art[appearance.preset].src}
+                  collectionHref={firstFeaturedId ? "#latest" : undefined}
                   name={displayName}
                   banners={s.banners}
                   slider={brand.presets.hero === "slider"}
@@ -85,7 +100,7 @@ export default async function Home() {
                   cms={s.uiConfig.pages.home}
                   basePath={s.basePath}
                 />
-                {flashDealsNode}
+                {sec.id === firstHeroId && flashDealsNode}
               </div>
             );
 
@@ -98,22 +113,19 @@ export default async function Home() {
               >
                 <div className="split section-head">
                   <div>
-                    <span className="section-kicker">
-                      {t(lang, "kickerCategories")}
-                    </span>
-                    <h2>{translateHomeCopy(sec.title, lang)}</h2>
+                    <h2><StoreCopy text={translateHomeCopy(sec.title, lang)} lang={lang}/></h2>
                   </div>
                 </div>
-                <div className="strip category-strip">
+                <nav className="strip category-strip" aria-label={translateHomeCopy(sec.title, lang)}>
                   <Link href={href("/products")} className="category-chip-all">
                     {t(lang, "allProductsChip")}
                   </Link>
                   {c.map((x) => (
                     <Link key={x.id} href={href("/products?category=" + x.id)}>
-                      {localizedText(lang, x.name, x.name_en)}
+                      <StoreCopy text={localizedText(lang, x.name, x.name_en)} lang={lang}/>
                     </Link>
                   ))}
-                </div>
+                </nav>
               </section>
             );
 
@@ -137,10 +149,7 @@ export default async function Home() {
               >
                 <div className="split section-head">
                   <div>
-                    <span className="section-kicker">
-                      {t(lang, "kickerFeatured")}
-                    </span>
-                    <h2>{translateHomeCopy(sec.title, lang)}</h2>
+                    <h2><StoreCopy text={translateHomeCopy(sec.title, lang)} lang={lang}/></h2>
                   </div>
                   <Link href={moreHref} className="section-more-link">
                     <span>{t(lang, "viewAll")}</span>
@@ -148,6 +157,7 @@ export default async function Home() {
                   </Link>
                 </div>
                 <Grid
+                  preset={appearance.preset}
                   rows={slice}
                   currency={s.currency}
                   lang={lang}
@@ -166,17 +176,17 @@ export default async function Home() {
                 key={sec.id}
                 data-home-section="promo_banner"
                 className="shop-section promo-banner-section shop-animate"
-                style={{ background: sec.accentColor }}
+                style={{ background: accentContrast(sec.accentColor).background, color: accentContrast(sec.accentColor).foreground }}
               >
                 <div className="promo-banner-content">
                   {sec.badge && (
                     <span className="promo-badge">
-                      {translateHomeCopy(sec.badge, lang)}
+                      <StoreCopy text={translateHomeCopy(sec.badge, lang)} lang={lang}/>
                     </span>
                   )}
-                  <h2>{translateHomeCopy(sec.headline, lang)}</h2>
+                  <h2><StoreCopy text={translateHomeCopy(sec.headline, lang)} lang={lang}/></h2>
                   {sec.subtext && (
-                    <p>{translateHomeCopy(sec.subtext, lang)}</p>
+                    <p><StoreCopy text={translateHomeCopy(sec.subtext, lang)} lang={lang}/></p>
                   )}
                 </div>
                 {isExternal ? (
@@ -208,9 +218,6 @@ export default async function Home() {
               >
                 <div className="split section-head">
                   <div>
-                    <span className="section-kicker">
-                      {t(lang, "kickerTrust")}
-                    </span>
                     <h2>{translateHomeCopy(sec.title, lang)}</h2>
                   </div>
                 </div>

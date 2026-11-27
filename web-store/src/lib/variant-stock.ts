@@ -30,3 +30,20 @@ export function orderLimitError(lang: Lang, allowed?: number) {
   return lang === "en" ? `Reduce the quantity in your cart to ${allowed} or fewer.`
     : `خفّض الكمية في سلتك إلى ${allowed} أو أقل.`;
 }
+
+type InventoryLine = {
+  id: string; size: string; color: string; stock: number;
+  variantStock?: boolean; productStock?: number; max_order_qty?: number | null;
+};
+
+export function remainingQuantity(rows: readonly { id: string; size: string; color: string; quantity: number }[], line: InventoryLine, defaultLimit: number | null) {
+  const productLimit = Math.min(line.productStock ?? (line.variantStock ? Infinity : line.stock),
+    line.max_order_qty ?? defaultLimit ?? Infinity);
+  let total = 0, selected = 0;
+  for (const row of rows) {
+    if (row.id !== line.id) continue;
+    total += row.quantity;
+    if (row.size === line.size && row.color === line.color) selected += row.quantity;
+  }
+  return Math.min(productLimit - total, line.stock - (line.variantStock ? selected : total));
+}

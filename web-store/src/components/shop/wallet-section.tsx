@@ -30,20 +30,20 @@ export type WalletSummaryData = {
   transactions: WalletTransactionItem[];
 };
 
-function txTitle(tx: WalletTransactionItem, isEn: boolean): string {
+function txTitle(tx: WalletTransactionItem, isEn: boolean) {
   const shortOrder = tx.order_id ? formatOrderNumber(tx.order_id) : "";
   if (isEn) {
     if (tx.note_en?.trim()) return tx.note_en.trim();
     switch (tx.type) {
       case "cashback_earned":
-        return shortOrder ? `Cashback earned · ${shortOrder}` : "Cashback earned";
+        return shortOrder ? <>Cashback earned · <bdi dir="ltr">{shortOrder}</bdi></> : "Cashback earned";
       case "order_redemption":
-        return shortOrder ? `Redeemed on order ${shortOrder}` : "Order wallet redemption";
+        return shortOrder ? <>Redeemed on order <bdi dir="ltr">{shortOrder}</bdi></> : "Order wallet redemption";
       case "order_refund":
-        return shortOrder ? `Refunded from order ${shortOrder}` : "Cancelled order refund";
+        return shortOrder ? <>Refunded from order <bdi dir="ltr">{shortOrder}</bdi></> : "Cancelled order refund";
       case "return_refund":
       case "credit":
-        return shortOrder ? `Return refund · ${shortOrder}` : "Return refund credit";
+        return shortOrder ? <>Return refund · <bdi dir="ltr">{shortOrder}</bdi></> : "Return refund credit";
       case "admin_credit":
         return "Store credit added";
       case "admin_debit":
@@ -55,14 +55,14 @@ function txTitle(tx: WalletTransactionItem, isEn: boolean): string {
   if (tx.note_ar?.trim()) return tx.note_ar.trim();
   switch (tx.type) {
     case "cashback_earned":
-      return shortOrder ? `كاش باك طلب ${shortOrder}` : "كاش باك مكتسب";
+      return shortOrder ? <>كاش باك طلب <bdi dir="ltr">{shortOrder}</bdi></> : "كاش باك مكتسب";
     case "order_redemption":
-      return shortOrder ? `خصم على طلب ${shortOrder}` : "استخدام رصيد المحفظة";
+      return shortOrder ? <>خصم على طلب <bdi dir="ltr">{shortOrder}</bdi></> : "استخدام رصيد المحفظة";
     case "order_refund":
-      return shortOrder ? `استرداد طلب ملغي ${shortOrder}` : "استرداد رصيد المحفظة";
+      return shortOrder ? <>استرداد طلب ملغي <bdi dir="ltr">{shortOrder}</bdi></> : "استرداد رصيد المحفظة";
     case "return_refund":
     case "credit":
-      return shortOrder ? `استرداد طلب إرجاع ${shortOrder}` : "استرداد إرجاع للمحفظة";
+      return shortOrder ? <>استرداد طلب إرجاع <bdi dir="ltr">{shortOrder}</bdi></> : "استرداد إرجاع للمحفظة";
     case "admin_credit":
       return "رصيد إداري";
     case "admin_debit":
@@ -88,7 +88,7 @@ export function WalletSection({ summary }: { summary: WalletSummaryData }) {
               {isEn ? "Available Wallet Balance" : "رصيد المحفظة المتاح"}
             </small>
             <strong className="wallet-hero-balance">
-              {money(summary.balance, summary.currency, lang)}
+              <bdi dir="ltr">{money(summary.balance, summary.currency, lang)}</bdi>
             </strong>
           </div>
         </div>
@@ -96,9 +96,8 @@ export function WalletSection({ summary }: { summary: WalletSummaryData }) {
         {summary.cashback_enabled && summary.cashback_percentage > 0 && (
           <span className="wallet-cashback-pill">
             <Sparkles size={14} aria-hidden="true" />
-            {isEn
-              ? `Earn ${summary.cashback_percentage}% cashback on every delivered order`
-              : `اكسب ${summary.cashback_percentage}% كاش باك عند اكتمال كل طلب`}
+            {isEn ? "Earn " : "اكسب "}<bdi dir="ltr">{summary.cashback_percentage}%</bdi>
+            {isEn ? " cashback on delivered orders" : " كاش باك عند استلام طلبك"}
           </span>
         )}
       </div>
@@ -133,19 +132,18 @@ export function WalletSection({ summary }: { summary: WalletSummaryData }) {
                   </span>
                   <div className="wallet-tx-meta">
                     <strong>{txTitle(tx, isEn)}</strong>
-                    <small>{date(tx.created_at, lang)}</small>
+                    <small><bdi dir="ltr">{date(tx.created_at, lang)}</bdi></small>
                   </div>
                   <div className="wallet-tx-amount-col">
                     <strong
                       dir="ltr"
                       className={isCredit ? "wallet-amt-credit" : "wallet-amt-debit"}
                     >
-                      {isCredit ? "+" : "-"}
-                      {money(Math.abs(Number(tx.amount)), summary.currency, lang)}
+                      <bdi dir="ltr">{isCredit ? "+" : "−"}{money(Math.abs(Number(tx.amount)), summary.currency, lang)}</bdi>
                     </strong>
                     <small>
                       {isEn ? "Balance" : "الرصيد"}:{" "}
-                      {money(Number(tx.balance_after), summary.currency, lang)}
+                      <bdi dir="ltr">{money(Number(tx.balance_after), summary.currency, lang)}</bdi>
                     </small>
                   </div>
                 </li>

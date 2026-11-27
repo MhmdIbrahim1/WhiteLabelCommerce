@@ -82,7 +82,7 @@ export default async function AccountPage({ searchParams }: Pick<PageProps<"/acc
     return <section className="account-hub">
       <h1>{account}</h1>
       <header className="hub-profile"><span className="hub-avatar" aria-hidden="true">{Array.from(String(name).trim())[0]}</span>
-        <div><h2>{name}</h2><p dir="auto">{user.email}</p>{profile?.phone && <small dir="ltr">{profile.phone}</small>}</div>
+        <div><h2>{name}</h2><p dir="auto">{user.email}</p>{profile?.phone && <small><bdi dir="ltr">{profile.phone}</bdi></small>}</div>
         <Link href={href("/account/profile")}><Pencil size={16}/>{en ? "Edit profile" : "تعديل الحساب"}</Link>
       </header>
       <nav className="hub-tiles" aria-label={en ? "Quick access" : "وصول سريع"}>{tiles.map(({ key, icon: Icon, label, path }) =>

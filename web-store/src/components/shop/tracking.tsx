@@ -241,11 +241,11 @@ export function Timeline({
                 className="order-id order-id-link"
                 title={row.id}
               >
-                {formatOrderNumber(row.id)}
+                <bdi dir="ltr">{formatOrderNumber(row.id)}</bdi>
               </Link>
             ) : (
               <span dir="ltr" className="order-id" title={row.id}>
-                {formatOrderNumber(row.id)}
+                <bdi dir="ltr">{formatOrderNumber(row.id)}</bdi>
               </span>
             )}
             <button
@@ -265,7 +265,7 @@ export function Timeline({
             )}
           </div>
           <small className="order-date-row">
-            <Clock3 size={12} /> {date(row.created_at, lang)}
+            <Clock3 size={12} /> <bdi dir="ltr">{date(row.created_at, lang)}</bdi>
           </small>
         </div>
         <div className="order-badges-cluster">
@@ -346,7 +346,7 @@ export function Timeline({
             {items.map((it) => (
               <li key={it.id} className="order-item-row">
                 <span className="order-item-name">
-                  {it.product_name} × {it.quantity}
+                  {it.product_name} × <bdi dir="ltr">{it.quantity.toLocaleString(lang)}</bdi>
                 </span>
                 {(it.size || it.color) && (
                   <span className="variant-badges-row">
@@ -507,7 +507,7 @@ export function Timeline({
             </span>
             {row.shipped_at && (
               <small>
-                {t("shippedOn")} {date(row.shipped_at, lang)}
+                {t("shippedOn")} <bdi dir="ltr">{date(row.shipped_at, lang)}</bdi>
               </small>
             )}
           </div>
@@ -515,7 +515,7 @@ export function Timeline({
           {row.tracking_number && (
             <div className="customer-tracking-row">
               <small>{t("trackingNumber")}:</small>
-              <code dir="ltr">{row.tracking_number}</code>
+              <code dir="ltr"><bdi dir="ltr">{row.tracking_number}</bdi></code>
               <button
                 type="button"
                 className="icon-copy-chip"

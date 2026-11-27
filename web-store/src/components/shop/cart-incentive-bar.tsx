@@ -39,16 +39,13 @@ export function CartIncentiveBar({
         </span>
         <p className="cart-incentive-text">
           {unlocked
-            ? isEn
-              ? "Congrats! You unlocked Free Shipping"
-              : "مبروك! حصلت على شحن مجاني على طلبك"
-            : isEn
-              ? `Add ${money(remaining, currency, "en")} more to unlock Free Shipping`
-              : `أضف منتجات بقيمة ${money(remaining, currency, "ar")} إضافية للحصول على شحن مجاني`}
+            ? isEn ? "Your order qualifies for free delivery." : "طلبك مؤهل للتوصيل المجاني."
+            : <>{isEn ? "Add " : "أضف منتجات بقيمة "}<bdi dir="ltr">{money(remaining, currency, lang)}</bdi>
+                {isEn ? " for free delivery." : " للحصول على توصيل مجاني."}</>}
         </p>
-        <span className="cart-incentive-pct" dir="ltr">
+        <bdi className="cart-incentive-pct" dir="ltr">
           {pct}%
-        </span>
+        </bdi>
       </div>
       <div className="cart-incentive-track" aria-hidden="true">
         <div

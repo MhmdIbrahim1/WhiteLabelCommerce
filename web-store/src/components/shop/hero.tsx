@@ -10,9 +10,8 @@ import {
   ArrowRight,
   ChevronLeft,
   ChevronRight,
-  Truck,
-  ShieldCheck,
-  Clock3,
+  Pause,
+  Play,
 } from "lucide-react";
 import {
   defaultHeroBannerCms,
@@ -20,6 +19,9 @@ import {
   type HeroLayout,
   type PromoBannerCampaign,
 } from "@/lib/ui-config";
+import { storefrontPresets, type StorefrontPreset } from "@/lib/storefront-presets";
+import { storefrontImageSrc } from "@/lib/storefront-media";
+import { StoreCopy } from "./store-copy";
 import { useLanguage } from "@/components/language-provider";
 import { safeRelativePath } from "@/lib/security";
 import { storeHref } from "@/lib/tenant-shared";
@@ -348,313 +350,91 @@ export function PromoBannerCarousel({
   );
 }
 
-export function Hero({
-  name,
-  banners,
-  slider,
-  layout = "split",
-  autoSlideMs = 5000,
-  cms = defaultHeroBannerCms(),
-  basePath = "",
-}: {
+type HeroProps = {
   name: string;
+  preset: StorefrontPreset;
+  artwork: string;
   banners: string[];
   slider: boolean;
-  layout?: HeroLayout;
-  autoSlideMs?: number;
-  cms?: HeroBannerCmsConfig;
-  basePath?: string;
-}) {
+  layout: HeroLayout;
+  autoSlideMs: number;
+  motion: boolean;
+  cms: HeroBannerCmsConfig;
+  basePath: string;
+  collectionHref?: string;
+};
+
+export function Hero({ name, preset, artwork, banners, slider, layout, autoSlideMs, motion, cms, basePath, collectionHref }: HeroProps) {
   const { lang, t } = useLanguage();
-  const isEn = lang === "en";
-  const ArrowIcon = isEn ? ArrowRight : ArrowLeft;
+  const en = lang === "en";
   const [index, setIndex] = useState(0);
-
-  const customImage = cms.hero_image_url?.trim() || null;
-  const total = customImage ? 1 : banners.length;
-  const activeIndex = total > 0 ? index % total : 0;
-  const image =
-    customImage || banners[activeIndex] || "/store-collection.jpg";
-  const secondaryImage =
-    banners[(activeIndex + 1) % Math.max(banners.length, 1)] ||
-    customImage ||
-    "/store-collection.jpg";
-
+  const [paused, setPaused] = useState(false);
+  const [interacting, setInteracting] = useState(false);
+  const [reduce, setReduce] = useState(true);
+  const touch = useRef<number | null>(null);
+  const campaigns = cms.promo_banners.filter(campaign => campaign.active);
+  const count = campaigns.length || (cms.hero_image_url || !slider ? 1 : Math.max(1, banners.length));
+  const active = index % count;
+  const campaign = campaigns[active];
+  const pick = (ar: string, english: string) => (en ? english || ar : ar || english).trim();
+  const editorial = storefrontPresets[preset][lang];
+  const title = (campaign && pick(campaign.title_ar, campaign.title_en)) || pick(cms.hero_title_ar, cms.hero_title_en) || editorial.title;
+  const subtitle = en ? cms.hero_subtitle_en : cms.hero_subtitle_ar;
+  const defaults = defaultHeroBannerCms();
+  const body = campaign ? pick(campaign.subtitle_ar, campaign.subtitle_en)
+    : subtitle === (en ? defaults.hero_subtitle_en : defaults.hero_subtitle_ar) ? editorial.body : subtitle;
+  const badge = campaign ? pick(campaign.badge_ar, campaign.badge_en) : pick(cms.hero_badge_ar, cms.hero_badge_en);
+  const label = (campaign && pick(campaign.cta_text_ar, campaign.cta_text_en)) || pick(cms.hero_cta_text_ar, cms.hero_cta_text_en) || editorial.cta;
+  const target = campaign?.cta_link || cms.hero_cta_link;
+  const src = storefrontImageSrc(campaign?.image_url || cms.hero_image_url || banners[active % (banners.length || 1)], 1920) || artwork;
+  const allowAutoplay = motion && !reduce && autoSlideMs > 0 && count > 1;
+  const forward = () => setIndex(i => (i + 1) % count);
+  const back = () => setIndex(i => (i + count - 1) % count);
   useEffect(() => {
-    if (customImage || !slider || total <= 1 || autoSlideMs <= 0) return;
-    const timer = setInterval(() => {
-      setIndex((prev) => (prev + 1) % total);
-    }, autoSlideMs);
-    return () => clearInterval(timer);
-  }, [customImage, slider, total, autoSlideMs]);
+    const query = matchMedia("(prefers-reduced-motion: reduce)");
+    const sync = () => setReduce(query.matches);
+    sync();
+    query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
+  }, []);
+  useEffect(() => {
+    if (!allowAutoplay || paused || interacting) return;
+    const timer = window.setInterval(() => setIndex(i => (i + 1) % count), Math.max(2000, autoSlideMs));
+    return () => window.clearInterval(timer);
+  }, [allowAutoplay, paused, interacting, autoSlideMs, count]);
+  if (!cms.hero_visible) return null;
 
-  // Master visibility switch: render nothing (zero spacer gap)
-  if (!cms.hero_visible) {
-    return null;
-  }
-
-  // Multi-campaign animated banner carousel when active campaigns are configured
-  const activePromoBanners = (cms.promo_banners ?? []).filter((b) => b.active);
-  if (activePromoBanners.length > 0) {
-    return (
-      <PromoBannerCarousel
-        campaigns={activePromoBanners}
-        autoSlideMs={autoSlideMs}
-        overlayOpacity={cms.hero_overlay_opacity}
-        isEn={isEn}
-        basePath={basePath}
-      />
-    );
-  }
-
-  const pickLang = (ar: string, en: string) =>
-    isEn ? en.trim() || ar.trim() : ar.trim() || en.trim();
-
-  const defaultBadge =
-    layout === "full-bleed"
-      ? t("heroEyebrowNew")
-      : layout === "bento"
-        ? t("heroEyebrowSeason")
-        : t("heroEyebrowRefined");
-  const badgeText = pickLang(cms.hero_badge_ar, cms.hero_badge_en) || defaultBadge;
-
-  const customTitle = pickLang(cms.hero_title_ar, cms.hero_title_en);
-  const subtitleText = isEn
-    ? cms.hero_subtitle_en.trim()
-    : cms.hero_subtitle_ar.trim();
-
-  const defaultCtaText =
-    layout === "full-bleed"
-      ? t("heroShopCollection")
-      : layout === "bento"
-        ? t("heroShopNow")
-        : t("heroShopProducts");
-  const ctaText =
-    pickLang(cms.hero_cta_text_ar, cms.hero_cta_text_en) || defaultCtaText;
-  const ctaHref = cms.hero_cta_link || "/products";
-
-  const overlayAlpha = Math.min(80, Math.max(0, cms.hero_overlay_opacity)) / 100;
-  const overlayStyle = {
-    background: `linear-gradient(180deg, rgba(10, 15, 28, ${(overlayAlpha * 0.65).toFixed(2)}) 0%, rgba(10, 15, 28, ${overlayAlpha.toFixed(2)}) 100%)`,
-  };
-
-  if (layout === "full-bleed") {
-    return (
-      <section className="shop-hero shop-hero--full-bleed shop-animate">
-        <div className="hero-bg-media" aria-hidden="true">
-          <Image src={image} unoptimized fill loading="eager" alt={name} />
-          <div
-            className="hero-overlay hero-overlay--editorial"
-            style={overlayStyle}
-          />
-        </div>
-        <div className="hero-copy hero-copy--bottom">
-          {cms.hero_badge_visible && badgeText && (
-            <span className="hero-eyebrow">
-              <Sparkles size={13} /> {badgeText}
-            </span>
-          )}
-          <h1>
-            {customTitle ? (
-              customTitle
-            ) : (
-              <>
-                {t("heroDiscover")}
-                <br />
-                {name}
-              </>
-            )}
-          </h1>
-          {subtitleText && <p className="hero-subtitle">{subtitleText}</p>}
-          {cms.hero_cta_visible && (
-            <div className="hero-actions">
-              <CtaLink className="cta hero-cta-pill" href={ctaHref} basePath={basePath}>
-                {ctaText} <ArrowIcon size={16} />
-              </CtaLink>
-              <Link className="hero-ghost-link" href={storeHref(basePath, "/#latest")}>
-                {t("navLatest")}
-              </Link>
-            </div>
-          )}
-          {!customImage && slider && total > 1 && (
-            <div className="slide-controls">
-              {banners.map((_, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  className="slide-dot"
-                  aria-pressed={i === activeIndex}
-                  aria-label={`Slide ${i + 1}`}
-                  onClick={() => setIndex(i)}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      </section>
-    );
-  }
-
-  if (layout === "bento") {
-    return (
-      <section className="shop-hero-bento shop-animate">
-        <div className="shop-hero bento-main">
-          <div className="hero-bg-media" aria-hidden="true">
-            <Image src={image} unoptimized fill loading="eager" alt={name} />
-            <div
-              className="hero-overlay hero-overlay--scrim"
-              style={overlayStyle}
-            />
-          </div>
-          <div className="hero-copy hero-copy--bottom">
-            {cms.hero_badge_visible && badgeText && (
-              <span className="hero-eyebrow">
-                <Sparkles size={13} /> {badgeText}
-              </span>
-            )}
-            <h1>
-              {customTitle ? (
-                customTitle
-              ) : (
-                <>
-                  {t("heroDiscover")}
-                  <br />
-                  {name}
-                </>
-              )}
-            </h1>
-            {subtitleText && <p className="hero-subtitle">{subtitleText}</p>}
-            <div className="hero-actions">
-              {cms.hero_cta_visible && (
-                <CtaLink className="cta hero-cta-pill" href={ctaHref} basePath={basePath}>
-                  {ctaText} <ArrowIcon size={16} />
-                </CtaLink>
-              )}
-              {!customImage && slider && total > 1 && (
-                <div className="slide-controls">
-                  {banners.map((_, i) => (
-                    <button
-                      key={i}
-                      type="button"
-                      className="slide-dot"
-                      aria-pressed={i === activeIndex}
-                      aria-label={`Slide ${i + 1}`}
-                      onClick={() => setIndex(i)}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="bento-side">
-          <Link href={storeHref(basePath, "/products")} className="bento-tile bento-tile--media">
-            <Image
-              src={secondaryImage}
-              unoptimized
-              fill
-              loading="eager"
-              alt={t("navLatest")}
-            />
-            <div className="bento-scrim" aria-hidden="true" />
-            <div className="bento-caption">
-              <div>
-                <span className="bento-kicker">{t("navLatest")}</span>
-                <strong>{t("heroWeeklyPicks")}</strong>
-              </div>
-              <span className="bento-arrow" aria-hidden="true">
-                <ArrowIcon size={17} />
-              </span>
-            </div>
-          </Link>
-
-          <div className="bento-trust-strip" aria-label={t("kickerTrust")}>
-            <div className="trust-chip">
-              <span className="trust-icon">
-                <Truck size={16} />
-              </span>
-              <div>
-                <strong>{t("trustShipShort")}</strong>
-                <small>{t("trustShipShortSub")}</small>
-              </div>
-            </div>
-            <div className="trust-chip">
-              <span className="trust-icon">
-                <ShieldCheck size={16} />
-              </span>
-              <div>
-                <strong>{t("trustCodShort")}</strong>
-                <small>{t("trustCodShortSub")}</small>
-              </div>
-            </div>
-            <div className="trust-chip">
-              <span className="trust-icon">
-                <Clock3 size={16} />
-              </span>
-              <div>
-                <strong>{t("trustTrackShort")}</strong>
-                <small>{t("trustTrackShortSub")}</small>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-    );
-  }
-
-  return (
-    <section className="shop-hero shop-hero--split shop-animate">
-      <div className="hero-copy">
-        {cms.hero_badge_visible && badgeText && (
-          <span className="hero-eyebrow">
-            <Sparkles size={13} /> {badgeText}
-          </span>
-        )}
-        <h1>
-          {customTitle ? (
-            customTitle
-          ) : (
-            <>
-              {t("heroDiscover")}
-              <br />
-              {name}
-            </>
-          )}
-        </h1>
-        {subtitleText && <p className="hero-subtitle">{subtitleText}</p>}
-        {cms.hero_cta_visible && (
-          <div className="hero-actions">
-            <CtaLink className="cta hero-cta-pill" href={ctaHref} basePath={basePath}>
-              {ctaText} <ArrowIcon size={16} />
-            </CtaLink>
-          </div>
-        )}
-        {!customImage && slider && total > 1 && (
-          <div className="slide-controls">
-            {banners.map((_, i) => (
-              <button
-                key={i}
-                type="button"
-                className="slide-dot"
-                aria-pressed={i === activeIndex}
-                aria-label={`Slide ${i + 1}`}
-                onClick={() => setIndex(i)}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-      <div className="hero-image">
-        <Image src={image} unoptimized fill loading="eager" alt={name} />
-        {customImage && (
-          <div
-            className="hero-overlay"
-            aria-hidden="true"
-            style={overlayStyle}
-          />
-        )}
-      </div>
-    </section>
-  );
+  const Arrow = en ? ArrowRight : ArrowLeft;
+  return <section className="sf-hero" data-layout={layout} aria-label={name}
+    onMouseEnter={() => setInteracting(true)} onMouseLeave={() => setInteracting(false)}
+    onFocusCapture={event => { if (!(event.target as Element).closest("[data-rotation]")) setPaused(true); }}
+    onTouchStart={event => { touch.current = event.touches[0].clientX; }}
+    onTouchEnd={event => {
+      const distance = touch.current === null ? 0 : event.changedTouches[0].clientX - touch.current;
+      touch.current = null;
+      if (Math.abs(distance) > 48) { setPaused(true); if ((distance < 0) === en) forward(); else back(); }
+    }}>
+    <div className="sf-hero-copy" aria-live={allowAutoplay && !paused ? "off" : "polite"}>
+      {cms.hero_badge_visible && badge && <span className="sf-hero-caption" style={{ borderColor: campaign?.gradient_end }}><StoreCopy text={badge} lang={lang}/></span>}
+      <h1><StoreCopy text={title} lang={lang}/></h1>
+      {body && <p><StoreCopy text={body} lang={lang}/></p>}
+      {cms.hero_cta_visible && <div className="sf-hero-links">
+        <CtaLink href={target} basePath={basePath} className="sf-primary"><StoreCopy text={label} lang={lang}/><Arrow size={17} /></CtaLink>
+        {collectionHref && <Link className="sf-text-link" href={collectionHref}>{t("navLatest")}</Link>}
+      </div>}
+    </div>
+    <div className="sf-hero-art">
+      <Image key={src} src={src} alt="" fill loading="eager" sizes="(max-width: 700px) 100vw, 60vw" unoptimized />
+      {layout === "full-bleed" && <span className="sf-hero-shade" style={{ opacity: cms.hero_overlay_opacity / 100 }} />}
+    </div>
+    {count > 1 && <div className="sf-slide-controls" role="group" aria-label={en ? "Promotions" : "العروض"}>
+      <button type="button" onClick={back} aria-label={en ? "Previous slide" : "العرض السابق"}>{en ? <ChevronLeft/> : <ChevronRight/>}</button>
+      <bdi dir="ltr">{(active + 1).toLocaleString(lang)} / {count.toLocaleString(lang)}</bdi>
+      <button type="button" onClick={forward} aria-label={en ? "Next slide" : "العرض التالي"}>{en ? <ChevronRight/> : <ChevronLeft/>}</button>
+      {allowAutoplay && <button type="button" data-rotation="" onClick={() => setPaused(value => !value)}
+        aria-label={paused ? (en ? "Play slides" : "تشغيل العرض") : (en ? "Pause slides" : "إيقاف العرض مؤقتاً")}>
+        {paused ? <Play/> : <Pause/>}
+      </button>}
+    </div>}
+  </section>;
 }

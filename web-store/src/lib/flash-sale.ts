@@ -1,5 +1,9 @@
 import type { Lang } from "./i18n";
 
+export function serverNowMs(): number {
+  return Date.now();
+}
+
 export type FlashSalePriceInput = {
   price: number;
   old_price?: number | null;
@@ -53,6 +57,31 @@ export function resolveEffectivePrice(
   return Number(input.price);
 }
 
+export function lineEffectivePrice(
+  line: { price: number; regular_price?: number | null } & Omit<FlashSalePriceInput, "price">,
+  nowMs: number = Date.now(),
+): number {
+  const basePrice =
+    typeof line.regular_price === "number" && Number.isFinite(line.regular_price)
+      ? line.regular_price
+      : line.price;
+  if (
+    line.flash_sale_price !== undefined ||
+    line.flash_sale_ends_at !== undefined
+  ) {
+    return resolveEffectivePrice(
+      {
+        price: basePrice,
+        flash_sale_price: line.flash_sale_price ?? null,
+        flash_sale_starts_at: line.flash_sale_starts_at ?? null,
+        flash_sale_ends_at: line.flash_sale_ends_at ?? null,
+      },
+      nowMs,
+    );
+  }
+  return line.price;
+}
+
 /**
  * Returns integer percentage savings (1..99) for an active flash sale compared to regular price,
  * or null if the flash sale is not active.
@@ -84,6 +113,34 @@ export function getRegularSavingsPercent(
   if (oldPrice <= 0 || oldPrice <= regular) return null;
   const pct = Math.round(((oldPrice - regular) / oldPrice) * 100);
   return Math.max(1, Math.min(99, pct));
+}
+
+export function productPricePresentation(product: FlashSalePriceInput, now: number) {
+  const flash = isFlashSaleActive(product, now);
+  const savings = flash ? getFlashSavingsPercent(product, now) : getRegularSavingsPercent(product);
+  return {
+    flash,
+    current: resolveEffectivePrice(product, now),
+    compareAt: savings === null ? null : Number(flash ? product.price : product.old_price),
+    savings,
+  };
+}
+
+export function formatSavings(percent: number, lang: Lang) {
+  return new Intl.NumberFormat(lang === "ar" ? "ar-EG" : "en-US", { style: "percent" }).format(-percent / 100);
+}
+
+type SaleWindow = Pick<FlashSalePriceInput, "flash_sale_starts_at" | "flash_sale_ends_at">;
+
+export function nextSaleBoundary(products: readonly SaleWindow[], now: number) {
+  let next = Infinity;
+  for (const p of products) {
+    for (const date of [p.flash_sale_starts_at, p.flash_sale_ends_at]) {
+      const ms = parseTimestamp(date);
+      if (ms !== null && ms > now) next = Math.min(next, ms);
+    }
+  }
+  return next;
 }
 
 /**

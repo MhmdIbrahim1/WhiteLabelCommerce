@@ -1,7 +1,6 @@
 import { cache } from "react";
 import { notFound } from "next/navigation";
 import { serverDb, checked } from "./db";
-import { isTemplate } from "./theme-templates";
 import { resolveUiConfig, type StoreUiConfig } from "./ui-config";
 import type { ProductSpec } from "./specs";
 import type { StorePixelsConfig } from "./marketing";
@@ -102,11 +101,8 @@ export const settings = cache(async () => {
     error = fallback.error;
   }
   if (error || !data) throw new Error("تعذر تحميل إعدادات المتجر");
-  const template = isTemplate(data.theme_template)
-    ? data.theme_template
-    : ("modern-minimal" as const);
   const uiConfig: StoreUiConfig = resolveUiConfig(data.ui_config, {
-    template,
+    template: data.theme_template,
     primary: data.primary_color || brand.colors.primary,
     accent: data.secondary_color || brand.colors.secondary,
     surface: data.surface_color || brand.colors.surface,

@@ -1,10 +1,11 @@
 import type { CSSProperties } from "react";
+import { isStorefrontPreset, type StorefrontPreset } from "./storefront-presets.ts";
 import {
   templates,
   templateVars,
   isTemplate,
   type TemplateId,
-} from "./theme-templates";
+} from "./theme-templates.ts";
 
 export const MOTION_INTENSITIES = [
   "none",
@@ -225,6 +226,10 @@ export type DefaultLanguage = (typeof SUPPORTED_LANGUAGES)[number];
 export type StoreUiConfig = {
   version: 1;
   baseTemplate: TemplateId;
+  storefrontPreset?: StorefrontPreset;
+  storefrontLogo?: string;
+  sticky_cta_enabled?: boolean;
+  motion_enabled?: boolean;
   defaultLanguage: DefaultLanguage;
   global: GlobalUiTokens;
   homeSections: HomeSection[];
@@ -733,10 +738,16 @@ export function resolveUiConfig(
   const primaryButtonBg = pickHex(rawGlobal.primaryButtonBg, fallbackPrimary);
   const accentBadge = pickHex(rawGlobal.accentBadge, fallbackAccent);
   const cardSurface = pickHex(rawGlobal.cardSurface, fallbackSurface);
+  const sector = isStorefrontPreset(input.storefrontPreset) ? input.storefrontPreset : fallback.template;
+  const logo = pickHeroImageUrl(input.storefrontLogo);
 
   return {
     version: 1,
     baseTemplate: templateId,
+    ...(isStorefrontPreset(sector) && { storefrontPreset: sector }),
+    ...(logo && { storefrontLogo: logo }),
+    ...(typeof input.sticky_cta_enabled === "boolean" && { sticky_cta_enabled: input.sticky_cta_enabled }),
+    ...(typeof input.motion_enabled === "boolean" && { motion_enabled: input.motion_enabled }),
     defaultLanguage: pickEnum(
       input.defaultLanguage,
       SUPPORTED_LANGUAGES,

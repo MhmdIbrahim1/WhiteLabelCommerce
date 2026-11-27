@@ -31,6 +31,7 @@ export function AddressBook({ storeId, initial, profile, checkout = false, signe
   const [editor, setEditor] = useState(checkout && !first);
   const [editing, setEditing] = useState<string>();
   const [working, setWorking] = useState(false);
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
   function setNotice(message: string, kind: "error" | "info" | "success" = "info") {
     if (message) showToast({ message, kind });
   }
@@ -48,6 +49,7 @@ export function AddressBook({ storeId, initial, profile, checkout = false, signe
     locVersion.current++;
     setDraft(address);
     setChosen(selected);
+    setTouched({});
     onGovernorate?.(address.governorate);
     onPhone?.(address.phone);
     setNotice("");
@@ -123,10 +125,28 @@ export function AddressBook({ storeId, initial, profile, checkout = false, signe
     } finally { pending.current = false; setWorking(false); }
   }
 
+  function visitField(target: EventTarget) {
+    if ((target instanceof HTMLInputElement || target instanceof HTMLSelectElement) && target.name) {
+      const name = target.name;
+      setTouched(prev => prev[name] ? prev : { ...prev, [name]: true });
+    }
+  }
+
   function field(key: "recipient_name" | "phone" | "city" | "street" | "building" | "floor" | "apartment" | "landmark", title: string, max: number, required = false) {
+    const value = draft[key].trim();
+    let error = required && !value ? (en ? "This field is required." : "هذا الحقل مطلوب.") : "";
+    if (value && key === "phone" && !/^[0-9]{8,15}$/.test(normalizePhone(value))) {
+      error = en ? "Enter a phone number with 8 to 15 digits." : "أدخل رقم هاتف يتكون من ٨ إلى ١٥ رقماً.";
+    }
+    if (required && value && key === "recipient_name" && value.length < 2) error = en ? "Enter the recipient’s full name." : "أدخل اسم المستلم كاملاً.";
+    const show = Boolean(touched[key] && error);
     return <label>{title}<input name={key} value={draft[key]} onChange={e => update(key, e.target.value)}
+      ref={node => { node?.setCustomValidity(error); }}
+      aria-invalid={show} aria-describedby={show ? "address-error-" + key : undefined}
+      dir={key === "phone" ? "ltr" : undefined}
       required={required} maxLength={max} autoComplete={({recipient_name:"name", phone:"tel",street:"address-line1",city:"address-level2"} as Record<string,string>)[key]}
-      type={key === "phone" ? "tel" : "text"} list={key === "city" ? "saved-address-cities" : undefined} /></label>;
+      type={key === "phone" ? "tel" : "text"} list={key === "city" ? "saved-address-cities" : undefined} />
+      {show && <small id={"address-error-" + key} className="sf-field-error">{error}</small>}</label>;
   }
 
   return <section className={checkout ? "address-book" : "address-book panel"}>
@@ -134,9 +154,9 @@ export function AddressBook({ storeId, initial, profile, checkout = false, signe
     {rows.map(row => <div className="address-row" key={row.id}>
       {checkout ? <button type="button" className="address-choice" aria-pressed={chosen === row.id} disabled={working} onClick={() => {
         selectAddress(row, row.id); setEditor(false);
-      }}><strong>{labelName(row.label)}{row.is_default && (en ? " · Default" : " · افتراضي")}</strong><span>{row.recipient_name} · <bdi>{row.phone}</bdi></span><span>{addressLine(row,en)}</span></button>
+      }}><strong>{labelName(row.label)}{row.is_default && (en ? " · Default" : " · افتراضي")}</strong><span>{row.recipient_name} · <bdi dir="ltr">{row.phone}</bdi></span><span>{addressLine(row,en)}</span></button>
       : <><strong>{labelName(row.label)}{row.is_default && (en ? " · Default" : " · افتراضي")}</strong>
-        <span>{row.recipient_name} · <bdi>{row.phone}</bdi></span><span>{addressLine(row,en)}</span>
+        <span>{row.recipient_name} · <bdi dir="ltr">{row.phone}</bdi></span><span>{addressLine(row,en)}</span>
         <div className="address-actions">
           <button disabled={working} type="button" onClick={() => startEdit(row)}>{en ? "Edit" : "تعديل"}</button>
           {!row.is_default && <button disabled={working} type="button" onClick={() => mutate("default",row.id)}>{en ? "Set default" : "تعيين كافتراضي"}</button>}
@@ -145,15 +165,19 @@ export function AddressBook({ storeId, initial, profile, checkout = false, signe
         </div></>}
     </div>)}
     {!editor && <button type="button" disabled={working} onClick={() => startEdit()}>{en ? "Add address" : "إضافة عنوان"}</button>}
-    {editor && <fieldset ref={fields} disabled={working}>
+    {editor && <fieldset ref={fields} disabled={working}
+      onInvalid={e => visitField(e.target)} onBlur={e => visitField(e.target)}>
       <button className="address-locate" type="button" onClick={locate}><LocateFixed size={17}/>{en ? "Locate my location" : "حدد موقعي"}</button>
       <small><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap</a></small>
       {signedIn && <label>{en ? "Label" : "نوع العنوان"}<select value={draft.label} onChange={e=>update("label",e.target.value)}>
         {(["home","work","other"] as const).map(k=><option key={k} value={k}>{labelName(k)}</option>)}</select></label>}
       {field("recipient_name",en ? "Recipient name" : "اسم المستلم",100, signedIn)}
       {field("phone",en ? "Delivery phone" : "هاتف التوصيل",24,true)}
-      <label>{en ? "Governorate" : "المحافظة"}<select required value={draft.governorate} onChange={e=>update("governorate",e.target.value)}>
-        <option value="">{en ? "Select governorate" : "اختر المحافظة"}</option>{EGYPT_GOVERNORATES.map(g=><option key={g.id} value={g.id}>{en ? g.name_en : g.name_ar}</option>)}</select></label>
+      <label>{en ? "Governorate" : "المحافظة"}<select required name="governorate" value={draft.governorate}
+        aria-invalid={Boolean(touched.governorate && !draft.governorate)} aria-describedby={touched.governorate && !draft.governorate ? "governorate-error" : undefined}
+        onChange={e=>update("governorate",e.target.value)}>
+        <option value="">{en ? "Select governorate" : "اختر المحافظة"}</option>{EGYPT_GOVERNORATES.map(g=><option key={g.id} value={g.id}>{en ? g.name_en : g.name_ar}</option>)}</select>
+        {touched.governorate && !draft.governorate && <small id="governorate-error" className="sf-field-error">{en ? "Choose a governorate for delivery." : "اختر محافظة التوصيل."}</small>}</label>
       {field("city", en ? "City / area" : "المدينة / المنطقة",100,true)}
       <datalist id="saved-address-cities">{gov?.cities.map(c=><option key={c.name_ar} value={en ? c.name_en : c.name_ar}/>)}</datalist>
       {field("street", en ? "Street" : "الشارع",240,true)}

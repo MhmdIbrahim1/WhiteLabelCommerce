@@ -234,9 +234,9 @@ export function OrderReturnPanel({
                     : isEn
                       ? "Return Request"
                       : "طلب إرجاع"}{" "}
-                  <span dir="ltr" className="order-return-code">
+                  <bdi dir="ltr" className="order-return-code">
                     #{returnReq.id.slice(0, 8)}
-                  </span>
+                  </bdi>
                 </strong>
                 <small className="order-return-date">
                   {date(returnReq.created_at, lang)}
@@ -267,7 +267,7 @@ export function OrderReturnPanel({
             </div>
             <div className="order-return-meta-pill is-amount">
               <span>{isEn ? "Refund Amount" : "قيمة الاسترداد"}:</span>
-              <strong>{money(returnReq.refund_amount, currency, lang)}</strong>
+              <strong><bdi dir="ltr">{money(returnReq.refund_amount, currency, lang)}</bdi></strong>
             </div>
             {returnReq.wallet_credited && (
               <div className="order-return-meta-pill is-success">
@@ -298,7 +298,7 @@ export function OrderReturnPanel({
                   className="order-return-item-chip"
                 >
                   <span>
-                    {it.product_name} × {it.quantity}
+                    {it.product_name} × <bdi dir="ltr">{it.quantity.toLocaleString(lang)}</bdi>
                   </span>
                   {(it.size || it.color) && (
                     <small>
@@ -376,7 +376,7 @@ export function OrderReturnPanel({
                       ? "Request Return or Exchange"
                       : "طلب إرجاع أو استبدال"}
                   </h3>
-                  <small dir="ltr">{formatOrderNumber(orderId)}</small>
+                  <small dir="ltr"><bdi dir="ltr">{formatOrderNumber(orderId)}</bdi></small>
                 </div>
                 <button
                   type="button"
@@ -442,7 +442,7 @@ export function OrderReturnPanel({
                             <div className="return-select-info">
                               <strong>{item.product_name}</strong>
                               <small>
-                                {money(item.unit_price, currency, lang)}
+                                <bdi dir="ltr">{money(item.unit_price, currency, lang)}</bdi>
                                 {item.size ? ` · ${item.size}` : ""}
                                 {item.color
                                   ? ` · ${translateColor(item.color, lang)}`
@@ -460,7 +460,7 @@ export function OrderReturnPanel({
                               <Minus size={13} />
                             </button>
                             <span dir="ltr">
-                              {qty} / {item.quantity}
+                              <bdi dir="ltr">{qty} / {item.quantity}</bdi>
                             </span>
                             <button
                               type="button"
@@ -565,11 +565,10 @@ export function OrderReturnPanel({
                 <div className="return-summary-bar">
                   <div>
                     <small>
-                      {isEn
-                        ? `Estimated Refund (${selectedCount} item${selectedCount === 1 ? "" : "s"})`
-                        : `قيمة الاسترداد التقديرية (${selectedCount} قطعة)`}
+                      {isEn ? "Estimated refund" : "قيمة الاسترداد التقديرية"} (<bdi dir="ltr">{selectedCount.toLocaleString(lang)}</bdi>{" "}
+                      {isEn ? (selectedCount === 1 ? "item" : "items") : "قطعة"})
                     </small>
-                    <strong>{money(estimatedRefund, currency, lang)}</strong>
+                    <strong><bdi dir="ltr">{money(estimatedRefund, currency, lang)}</bdi></strong>
                   </div>
                   <button
                     type="submit"
@@ -590,7 +589,7 @@ export function OrderReturnPanel({
               </form>
             </div>
           </div>,
-          document.body,
+          document.querySelector("[data-storefront-overlays]") ?? document.body,
         )}
     </div>
   );

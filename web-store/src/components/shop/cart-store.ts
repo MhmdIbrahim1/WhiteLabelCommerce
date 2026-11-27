@@ -10,12 +10,15 @@ import {
 } from "react";
 import { browserDb } from "@/lib/supabase/browser";
 import type { Variant } from "@/lib/variant-stock";
-import { resolveEffectivePrice } from "@/lib/flash-sale";
+import { lineEffectivePrice, resolveEffectivePrice, type FlashSalePriceInput } from "@/lib/flash-sale";
+import { remainingQuantity } from "@/lib/variant-stock";
+export { lineEffectivePrice, remainingQuantity };
 
 export type Line = {
   id: string;
   name: string;
   name_en?: string | null;
+  image_path?: string | null;
   size: string;
   color: string;
   price: number;
@@ -119,31 +122,6 @@ export function useDefaultOrderLimit() {
   const tenant = useContext(CartTenantContext);
   if (!tenant) throw new Error("CartTenantProvider is missing.");
   return tenant.defaultLimit;
-}
-
-export function lineEffectivePrice(
-  line: Line,
-  nowMs: number = Date.now(),
-): number {
-  const basePrice =
-    typeof line.regular_price === "number" && Number.isFinite(line.regular_price)
-      ? line.regular_price
-      : line.price;
-  if (
-    line.flash_sale_price !== undefined ||
-    line.flash_sale_ends_at !== undefined
-  ) {
-    return resolveEffectivePrice(
-      {
-        price: basePrice,
-        flash_sale_price: line.flash_sale_price ?? null,
-        flash_sale_starts_at: line.flash_sale_starts_at ?? null,
-        flash_sale_ends_at: line.flash_sale_ends_at ?? null,
-      },
-      nowMs,
-    );
-  }
-  return line.price;
 }
 
 export function getCartSessionKey(tenantId: string): string {
@@ -362,24 +340,12 @@ function save(tenantId: string, rows: Line[]) {
   scheduleCartHeartbeat(cleanTenant, rows);
 }
 
-type InventoryLine = Pick<Line, "id" | "size" | "color" | "stock" | "variantStock" | "productStock" | "max_order_qty">;
-
-export function remainingQuantity(rows: Line[], line: InventoryLine, defaultLimit: number | null) {
-  const productLimit = Math.min(line.productStock ?? (line.variantStock ? Infinity : line.stock),
-    line.max_order_qty ?? defaultLimit ?? Infinity);
-  let total = 0, selected = 0;
-  for (const row of rows) {
-    if (row.id !== line.id) continue;
-    total += row.quantity;
-    if (row.size === line.size && row.color === line.color) selected += row.quantity;
-  }
-  return Math.min(productLimit - total, line.stock - (line.variantStock ? selected : total));
-}
-
-type Inventory = { id: string; stock: number; max_order_qty: number | null; product_variants: Variant[] };
+type Inventory = FlashSalePriceInput & {
+  id: string; stock: number; image_path: string | null; max_order_qty: number | null; product_variants: Variant[];
+};
 export async function readInventory(tenant: string, ids: string[]) {
   const { data, error } = await browserDb().from("products")
-    .select("id,stock,max_order_qty,product_variants(color,size,stock)")
+    .select("id,stock,image_path,price,flash_sale_price,flash_sale_starts_at,flash_sale_ends_at,max_order_qty,product_variants(color,size,stock)")
     .eq("store_id", tenant).eq("is_active", true).in("id", ids).returns<Inventory[]>();
   if (error) throw error;
   return new Map(data.map(p => [p.id, p]));
@@ -396,8 +362,22 @@ export async function refreshCartInventory(tenant: string, ids: string[], isCurr
   if (!isCurrent()) return;
   const rows = decode(snapshot(tenant));
   const requested = new Set(ids);
-  const updated = rows.map(row => requested.has(row.id)
-    ? { ...row, ...inventoryForLine(inventory.get(row.id), row.color, row.size) } : row);
+  const now = Date.now();
+  const updated = rows.map(row => {
+    if (!requested.has(row.id)) return row;
+    const product = inventory.get(row.id);
+    const stock = inventoryForLine(product, row.color, row.size);
+    if (!product) return { ...row, ...stock };
+    return {
+      ...row, ...stock,
+      image_path: row.image_path || product.image_path,
+      regular_price: product.price,
+      price: resolveEffectivePrice(product, now),
+      flash_sale_price: product.flash_sale_price ?? null,
+      flash_sale_starts_at: product.flash_sale_starts_at ?? null,
+      flash_sale_ends_at: product.flash_sale_ends_at ?? null,
+    };
+  });
   if (JSON.stringify(updated) !== JSON.stringify(rows)) save(tenant, updated);
 }
 
@@ -406,8 +386,9 @@ export function change(tenantId: string, line: Line, delta: number, defaultLimit
   const i = rows.findIndex(l => same(l, line));
   if (delta > 0 && delta > remainingQuantity(rows, line, defaultLimit)) return false;
   const quantity = (rows[i]?.quantity ?? 0) + delta;
-  if (i >= 0) rows.splice(i, 1);
-  if (quantity > 0) rows.push({ ...line, quantity });
+  if (i >= 0 && quantity <= 0) rows.splice(i, 1);
+  else if (i >= 0) rows[i] = { ...line, quantity };
+  else if (quantity > 0) rows.push({ ...line, quantity });
   save(tenantId, rows);
   return true;
 }

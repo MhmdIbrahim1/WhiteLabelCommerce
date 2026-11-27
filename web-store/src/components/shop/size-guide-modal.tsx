@@ -125,9 +125,9 @@ export function SizeGuideModal({
                 {APPAREL_ROWS.map((r) => (
                   <tr key={r.size}>
                     <td><strong>{r.size}</strong></td>
-                    <td dir="ltr">{r.chest}</td>
-                    <td dir="ltr">{r.waist}</td>
-                    <td dir="ltr">{r.length}</td>
+                    <td><bdi dir="ltr">{r.chest}</bdi></td>
+                    <td><bdi dir="ltr">{r.waist}</bdi></td>
+                    <td><bdi dir="ltr">{r.length}</bdi></td>
                   </tr>
                 ))}
               </tbody>
@@ -148,9 +148,9 @@ export function SizeGuideModal({
                 {PANTS_ROWS.map((r) => (
                   <tr key={r.size}>
                     <td><strong>{r.size}</strong></td>
-                    <td dir="ltr">{r.waist}</td>
-                    <td dir="ltr">{r.hip}</td>
-                    <td dir="ltr">{r.inseam}</td>
+                    <td><bdi dir="ltr">{r.waist}</bdi></td>
+                    <td><bdi dir="ltr">{r.hip}</bdi></td>
+                    <td><bdi dir="ltr">{r.inseam}</bdi></td>
                   </tr>
                 ))}
               </tbody>
@@ -171,9 +171,9 @@ export function SizeGuideModal({
                 {SHOES_ROWS.map((r) => (
                   <tr key={r.eu}>
                     <td><strong>{r.eu}</strong></td>
-                    <td dir="ltr">{r.us}</td>
-                    <td dir="ltr">{r.uk}</td>
-                    <td dir="ltr">{r.cm}</td>
+                    <td><bdi dir="ltr">{r.us}</bdi></td>
+                    <td><bdi dir="ltr">{r.uk}</bdi></td>
+                    <td><bdi dir="ltr">{r.cm}</bdi></td>
                   </tr>
                 ))}
               </tbody>

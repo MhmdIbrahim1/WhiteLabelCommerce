@@ -4,6 +4,7 @@ import { ListChecks } from "lucide-react";
 import { normalizeSpecs, type ProductSpec } from "@/lib/specs";
 import { localizedText } from "@/lib/i18n";
 import { useLanguage } from "@/components/language-provider";
+import { StoreCopy } from "./store-copy";
 
 export function ProductSpecsTable({
   specs,
@@ -20,7 +21,6 @@ export function ProductSpecsTable({
       aria-labelledby="product-specs-heading"
     >
       <div className="specs-section-head">
-        <span className="section-kicker">{t("specsKicker")}</span>
         <h2 id="product-specs-heading" className="specs-heading">
           <ListChecks size={19} aria-hidden="true" />
           <span>{t("specsTitle")}</span>
@@ -32,10 +32,10 @@ export function ProductSpecsTable({
           {rows.map((row, idx) => (
             <div key={idx} className="specs-row">
               <dt className="specs-key">
-                {localizedText(lang, row.key_ar, row.key_en)}
+                <StoreCopy text={localizedText(lang, row.key_ar, row.key_en)} lang={lang}/>
               </dt>
               <dd className="specs-value">
-                {localizedText(lang, row.value_ar, row.value_en)}
+                <StoreCopy text={localizedText(lang, row.value_ar, row.value_en)} lang={lang}/>
               </dd>
             </div>
           ))}

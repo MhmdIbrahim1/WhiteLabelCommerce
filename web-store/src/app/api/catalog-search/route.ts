@@ -1,12 +1,12 @@
 import { serverDb } from "@/lib/db";
 import { photo, settings } from "@/lib/shop";
 import type { SearchMetadata, SmartSearchHit } from "@/lib/smart-search";
+import type { FlashSalePriceInput } from "@/lib/flash-sale";
 
-type SearchRow = SearchMetadata & {
+type SearchRow = SearchMetadata & FlashSalePriceInput & {
   id: string;
   name: string;
   name_en?: string | null;
-  price: number;
   old_price: number | null;
   image_path: string | null;
   rank: number;
@@ -61,6 +61,9 @@ export async function GET(req: Request) {
     name_en: p.name_en ?? "",
     price: Number(p.price),
     old_price: p.old_price !== null ? Number(p.old_price) : null,
+    flash_sale_price: p.flash_sale_price ?? null,
+    flash_sale_starts_at: p.flash_sale_starts_at ?? null,
+    flash_sale_ends_at: p.flash_sale_ends_at ?? null,
     image_url: photo(p.image_path),
     currency: store.currency,
     match_type: p.match_type,

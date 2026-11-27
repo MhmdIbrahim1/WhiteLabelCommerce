@@ -587,7 +587,7 @@ export function NotificationBell({
               </div>
             </aside>
           </div>,
-          scope === "admin" ? document.querySelector("[data-workspace-overlay]") ?? document.body : document.body,
+          document.querySelector(scope === "admin" ? "[data-workspace-overlay]" : "[data-storefront-overlays]") ?? document.body,
         )
       : null;
 

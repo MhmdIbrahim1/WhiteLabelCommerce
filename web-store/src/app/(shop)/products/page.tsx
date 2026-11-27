@@ -16,6 +16,7 @@ import type { SearchMetadata } from "@/lib/smart-search";
 import { SearchCorrection } from "@/components/shop/search-correction";
 import { CatalogQueryInput } from "@/components/shop/catalog-query-input";
 import { Grid } from "@/components/shop/cards";
+import { resolveStorefrontPreset } from "@/lib/storefront-presets";
 
 type SearchProductRow = Product & {
   rank?: number;
@@ -163,7 +164,7 @@ export default async function Catalog({
         </div>
         {(q || hasAnyFilter) && (
           <small>
-            {totalCount} {t(lang, "matchingProducts")}
+            <bdi dir="ltr">{totalCount.toLocaleString(lang)}</bdi> {t(lang, "matchingProducts")}
           </small>
         )}
       </div>
@@ -197,13 +198,14 @@ export default async function Catalog({
           <span>{t(lang, "filterAllCategories")}</span>
         </Link>
 
-        {cats.slice(0, 6).map((c) => {
+        {cats.map((c) => {
           const active = validCategory === c.id;
           return (
             <Link
               key={c.id}
               href={buildFilterHref({ category: active ? "" : c.id, page: 1 })}
               className={`catalog-pill ${active ? "is-active" : ""}`}
+              aria-current={active ? "true" : undefined}
             >
               <span>{localizedText(lang, c.name, c.name_en)}</span>
             </Link>
@@ -333,6 +335,7 @@ export default async function Catalog({
         </div>
       ) : (
         <Grid
+          preset={resolveStorefrontPreset(s.uiConfig.storefrontPreset, s.template)}
           rows={rows}
           currency={s.currency}
           lang={lang}

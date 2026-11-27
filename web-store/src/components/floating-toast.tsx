@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -51,7 +52,10 @@ export function FloatingToastHost() {
     document.addEventListener("invalid", invalid, true);
     return () => document.removeEventListener("invalid", invalid, true);
   }, []);
-  return toast && <Banner key={toast.id} toast={toast} />;
+  if (!toast) return null;
+  const banner = <Banner key={toast.id} toast={toast} />;
+  const storefront = document.querySelector("[data-storefront-overlays]");
+  return storefront ? createPortal(banner, storefront) : banner;
 }
 
 function Banner({ toast }: { toast: Toast & { id: number } }) {
@@ -82,7 +86,7 @@ function Banner({ toast }: { toast: Toast & { id: number } }) {
     if (!cancelled && (Math.abs(delta) >= 72 || (Math.abs(delta) > 16 && speed > 0.6))) {
       node.style.transform = "translate3d(" + (delta > 0 ? "110vw" : "-110vw") + ",0,0)";
       node.dataset.leaving = "true";
-      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) dismiss(toast.id);
+      if (node.closest('[data-motion-enabled="false"]') || window.matchMedia("(prefers-reduced-motion: reduce)").matches) dismiss(toast.id);
     } else node.style.transform = "";
   }
   return <div className="toast-anchor" ref={anchor} dir={lang === "ar" ? "rtl" : "ltr"}>

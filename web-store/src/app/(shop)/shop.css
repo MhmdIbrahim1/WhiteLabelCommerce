@@ -524,7 +524,8 @@
   justify-content: space-between;
 }
 
-.shop button:not(.theme-btn):not(.icon-ghost-btn):not(.icon-copy-chip):not(.orders-logout-btn):not(.search-trigger-pill):not(.variant-chip):not(.gallery-thumb):not(.slide-dot):not(.lang-toggle-pill):not(.notif-bell-btn):not(.user-menu-trigger):not(.mobile-drawer-theme-btn) {
+.shop:not(.sf-store) button:not(.theme-btn):not(.icon-ghost-btn):not(.icon-copy-chip):not(.orders-logout-btn):not(.search-trigger-pill):not(.variant-chip):not(.gallery-thumb):not(.slide-dot):not(.lang-toggle-pill):not(.notif-bell-btn):not(.user-menu-trigger):not(.mobile-drawer-theme-btn),
+.sf-store :where(button) {
   background: var(--primary);
   color: var(--primary-ink, #fff);
   border-radius: var(--radius);

@@ -3,7 +3,8 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { STORE_CANONICAL_HEADER } from "@/lib/tenant-shared";
 import { notFound } from "next/navigation";
-import { Star } from "lucide-react";
+import Link from "next/link";
+import { ChevronRight, Star } from "lucide-react";
 import { serverDb, checked } from "@/lib/db";
 import { settings, productFields, type Product } from "@/lib/shop";
 import { localizedText } from "@/lib/i18n";
@@ -17,10 +18,12 @@ import {
 import { Price, Grid } from "@/components/shop/cards";
 import { ProductPurchase } from "@/components/shop/gallery";
 import { ProductSpecsTable } from "@/components/shop/product-specs";
+import { StoreCopy } from "@/components/shop/store-copy";
 import { WishlistHeartButton } from "@/components/shop/wishlist-heart";
 import { ProductReviewsSection } from "@/components/shop/product-reviews";
 import { ProductViewTracker } from "@/components/shop/product-view-tracker";
-import { resolveEffectivePrice } from "@/lib/flash-sale";
+import { resolveEffectivePrice, serverNowMs } from "@/lib/flash-sale";
+import { storefrontAppearance } from "@/lib/storefront-appearance";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -59,7 +62,7 @@ export async function generateMetadata({
 }
 
 export default async function Details({ params }: PageProps<"/products/[id]">) {
-  const [{ id }, db, s] = await Promise.all([params, serverDb(), settings()]);
+  const [{ id }, db, s, appearance] = await Promise.all([params, serverDb(), settings(), storefrontAppearance()]);
   const result = await loadProduct(s.storeId, id);
   if (result.error?.code === "22P02" || (!result.error && !result.data))
     notFound();
@@ -134,39 +137,42 @@ export default async function Details({ params }: PageProps<"/products/[id]">) {
   const reviewCount = Number(p.review_count ?? initialReviews.length);
   const avgRating = Number(p.avg_rating ?? 0);
   const currentPath = storeHref(s.basePath, "/products/" + p.id);
+  const initialNow = serverNowMs();
 
   return (
     <>
       <ProductViewTracker
         id={p.id}
         name={title}
-        price={resolveEffectivePrice(p)}
+        price={resolveEffectivePrice(p, initialNow)}
         currency={s.currency}
       />
-      <ProductPurchase key={p.id} product={p} title={title} basePath={s.basePath}>
-          <h1>{title}</h1>
+      <nav className="sf-breadcrumb" aria-label={lang === "en" ? "Breadcrumb" : "مسار التصفّح"}>
+        <Link href={storeHref(s.basePath, "/")}>{localizedText(lang, s.nameAr, s.nameEn)}</Link><ChevronRight className="sf-forward" size={14}/>
+        <Link href={storeHref(s.basePath, "/products")}>{lang === "en" ? "All products" : "كل المنتجات"}</Link>
+      </nav>
+      <ProductPurchase key={p.id} product={p} title={title} basePath={s.basePath} currency={s.currency}
+        sticky={appearance.stickyCtaEnabled} initialNow={initialNow}>
+          <h1><StoreCopy text={title} lang={lang}/></h1>
 
           <div className="detail-meta-bar">
             {reviewCount > 0 && (
               <a href="#reviews" className="detail-rating-pill">
                 <Star size={14} fill="#F59E0B" stroke="#F59E0B" />
-                <strong>{formatRatingScore(avgRating)}</strong>
-                <span>
-                  (
-                  {lang === "en"
-                    ? `${reviewCount} ${reviewCount === 1 ? "review" : "reviews"}`
-                    : `${reviewCount} ${reviewCount === 1 ? "تقييم" : "تقييمات"}`}
-                  )
-                </span>
+                <strong><bdi dir="ltr">{formatRatingScore(avgRating)}</bdi></strong>
+                <span>(<bdi dir="ltr">{reviewCount.toLocaleString(lang)}</bdi> {lang === "en"
+                  ? (reviewCount === 1 ? "review" : "reviews") : (reviewCount === 1 ? "تقييم" : "تقييمات")})</span>
               </a>
             )}
             <WishlistHeartButton productId={p.id} variant="pill" />
           </div>
 
-          <Price p={p} currency={s.currency} lang={lang} variant="detail" />
-          <p>{desc}</p>
+          <Price p={p} currency={s.currency} lang={lang} variant="detail" initialNow={initialNow} />
       </ProductPurchase>
 
+      {desc && <section className="sf-description" aria-labelledby="description-title">
+        <h2 id="description-title">{lang === "en" ? "Product details" : "تفاصيل المنتج"}</h2><p dir="auto"><StoreCopy text={desc} lang={lang}/></p>
+      </section>}
       <ProductSpecsTable specs={p.specifications} />
 
       <ProductReviewsSection
@@ -185,17 +191,15 @@ export default async function Details({ params }: PageProps<"/products/[id]">) {
         >
           <div className="split section-head">
             <div>
-              <span className="section-kicker">
-                {lang === "en" ? "Picked For You" : "مختارات قد تهمك"}
-              </span>
               <h2>
                 {lang === "en"
-                  ? "Customers Also Bought"
-                  : "عملاء اشتروا أيضاً"}
+                  ? "Related products"
+                  : "منتجات ذات صلة"}
               </h2>
             </div>
           </div>
           <Grid
+            preset={appearance.preset}
             rows={relatedProducts}
             currency={s.currency}
             lang={lang}

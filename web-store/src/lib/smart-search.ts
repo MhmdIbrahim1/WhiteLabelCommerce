@@ -1,3 +1,5 @@
+import type { FlashSalePriceInput } from "./flash-sale";
+
 export type SearchMatchType = "exact" | "synonym" | "spec" | "description" | "fuzzy";
 
 export type SearchMetadata = {
@@ -8,11 +10,10 @@ export type SearchMetadata = {
   match_tier: number | null;
 };
 
-export type SmartSearchHit = SearchMetadata & {
+export type SmartSearchHit = SearchMetadata & FlashSalePriceInput & {
   id: string;
   name: string;
   name_en: string;
-  price: number;
   old_price: number | null;
   image_url: string | null;
   currency: string;

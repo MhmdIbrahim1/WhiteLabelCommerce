@@ -7,6 +7,7 @@ import Link from "next/link";
 import { ArrowLeft, ArrowRight, Package } from "lucide-react";
 import { date, money } from "@/lib/brand";
 import { orderStatusLabel } from "@/lib/i18n";
+import { storefrontImageSrc } from "@/lib/storefront-media";
 import { photo } from "@/lib/product-photo";
 import { storeHref } from "@/lib/tenant-shared";
 import { useLanguage } from "../language-provider";
@@ -25,11 +26,14 @@ export function OrderCards({ rows, filter, basePath, next }: { rows: OrderCardRo
     {orderFilters.map((key,i) => <Link key={key} aria-current={key === filter ? "page" : undefined}
       href={storeHref(basePath,"/orders?filter="+key)}>{labels[i]}</Link>)}</nav>
     {cards.length ? cards.map(row => <article className="history-card" key={row.id}>
-      <div className="history-heading"><div><strong dir="ltr">{formatOrderNumber(row.id)}</strong><small>{date(row.created_at,lang)}</small></div>
+      <div className="history-heading"><div><strong dir="ltr"><bdi dir="ltr">{formatOrderNumber(row.id)}</bdi></strong><small><bdi dir="ltr">{date(row.created_at,lang)}</bdi></small></div>
         <span className="order-state" data-status={row.status}>{orderStatusLabel(row.status,lang)}</span></div>
-      <div className="history-items">{row.thumbnails.length ? row.thumbnails.map((path,i) => <Image key={i} src={photo(path)!} unoptimized width={40} height={40} alt="" />) : <Package size={24} />}
-        <span>{row.item_count.toLocaleString(lang)} {en ? (row.item_count === 1 ? "item" : "items") : "قطع"}</span></div>
-      <footer><b dir="auto">{row.total == null ? en ? "Total pending" : "قيد التسعير" : money(row.total,row.currency,lang)}</b><Link href={storeHref(basePath,"/orders/"+row.id)}>{en ? "View order" : "تفاصيل الطلب"} <Arrow size={16}/></Link></footer>
+      <div className="history-items">{row.thumbnails.length ? row.thumbnails.map((path,i) => {
+        const src = storefrontImageSrc(photo(path), 64);
+        return src ? <Image key={i} src={src} unoptimized width={40} height={40} alt="" /> : <Package key={i} size={24}/>;
+      }) : <Package size={24} />}
+        <span><bdi dir="ltr">{row.item_count.toLocaleString(lang)}</bdi> {en ? (row.item_count === 1 ? "item" : "items") : "قطع"}</span></div>
+      <footer><b dir="auto">{row.total == null ? en ? "Total pending" : "قيد التسعير" : <bdi dir="ltr">{money(row.total,row.currency,lang)}</bdi>}</b><Link href={storeHref(basePath,"/orders/"+row.id)}>{en ? "View order" : "تفاصيل الطلب"} <Arrow size={16}/></Link></footer>
     </article>) : <div className="panel shop-empty-state"><Package size={29}/><p>{en ? "No orders in this view." : "لا توجد طلبات في هذه القائمة."}</p></div>}
     {next && <Link className="section-more-link next-orders" href={storeHref(basePath,next)}>{en ? "Older orders" : "الطلبات السابقة"} <Arrow size={15}/></Link>}
   </section>;

@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import type { CSSProperties } from "react";
-import { IBM_Plex_Sans_Arabic } from "next/font/google";
 import Link from "next/link";
 import { Store } from "lucide-react";
 import { uiConfigDataAttrs, uiConfigToCssVars } from "@/lib/ui-config";
 import { settings } from "@/lib/shop";
+import { storefrontAppearance } from "@/lib/storefront-appearance";
 import { serverDb } from "@/lib/db";
 import { adminUser, superAdminUser } from "@/lib/access";
 import { storeHref } from "@/lib/tenant";
@@ -19,6 +19,7 @@ import { WishlistProvider } from "@/components/shop/wishlist-provider";
 import { StorePixels } from "@/components/shop/store-pixels";
 import { CartTenantProvider } from "@/components/shop/cart-store";
 import "./shop.css";
+import "./storefront.css";
 
 export const dynamic = "force-dynamic";
 
@@ -54,19 +55,13 @@ export async function generateMetadata(): Promise<Metadata> {
   }
 }
 
-const font = IBM_Plex_Sans_Arabic({
-  weight: ["400", "500", "600", "700"],
-  subsets: ["arabic", "latin"],
-  display: "swap",
-});
-
 export default async function Layout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const [db, s, authRes] = await Promise.all([
-    serverDb(), settings(), serverDb().then((client) => client.auth.getUser()),
+  const [db, s, authRes, appearance, jar] = await Promise.all([
+    serverDb(), settings(), serverDb().then((client) => client.auth.getUser()), storefrontAppearance(), cookies(),
   ]);
   const authUser = authRes.data.user;
   const [admin, superAdmin, wishRows, lang] = await Promise.all([
@@ -80,7 +75,7 @@ export default async function Layout({
 
   if (s.status === "suspended") {
     return (
-      <div className={font.className}>
+      <div className="shop sf-store" lang={lang} dir={lang === "ar" ? "rtl" : "ltr"} style={appearance.tokens as CSSProperties}>
         <SuspendedStoreGate
           storeName={displayName}
           lang={lang}
@@ -103,11 +98,23 @@ export default async function Layout({
     : null;
   const style: CSSProperties = {
     ...uiConfigToCssVars(s.uiConfig),
-    "--shop-font": `${font.style.fontFamily}, "Cairo", system-ui, -apple-system, sans-serif`,
+    ...appearance.tokens,
   } as CSSProperties;
   const dataAttrs = uiConfigDataAttrs(s.uiConfig);
   const href = (path: string) => storeHref(s.basePath, path);
+  const savedMode = jar.get("shop_theme")?.value;
+  // First visit after the cookie was introduced: restore the old preference before painting the merchant surface.
+  const restoreMode = `(() => {
+    try {
+      const mode = localStorage.getItem("shop.theme");
+      if (mode === "dark" || (!mode && matchMedia("(prefers-color-scheme: dark)").matches)) {
+        document.currentScript.parentElement.dataset.shopTheme = "dark";
+      }
+    } catch {}
+  })()`;
   return (
+    <div data-storefront-mode="" data-shop-theme={savedMode === "dark" ? "dark" : "light"} suppressHydrationWarning>
+    {!savedMode && <script dangerouslySetInnerHTML={{ __html: restoreMode }} />}
     <CartTenantProvider storeId={s.storeId} defaultMaxOrderQty={s.defaultMaxOrderQty}>
       <WishlistProvider
         storeId={s.storeId}
@@ -115,8 +122,15 @@ export default async function Layout({
         isSignedIn={Boolean(authUser)}
       >
         <div
-          className={`shop ${font.className}`}
+          className="shop sf-store"
+          lang={lang}
+          dir={lang === "ar" ? "rtl" : "ltr"}
           {...dataAttrs}
+          data-storefront-preset={appearance.preset}
+          data-motion-enabled={appearance.motionEnabled}
+          data-entrance={appearance.motionEnabled ? dataAttrs["data-entrance"] : "none"}
+          data-card-hover={appearance.motionEnabled ? dataAttrs["data-card-hover"] : "none"}
+          data-sticky-cta={appearance.stickyCtaEnabled}
           data-card={brand.presets.productCard}
           style={style}
         >
@@ -128,6 +142,9 @@ export default async function Layout({
         />
         <Navigation
           name={displayName}
+          logo={s.uiConfig.storefrontLogo}
+          currency={s.currency}
+          hasFeatured={s.uiConfig.homeSections.some(section => section.visible && section.type === "featured_products")}
           storeId={s.storeId}
           storeSlug={s.slug}
           basePath={s.basePath}
@@ -135,7 +152,7 @@ export default async function Layout({
           superAdmin={Boolean(superAdmin)}
           user={userSummary}
         />
-        <main className="shop-main">{children}</main>
+        <main id="store-content" className="shop-main" tabIndex={-1}>{children}</main>
         <footer className="shop-footer-wrap">
           <div className="shop-footer">
             <div className="footer-brand">
@@ -147,7 +164,7 @@ export default async function Layout({
                 <p>{t(lang, "footerTagline")}</p>
               </div>
             </div>
-            <nav className="footer-links" aria-label="Footer navigation">
+            <nav className="footer-links" aria-label={lang === "en" ? "Footer navigation" : "روابط التذييل"}>
               <Link href={href("/products")}>{t(lang, "footerAllProducts")}</Link>
               <Link href={href("/wishlist")}>{t(lang, "navWishlist")}</Link>
               <Link href={href("/orders")}>{t(lang, "footerTrackOrders")}</Link>
@@ -161,8 +178,10 @@ export default async function Layout({
             </nav>
           </div>
         </footer>
+        <div data-storefront-overlays="" />
         </div>
       </WishlistProvider>
     </CartTenantProvider>
+    </div>
   );
 }
