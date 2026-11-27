@@ -31,6 +31,14 @@
 .ws-filters { margin: 0; display: flex; align-items: center; flex-wrap: wrap; gap: .6rem; padding: 1rem clamp(.9rem, 2vw, 1.45rem); }
 .ws-filters label { margin: 0; min-inline-size: 0; }
 .ws-filters .ws-search { flex: 1 1 15rem; }
+.ws-order-sheet .ws-filters { align-items: end; }
+.ws-order-sheet .ws-order-date { display: grid; gap: .2rem; max-inline-size: 100%; }
+.ws-order-date span { color: var(--muted); font-size: .78rem; }
+.ws-order-date input, .ws-order-record bdi, .ws-order-sheet bdi, .order-document bdi { font-variant-numeric: tabular-nums; }
+.ws-order-record .ws-facts dt bdi, .order-document dl dt bdi { overflow-wrap: anywhere; }
+.ws-surface .order-document dl.ws-invoice-totals { display: grid; grid-template-columns: 1fr; }
+.ws-invoice-totals > div { display: flex; align-items: baseline; justify-content: space-between; gap: .7rem; }
+.ws-order-sheet th:first-child { max-inline-size: 12rem; }
 .ws-search > svg { color: var(--muted); pointer-events: none; }
 .ws-filters :is(input,select) { font-size: .86rem; }
 .ws-filters label.ws-search { display: flex; align-items: center; gap: .5rem; padding-inline: .75rem .25rem; background: var(--surface);

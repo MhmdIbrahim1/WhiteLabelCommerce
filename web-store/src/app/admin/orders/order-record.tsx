@@ -7,7 +7,7 @@ import { checked, requireAdmin } from "@/lib/db";
 import { money, date } from "@/lib/brand";
 import { t, translateColor, localizedText, orderStatusLabel } from "@/lib/i18n";
 import { getServerLang } from "@/lib/i18n-server";
-import { orderLabels } from "@/lib/order-payment";
+import { orderAmounts, orderLabels } from "@/lib/order-payment";
 import { isRecordId } from "@/lib/workspace-directory";
 import { isSafeHttpUrl, localizeCarrierLabel } from "@/lib/shipping";
 import { normalizeReturnRecord, returnStatusMeta } from "@/lib/returns";
@@ -24,7 +24,7 @@ export async function OrderRecord({ id, print, drawer = false, resultCode }: {
   const invoice = print === "invoice";
   const printDocument = invoice || print === "label";
   const [result, returnRes, tokenRes] = await Promise.all([
-    db.from("orders").select("id,created_at,status,user_id,customer_id,recipient_name,shipping_address,phone,lat,lng,shipping_carrier,tracking_number,tracking_url,courier_note,shipped_at,delivered_at,payment_method,payment_status,payment_review,subtotal,shipping_fee,discount_amount,wallet_discount,cashback_earned,total,currency,order_items(id,product_name,size,color,quantity,unit_price)")
+    db.from("orders").select("id,created_at,status,user_id,customer_id,recipient_name,shipping_address,phone,lat,lng,shipping_carrier,tracking_number,tracking_url,courier_note,shipped_at,delivered_at,payment_method,payment_status,payment_review,subtotal,shipping_fee,coupon_code,discount_amount,wallet_discount,cashback_earned,total,currency,order_items(id,product_name,size,color,quantity,unit_price)")
       .eq("id", id).eq("store_id", storeId).maybeSingle(),
     printDocument ? null : db.from("return_requests").select("*").eq("order_id", id)
       .eq("store_id", storeId).order("created_at", { ascending: false }).limit(1),
@@ -39,8 +39,21 @@ export async function OrderRecord({ id, print, drawer = false, resultCode }: {
   const codDue = o.payment_method === "cod" && !["paid", "refunded"].includes(o.payment_status)
     && !["delivered", "cancelled"].includes(o.status) ? o.total : 0;
   const orderHref = "/admin/orders/" + id;
-  const customerLookup = !o.recipient_name && o.customer_id ? db.from("store_customers").select("full_name")
-    .eq("store_id", storeId).eq("id", o.customer_id).maybeSingle() : null;
+  const customerLookup = !o.recipient_name && (o.customer_id || o.user_id) ? db.from("store_customers").select("full_name")
+    .eq("store_id", storeId).eq(o.customer_id ? "id" : "user_id", o.customer_id ?? o.user_id).maybeSingle() : null;
+  const amounts = orderAmounts(o);
+  const amount = (value: number | null) => <bdi dir="ltr">{money(value, o.currency, lang)}</bdi>;
+  const priceRows = <>
+    <div><dt>{amounts.couponIncluded ? (isEn ? "Subtotal after coupon" : "مجموع المنتجات بعد خصم القسيمة") :
+      (isEn ? "Subtotal" : "مجموع المنتجات")}</dt><dd>{amount(amounts.subtotal)}</dd></div>
+    {(o.discount_amount > 0 || o.coupon_code) && <div><dt>{isEn ? "Coupon discount" : "خصم القسيمة"}
+      {o.coupon_code && <> · <bdi dir="ltr">{o.coupon_code}</bdi></>}</dt><dd>{amount(o.discount_amount ? -o.discount_amount : 0)}</dd></div>}
+    <div><dt>{t(lang, "shippingLabel")}</dt><dd>{amount(o.shipping_fee)}</dd></div>
+    {o.wallet_discount > 0 && <div><dt>{isEn ? "Wallet credit used" : "خصم المحفظة"}</dt><dd>{amount(-o.wallet_discount)}</dd></div>}
+    {!invoice && o.cashback_earned > 0 && <div><dt>{isEn ? "Cashback earned" : "الرصيد المكتسب"}</dt><dd>{amount(o.cashback_earned)}</dd></div>}
+    <div className="ws-rule"><dt>{o.total == null && amounts.total != null ? (isEn ? "Calculated total" : "الإجمالي المحسوب") :
+      (isEn ? "Total" : "الإجمالي")}</dt><dd>{amount(amounts.total)}</dd></div>
+  </>;
   if (printDocument) {
     const [brand, logo, customer] = await Promise.all([
       db.from("store_settings").select("store_name").eq("store_id", storeId).maybeSingle(),
@@ -50,7 +63,6 @@ export async function OrderRecord({ id, print, drawer = false, resultCode }: {
     ]);
     const name = localizedText(lang, brand.data?.store_name || activeStore.name_ar, activeStore.name_en);
     const title = invoice ? (isEn ? "Invoice" : "فاتورة") : (isEn ? "Shipping label" : "بوليصة الشحن");
-    const amount = (value: number | null) => <bdi dir="ltr">{money(value, o.currency, lang)}</bdi>;
     return (
       <article className="order-document" dir={isEn ? "ltr" : "rtl"}>
         <nav className="document-actions">
@@ -87,12 +99,7 @@ export async function OrderRecord({ id, print, drawer = false, resultCode }: {
             </tr>
           ))}</tbody>
         </table>
-        {invoice && <dl>
-          {o.discount_amount > 0 && <><dt>{isEn ? "Coupon discount" : "خصم الكوبون"}</dt><dd>−{amount(o.discount_amount)}</dd></>}
-          <dt>{isEn ? "Shipping" : "الشحن"}</dt><dd>{amount(o.shipping_fee)}</dd>
-          {o.wallet_discount > 0 && <><dt>{isEn ? "Wallet credit" : "رصيد المحفظة"}</dt><dd>−{amount(o.wallet_discount)}</dd></>}
-          <dt>{isEn ? "Total" : "الإجمالي"}</dt><dd>{amount(o.total)}</dd>
-        </dl>}
+        {invoice && <dl className="ws-invoice-totals">{priceRows}</dl>}
         <p className="document-cod">{isEn ? "COD amount due" : "المبلغ المطلوب تحصيله"} · {amount(codDue)}</p>
       </article>
     );
@@ -103,7 +110,6 @@ export async function OrderRecord({ id, print, drawer = false, resultCode }: {
     p_status: o.status, p_method: o.payment_method,
     p_payment: o.payment_status, p_priced: o.subtotal !== null
   })) as string[];
-  const amount = (value: number | null) => <bdi dir="ltr">{money(value, o.currency, lang)}</bdi>;
   const columns = isEn ? ["Item", "Quantity", "Unit price", "Amount"] : ["المنتج", "الكمية", "سعر الوحدة", "المبلغ"];
   const methodNames: Record<string, string> = { cod: isEn ? "Cash on delivery" : "الدفع عند الاستلام",
     coupon: isEn ? "Coupon" : "كوبون", wallet: isEn ? "Wallet" : "المحفظة", paymob_card: isEn ? "Bank card" : "بطاقة بنكية", paymob_wallet: isEn ? "Mobile wallet" : "محفظة إلكترونية"
@@ -141,12 +147,7 @@ export async function OrderRecord({ id, print, drawer = false, resultCode }: {
         ? (isEn ? "Online payment arrived after the switch to cash. Check any cash already collected." : "وصل الدفع الإلكتروني بعد التحويل للنقد. راجع أي مبلغ حُصّل نقداً.")
         : (isEn ? "Review this payment and any refund owed." : "راجع هذه الدفعة وأي مبلغ مستحق للاسترداد.")}</p>}
       <dl className="ws-facts ws-order-summary">
-        <div><dt>{isEn ? "Subtotal" : "مجموع المنتجات"}</dt><dd>{amount(o.subtotal)}</dd></div>
-        <div><dt>{t(lang, "shippingLabel")}</dt><dd>{amount(o.shipping_fee)}</dd></div>
-        {o.discount_amount > 0 && <div><dt>{isEn ? "Coupon discount" : "خصم القسيمة"}</dt><dd>−{amount(o.discount_amount)}</dd></div>}
-        {o.wallet_discount > 0 && <div><dt>{isEn ? "Wallet credit used" : "خصم المحفظة"}</dt><dd>−{amount(o.wallet_discount)}</dd></div>}
-        {o.cashback_earned > 0 && <div><dt>{isEn ? "Cashback earned" : "الرصيد المكتسب"}</dt><dd>{amount(o.cashback_earned)}</dd></div>}
-        <div className="ws-rule"><dt>{isEn ? "Total" : "الإجمالي"}</dt><dd>{amount(o.total)}</dd></div>
+        {priceRows}
         <div><dt>{t(lang, "paymentMethodLabel")}</dt><dd>{methodNames[o.payment_method] ?? o.payment_method}</dd></div>
         {o.payment_status && <div><dt>{isEn ? "Payment status" : "حالة الدفع"}</dt><dd><StatusDot status={o.payment_status}>{paymentLabel}</StatusDot></dd></div>}
         {o.payment_method === "cod" && <div><dt>{isEn ? "Amount to collect" : "المبلغ المطلوب تحصيله"}</dt><dd>{amount(codDue)}</dd></div>}

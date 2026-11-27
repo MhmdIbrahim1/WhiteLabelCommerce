@@ -2,7 +2,8 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { ArrowLeft, ArrowRight, Inbox, Search } from "lucide-react";
 import type { Lang } from "@/lib/i18n";
-import { directoryHref, statusTone } from "@/lib/workspace-directory";
+import { directoryHref, paymentFilters, statusTone, type orderFilters } from "@/lib/workspace-directory";
+import { paymentStatusLabel } from "@/lib/order-payment";
 import { pageSize } from "@/lib/workflow";
 
 export function StatusDot({ status, children }: { status: string; children: ReactNode }) {
@@ -32,23 +33,33 @@ export function DataCell({ label, children }: { label?: string; children: ReactN
     <div className="ws-cell-value">{children}</div></td>;
 }
 
-export function DirectoryFilters({ path, lang, query, status, choices, placeholder }: {
-  path: string; lang: Lang; query: string; status: string; choices: [string, string][]; placeholder: string;
+export function DirectoryFilters({ path, lang, query, status, choices, placeholder, order }: {
+  path: string; lang: Lang; query: string; status: string; choices: [string, string][]; placeholder: string; order?: ReturnType<typeof orderFilters>;
 }) {
   const en = lang === "en";
-  return <form className="ws-filters" action={path} method="get" role="search" key={JSON.stringify([query, status])}>
+  return <form className="ws-filters" action={path} method="get" role="search" key={JSON.stringify([query, status, order])}>
     <label className="ws-search"><Search size={16} aria-hidden="true" /><span className="ws-sr">{placeholder}</span>
       <input id="directory-search" type="search" name="q" dir="auto" maxLength={100} defaultValue={query} placeholder={placeholder} /></label>
     <label><span className="ws-sr">{en ? "Filter by status" : "تصفية حسب الحالة"}</span>
-      <select name="status" defaultValue={status}><option value="">{en ? "All statuses" : "كل الحالات"}</option>
+      <select name="status" defaultValue={status}><option value="">{order ? (en ? "All fulfillment states" : "كل حالات التنفيذ") : (en ? "All statuses" : "كل الحالات")}</option>
         {choices.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+    {order && <>
+      <label><span className="ws-sr">{en ? "Payment status" : "حالة الدفع"}</span>
+        <select name="payment" defaultValue={order.payment}><option value="">{en ? "All payment states" : "كل حالات الدفع"}</option>
+          {paymentFilters.map(value => <option key={value} value={value}>{paymentStatusLabel(value, en)}</option>)}
+        </select></label>
+      <label className="ws-order-date"><span>{en ? "From (UTC)" : "من (UTC)"}</span>
+        <input type="date" dir="ltr" name="from" defaultValue={order.from} /></label>
+      <label className="ws-order-date"><span>{en ? "To (UTC)" : "إلى (UTC)"}</span>
+        <input type="date" dir="ltr" name="to" defaultValue={order.to} /></label>
+    </>}
     <button className="ws-button" type="submit">{en ? "Apply" : "تطبيق"}</button>
-    {(query || status) && <Link className="ws-text-link" href={path}>{en ? "Clear" : "مسح"}</Link>}
+    {(query || status || order?.payment || order?.from || order?.to) && <Link className="ws-text-link" href={path}>{en ? "Clear" : "مسح"}</Link>}
   </form>;
 }
 
-export function DirectoryPager({ path, page, count, q, status, lang }: {
-  path: "/admin/products" | "/admin/orders"; page: number; count: number; q: string; status: string; lang: Lang;
+export function DirectoryPager({ path, page, count, q, status, lang, order }: {
+  path: "/admin/products" | "/admin/orders"; page: number; count: number; q: string; status: string; lang: Lang; order?: ReturnType<typeof orderFilters>;
 }) {
   const en = lang === "en";
   const last = Math.max(1, Math.ceil(count / pageSize));
@@ -56,9 +67,9 @@ export function DirectoryPager({ path, page, count, q, status, lang }: {
   const numbers = new Intl.NumberFormat(en ? "en" : "ar-EG");
   return <nav className="ws-pager" aria-label={en ? "Directory pages" : "صفحات القائمة"}>
     <span>{en ? "Page " : "صفحة "}<bdi dir="ltr">{numbers.format(page)}</bdi>{en ? " of " : " من "}<bdi dir="ltr">{numbers.format(last)}</bdi></span>
-    <div>{page > 1 && <Link className="ws-button" href={directoryHref(path, { q, status, page: Math.min(last, page - 1) })}>
+    <div>{page > 1 && <Link className="ws-button" href={directoryHref(path, { ...order, q, status, page: Math.min(last, page - 1) })}>
       <ArrowLeft className="pt-directional" size={14} />{en ? "Previous" : "السابقة"}</Link>}
-      {page < last && <Link className="ws-button" href={directoryHref(path, { q, status, page: page + 1 })}>
+      {page < last && <Link className="ws-button" href={directoryHref(path, { ...order, q, status, page: page + 1 })}>
         {en ? "Next" : "التالية"}<ArrowRight className="pt-directional" size={14} /></Link>}</div>
   </nav>;
 }
