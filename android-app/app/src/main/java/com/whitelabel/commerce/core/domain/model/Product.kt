@@ -205,9 +205,18 @@ data class Product(
     val colorImages: Map<String, String> = emptyMap(),
     val galleryUrls: List<String> = emptyList(),
     val maxOrderQty: Int? = null,
+    val colorGalleries: Map<String, List<String>> = emptyMap(),
 ) {
     val inventory = VariantInventory(variants)
-    fun imageFor(color: String?) = colorImages[color] ?: imageUrl ?: galleryUrls.firstOrNull()
+
+    fun galleryFor(color: String?): List<String> =
+        colorGalleries[color].orEmpty().filter(String::isNotBlank).distinct().ifEmpty {
+            (listOfNotNull(colorImages[color], imageUrl) + galleryUrls).filter(String::isNotBlank).distinct()
+        }
+
+    fun imageFor(color: String?): String? = colorGalleries[color]?.firstOrNull(String::isNotBlank)
+        ?: colorImages[color]?.takeIf(String::isNotBlank) ?: imageUrl?.takeIf(String::isNotBlank)
+        ?: galleryUrls.firstOrNull(String::isNotBlank)
 
     val hasReviews: Boolean
         get() = reviewCount > 0

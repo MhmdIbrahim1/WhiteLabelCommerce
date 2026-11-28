@@ -2,6 +2,7 @@
 
 import { SubmitButton } from "@/components/submit-button";
 import { useState } from "react";
+import Image from "next/image";
 import { Sparkles, Plus, Trash2, Check } from "lucide-react";
 import {
   ADMIN_CATEGORY_PRESETS,
@@ -14,6 +15,7 @@ import { localizedText } from "@/lib/i18n";
 import { useLanguage } from "@/components/language-provider";
 import { variantKey, type Variant } from "@/lib/variant-stock";
 import { photo } from "@/lib/product-photo";
+import { galleryCovers, galleryLines, isGalleryUrl, validGallery } from "@/lib/color-galleries";
 import type { ProductStudioDraft } from "@/lib/openai-studio";
 import { ProductPhotoStudio, type StudioAllowances } from "./product-photo-studio";
 import { saveProduct } from "../mutations";
@@ -43,6 +45,7 @@ export type AdminProductItem = {
   max_order_qty: number | null;
   product_variants?: Variant[];
   color_images?: Record<string, string>;
+  color_galleries?: Record<string, string[]>;
   sizes: string[];
   colors: string[];
   image_path: string | null;
@@ -182,7 +185,9 @@ export function AdminProductForm({
       ? Object.fromEntries(p.product_variants.map(v => [variantKey(v.color, v.size), v.stock]))
       : null);
   const [bulkQuantity, setBulkQuantity] = useState("");
-  const [photos, setPhotos] = useState<Record<string, string>>(p?.color_images ?? {});
+  const [photos, setPhotos] = useState<Record<string, string>>(() => Object.fromEntries(
+    (p?.colors ?? []).map(color => [color, p?.color_galleries?.[color]?.join("\n") ?? p?.color_images?.[color] ?? ""]),
+  ));
   const options = hasOptions ? (selectedColors.length ? selectedColors : [""]).flatMap(color =>
     (selectedSizes.length ? selectedSizes : [""]).map(size => ({ color, size }))) : [];
   function distributedStock() {
@@ -200,7 +205,11 @@ export function AdminProductForm({
     setStockByKey(distributedStock());
     setTrackVariants(true);
   }
-  const colorPhotos = Object.fromEntries(selectedColors.filter(color => photos[color]?.trim()).map(color => [color, photos[color].trim()]));
+  const colorGalleries = Object.fromEntries(selectedColors.flatMap(color => {
+    const lines = galleryLines(Object.hasOwn(photos, color) ? photos[color] : "");
+    return lines.length ? [[color, lines] as const] : [];
+  }));
+  const galleryInvalid = Object.values(colorGalleries).some(urls => !validGallery(urls));
 
   const applyPreset = (preset: AdminCategoryPreset) => {
     const sep = isEn ? ", " : "، ";
@@ -508,7 +517,33 @@ export function AdminProductForm({
       <input type="hidden" name="original_stock" value={p?.stock ?? 0} />
       <input type="hidden" name="original_variants" value={JSON.stringify(p?.product_variants ?? [])} />
       <input type="hidden" name="variants" value={JSON.stringify(variants)} />
-      <input type="hidden" name="color_images" value={JSON.stringify(colorPhotos)} />
+      <input type="hidden" name="color_galleries" value={JSON.stringify(colorGalleries)} />
+      <input type="hidden" name="color_images" value={JSON.stringify(galleryCovers(colorGalleries))} />
+      {selectedColors.length > 0 && <fieldset className="wide admin-color-galleries">
+        <legend>{isEn ? "Photos by color" : "الصور حسب اللون"}</legend>
+        <p>{isEn ? "Add up to 8 HTTPS links per color, one per line. The first photo is the cover."
+          : "أضف حتى ٨ روابط HTTPS لكل لون، رابطاً في كل سطر. تُستخدم الصورة الأولى كغلاف للون."}</p>
+        {selectedColors.map((color, index) => {
+          const lines = Object.hasOwn(colorGalleries, color) ? colorGalleries[color] : [];
+          const invalid = lines.length > 0 && !validGallery(lines);
+          const id = "color-gallery-" + index;
+          return <div className="admin-color-gallery" key={color}>
+            <label htmlFor={id}><bdi>{color}</bdi></label>
+            <textarea id={id} dir="ltr" rows={3} placeholder="https://" spellCheck={false}
+              value={Object.hasOwn(photos, color) ? photos[color] : ""} aria-invalid={invalid}
+              aria-describedby={invalid ? id + "-error" : undefined}
+              onChange={event => setPhotos({ ...photos, [color]: event.target.value })} />
+            {invalid && <small id={id + "-error"} className="admin-flash-error" role="status">
+              {isEn ? "Enter up to 8 valid HTTPS URLs." : "أدخل حتى ٨ روابط HTTPS صحيحة."}
+            </small>}
+            {lines.length > 0 && <div className="admin-color-previews">
+              {lines.slice(0, 8).map((url, position) => isGalleryUrl(url) &&
+                <Image key={position} unoptimized width={56} height={56} src={url} alt=""
+                  referrerPolicy="no-referrer" />)}
+            </div>}
+          </div>;
+        })}
+      </fieldset>}
       {hasOptions && <fieldset className="wide variant-editor">
         <legend>{isEn ? "Variant inventory" : "مخزون الخيارات"}</legend>
         {p && !p.product_variants?.length && !trackVariants && <div>
@@ -530,9 +565,6 @@ export function AdminProductForm({
             {isEn ? "Apply to all" : "تطبيق على الكل"}
           </button>
         </div>}
-        {selectedColors.map(color => <label key={color}>{isEn ? "Image for " : "صورة اللون "}{color}
-          <input type="url" dir="ltr" placeholder="https://" value={photos[color] ?? ""}
-            onChange={e => setPhotos({ ...photos, [color]: e.target.value })} /></label>)}
         {variants.map(({ color, size, stock }) => <label key={variantKey(color, size)}>
           {[color, size].filter(Boolean).join(" / ")}
           <input type="number" min={0} step={1} required value={stock}
@@ -660,7 +692,7 @@ export function AdminProductForm({
         <input type="checkbox" name="is_active" defaultChecked={p?.is_active} />{" "}
         {isEn ? "Publish product" : "نشر المنتج"}
       </label>
-      <SubmitButton disabled={photoBusy || (flashEnabled && (flashPriceInvalid || flashWindowInvalid || flashMissingEnd))}>
+      <SubmitButton disabled={photoBusy || galleryInvalid || (flashEnabled && (flashPriceInvalid || flashWindowInvalid || flashMissingEnd))}>
         {isEn ? "Save Product" : "حفظ المنتج"}
       </SubmitButton>
     </form>

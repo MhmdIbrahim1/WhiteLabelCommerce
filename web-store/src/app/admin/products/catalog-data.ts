@@ -20,7 +20,7 @@ export async function editorProduct(id: string) {
   const { storeId } = await requireAdmin("manage_products");
   // Cost is private. Only the authorized full editor reads it via the server client.
   const result = await adminDb().from("products").select(productColumns +
-    ",cost_price,description,description_en,max_order_qty,sizes,colors,color_images,product_variants(color,size,stock),image_paths,specifications")
+    ",cost_price,description,description_en,max_order_qty,sizes,colors,color_images,color_galleries,product_variants(color,size,stock),image_paths,specifications")
     .eq("store_id", storeId).eq("id", id).eq("product_variants.listed", true).maybeSingle<AdminProductItem>();
   return result.error ? checked(result) : result.data;
 }

@@ -31,6 +31,7 @@ export type Product = {
   max_order_qty?: number | null;
   product_variants?: import("./variant-stock").Variant[];
   color_images?: Record<string, string>;
+  color_galleries?: Record<string, string[]>;
   sizes: string[];
   colors: string[];
   image_path: string | null;

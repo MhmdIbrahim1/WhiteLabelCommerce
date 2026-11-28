@@ -37,6 +37,7 @@ import { availableRestockKeys, type Variant } from "@/lib/variant-stock";
 import { pagination } from "@/lib/workflow";
 import { directoryHref, isRecordId } from "@/lib/workspace-directory";
 import { numberField, quickProductChange } from "@/lib/catalog-quick-edit";
+import { parseGalleryFields } from "@/lib/color-galleries";
 import { safeRelativePath, validateImageMagicBytes } from "@/lib/security";
 
 const catalog = "/admin/products";
@@ -174,6 +175,9 @@ export async function saveProduct(f: FormData) {
   )
     finish(destination, false);
 
+  const galleryFields = parseGalleryFields(f, row.colors);
+  if (!galleryFields) finish(destination, false);
+
   // Verify category_id strictly belongs to the active store
   const { data: ownedCategory } = await db
     .from("categories")
@@ -237,7 +241,7 @@ export async function saveProduct(f: FormData) {
   }
   const values = image ? { ...row, image_path: image } : row;
   const result = await db.rpc("save_catalog_product", {
-    p_store: storeId, p_id: id || null, p_fields: { ...values, color_images: JSON.parse(text(f, "color_images") || "{}") },
+    p_store: storeId, p_id: id || null, p_fields: { ...values, ...galleryFields },
     p_variants: variants,
     p_original_variants: originalVariants,
     p_original_stock: Number(text(f, "original_stock")), p_previous_image: previous,

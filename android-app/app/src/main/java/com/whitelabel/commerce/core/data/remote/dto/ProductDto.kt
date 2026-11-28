@@ -45,6 +45,7 @@ data class ProductDto(
     @SerialName("colors") val colors: List<String> = emptyList(),
     @SerialName("product_variants") val variants: List<VariantDto> = emptyList(),
     @SerialName("color_images") val colorImages: Map<String, String> = emptyMap(),
+    @SerialName("color_galleries") val colorGalleries: Map<String, List<String>> = emptyMap(),
     @SerialName("image_paths") val gallery: List<String>? = null,
     @SerialName("image_path") val imagePath: String? = null,
     @SerialName("specifications") val specifications: List<ProductSpecificationDto> = emptyList(),
@@ -84,6 +85,7 @@ data class ProductDto(
             }
         },
         galleryUrls = gallery.orEmpty().mapNotNull(SupabaseStorageUrls::resolveProductImageUrl),
+        colorGalleries = colorGalleries.mapValues { (_, paths) -> paths.mapNotNull(SupabaseStorageUrls::resolveProductImageUrl) },
         imageUrl = SupabaseStorageUrls.resolveProductImageUrl(imagePath),
         specifications = specifications.map { it.toDomain() }.filter { it.isValid },
         avgRating = avgRating,

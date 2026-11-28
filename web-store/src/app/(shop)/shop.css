@@ -1296,7 +1296,37 @@
 .gallery-lightbox { padding: 0; border: 0; background: transparent; max-width: 96vw; max-height: 94dvh; }
 .gallery-lightbox::backdrop { background: rgb(0 0 0 / 80%); }
 .gallery-lightbox img { display: block; max-width: 94vw; height: auto; max-height: 90dvh; width: auto; object-fit: contain; }
-.gallery-lightbox button { position: absolute; inset-block-start: .5rem; inset-inline-end: .5rem; z-index: 1; }
+.product-gallery :is(.gallery-arrow,.gallery-close) {
+  position: absolute;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  inline-size: 44px;
+  block-size: 44px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--ink);
+}
+.product-gallery .gallery-arrow { inset-block-start: 50%; transform: translateY(-50%); }
+.gallery-arrow:dir(rtl) svg { transform: scaleX(-1); }
+.gallery-prev { inset-inline-start: .5rem; }
+.gallery-next, .gallery-close { inset-inline-end: .5rem; }
+.gallery-close { inset-block-start: .5rem; }
+.gallery-counter {
+  position: absolute;
+  inset-block-end: .75rem;
+  inset-inline-start: .75rem;
+  border-radius: 1rem;
+  padding: .15rem .65rem;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  font-size: .85rem;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
 
 .shop .detail-buy {
   display: grid;

@@ -40,6 +40,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -71,18 +72,17 @@ import kotlinx.coroutines.launch
 
 @Composable
 internal fun ProductGallery(product: Product, selectedColor: String?, badge: @Composable BoxScope.() -> Unit) {
-    val gallery = remember(product.imageUrl, product.galleryUrls, product.colorImages) {
-        (listOfNotNull(product.imageUrl) + product.galleryUrls + product.colorImages.values)
-            .filter(String::isNotBlank).distinct()
+    val gallery = remember(product, selectedColor) { product.galleryFor(selectedColor) }
+    key(product.id, selectedColor, gallery) {
+        GalleryContent(gallery, product.displayName, badge)
     }
-    val selectedImage = product.imageFor(selectedColor)
-    val pager = rememberPagerState(initialPage = gallery.indexOf(selectedImage).coerceAtLeast(0)) { gallery.size }
+}
+
+@Composable
+private fun GalleryContent(gallery: List<String>, name: String, badge: @Composable BoxScope.() -> Unit) {
+    val pager = rememberPagerState { gallery.size }
     val scope = rememberCoroutineScope()
-    var lightboxPage by rememberSaveable(product.id) { mutableStateOf<Int?>(null) }
-    LaunchedEffect(selectedColor, selectedImage, gallery) {
-        val page = gallery.indexOf(selectedImage)
-        if (page >= 0 && page != pager.currentPage) pager.animateScrollToPage(page)
-    }
+    var lightboxPage by rememberSaveable { mutableStateOf<Int?>(null) }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Box(Modifier.fillMaxWidth().aspectRatio(4f / 3f).clip(MaterialTheme.shapes.large)
@@ -92,7 +92,7 @@ internal fun ProductGallery(product: Product, selectedColor: String?, badge: @Co
             } else {
                 HorizontalPager(state = pager, key = { gallery[it] }, modifier = Modifier.fillMaxSize()) { index ->
                     SubcomposeAsyncImage(
-                        model = gallery[index], contentDescription = product.displayName,
+                        model = gallery[index], contentDescription = name,
                         contentScale = ContentScale.Fit,
                         modifier = Modifier.fillMaxSize().clickable(
                             role = Role.Button, onClickLabel = localized("تكبير الصورة", "Enlarge image"),
@@ -162,7 +162,7 @@ internal fun ProductGallery(product: Product, selectedColor: String?, badge: @Co
         }
     }
     lightboxPage?.takeIf { it in gallery.indices }?.let { index ->
-        GalleryLightbox(gallery, index, product.displayName) { finalIndex ->
+        GalleryLightbox(gallery, index, name) { finalIndex ->
             lightboxPage = null
             scope.launch { pager.scrollToPage(finalIndex) }
         }

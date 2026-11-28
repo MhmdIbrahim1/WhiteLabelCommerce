@@ -202,7 +202,7 @@
 .sf-store .detail-buy { border-block-start: 1px solid var(--line); padding-block-start: 1.1rem; }
 .sf-store .sf-product .price-badge { font-size: 1.55rem; }
 .sf-store .detail-buy .variant-chip { border-width: 1px; min-block-size: 44px; }
-.sf-store .detail-buy .variant-chip:disabled { text-decoration: line-through; }
+.sf-store .detail-buy .variant-chip:is(:disabled,[data-sold-out="true"]) { text-decoration: line-through; }
 .shop.sf-store .detail-cta { color: var(--sf-on-detail) !important; min-block-size: 48px; }
 .sf-store .sf-sticky-buy { display: none; }
 .sf-store .sf-description { padding-block: 1.5rem; border-block: 1px solid var(--line); display: grid; gap: .8rem; }
@@ -252,6 +252,8 @@
 
 @keyframes sf-enter { from { transform: translateX(var(--entry-x)); opacity: .8; } }
 @media (prefers-reduced-motion: no-preference) {
+  .sf-store[data-motion-enabled="true"] :is(.gallery-open,.gallery-lightbox) img { animation: sf-photo-in 180ms ease-out; }
+  @keyframes sf-photo-in { from { opacity: .55; } to { opacity: 1; } }
   .sf-store[data-motion-enabled="true"] .sf-drawer-sheet { animation: sf-enter 230ms ease-out; }
   .sf-store[data-motion-enabled="true"] :is(.category-strip,.catalog-quick-pills) { scroll-behavior: smooth; }
 }

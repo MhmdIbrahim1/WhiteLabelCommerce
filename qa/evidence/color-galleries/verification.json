@@ -1,0 +1,403 @@
+{
+  "verifiedAt": "2026-11-28T16:50:50.458Z",
+  "phase1Commit": "8deb990",
+  "branch": "feat/color-galleries-and-nova-catalog",
+  "supabaseProject": "zpabcnskkbpplurngtle",
+  "migration": "20261128180000_product_color_galleries.sql",
+  "beforeCatalogReplacement": {
+    "orders": 50,
+    "order_items": 67,
+    "orders_hash": "5917da48d030d7f032b3650bd4e08f72",
+    "order_items_hash": "1003fc901fc513d60378953468f291f4",
+    "omar_products": 51,
+    "omar_variants": 726,
+    "omar_stock": 1038,
+    "omar_products_hash": "72c65e7308aca5ddaa918554b7a6ed1d",
+    "omar_variants_hash": "746ce47b8561353351ea3dd301d6a395"
+  },
+  "afterQA": {
+    "products": 100,
+    "categories": 10,
+    "covers": 100,
+    "galleries": 302,
+    "photos": 906,
+    "variants": 570,
+    "stockMismatches": 0,
+    "soldOutProducts": 6,
+    "flashDeals": 10,
+    "orders": 50,
+    "omar_stock": 1038,
+    "order_items": 67,
+    "orders_hash": "5917da48d030d7f032b3650bd4e08f72",
+    "omar_products": 51,
+    "omar_variants": 726,
+    "order_items_hash": "1003fc901fc513d60378953468f291f4",
+    "omar_products_hash": "72c65e7308aca5ddaa918554b7a6ed1d",
+    "omar_variants_hash": "746ce47b8561353351ea3dd301d6a395"
+  },
+  "stockUnits": 3294,
+  "discountedProducts": 30,
+  "distinctPhotoContentHashes": 906,
+  "storageChecks": [
+    "HTTP HEAD 200",
+    "HTTP GET 200",
+    "image/webp",
+    "SHA-256 against uploaded content",
+    "decoded WebP longest edge 800–960 px"
+  ],
+  "sql": {
+    "gallerySaveRegression": "passed and rolled back",
+    "checkoutAndCancel": "passed and rolled back",
+    "nonHeroOrderCardPrimary": "passed",
+    "seedRepeat": "preserved installed catalog"
+  },
+  "web": {
+    "unitTests": 243,
+    "typescript": "passed",
+    "eslintWarnings": 0,
+    "nextProductionBuild": "passed",
+    "merchantSaveAndRestore": "passed, other product fields and SKU inventory fingerprint preserved",
+    "cartPersistenceAndCleanup": "passed",
+    "coverage": [
+      {
+        "kind": "tee",
+        "slug": "nanaimo-ringspun-tee",
+        "lang": "en",
+        "mode": "light",
+        "width": 1440,
+        "colors": 4
+      },
+      {
+        "kind": "tee",
+        "slug": "nanaimo-ringspun-tee",
+        "lang": "en",
+        "mode": "dark",
+        "width": 1440,
+        "colors": 4
+      },
+      {
+        "kind": "tee",
+        "slug": "nanaimo-ringspun-tee",
+        "lang": "ar",
+        "mode": "light",
+        "width": 1440,
+        "colors": 4
+      },
+      {
+        "kind": "tee",
+        "slug": "nanaimo-ringspun-tee",
+        "lang": "ar",
+        "mode": "dark",
+        "width": 1440,
+        "colors": 4
+      },
+      {
+        "kind": "tee",
+        "slug": "nanaimo-ringspun-tee",
+        "lang": "en",
+        "mode": "light",
+        "width": 390,
+        "colors": 4
+      },
+      {
+        "kind": "tee",
+        "slug": "nanaimo-ringspun-tee",
+        "lang": "en",
+        "mode": "dark",
+        "width": 390,
+        "colors": 4
+      },
+      {
+        "kind": "tee",
+        "slug": "nanaimo-ringspun-tee",
+        "lang": "ar",
+        "mode": "light",
+        "width": 390,
+        "colors": 4
+      },
+      {
+        "kind": "tee",
+        "slug": "nanaimo-ringspun-tee",
+        "lang": "ar",
+        "mode": "dark",
+        "width": 390,
+        "colors": 4
+      },
+      {
+        "kind": "wallet",
+        "slug": "leather-bifold-wallet-with-rfid-protection",
+        "lang": "en",
+        "mode": "light",
+        "width": 1440,
+        "colors": 4
+      },
+      {
+        "kind": "wallet",
+        "slug": "leather-bifold-wallet-with-rfid-protection",
+        "lang": "en",
+        "mode": "dark",
+        "width": 1440,
+        "colors": 4
+      },
+      {
+        "kind": "wallet",
+        "slug": "leather-bifold-wallet-with-rfid-protection",
+        "lang": "ar",
+        "mode": "light",
+        "width": 1440,
+        "colors": 4
+      },
+      {
+        "kind": "wallet",
+        "slug": "leather-bifold-wallet-with-rfid-protection",
+        "lang": "ar",
+        "mode": "dark",
+        "width": 1440,
+        "colors": 4
+      },
+      {
+        "kind": "wallet",
+        "slug": "leather-bifold-wallet-with-rfid-protection",
+        "lang": "en",
+        "mode": "light",
+        "width": 390,
+        "colors": 4
+      },
+      {
+        "kind": "wallet",
+        "slug": "leather-bifold-wallet-with-rfid-protection",
+        "lang": "en",
+        "mode": "dark",
+        "width": 390,
+        "colors": 4
+      },
+      {
+        "kind": "wallet",
+        "slug": "leather-bifold-wallet-with-rfid-protection",
+        "lang": "ar",
+        "mode": "light",
+        "width": 390,
+        "colors": 4
+      },
+      {
+        "kind": "wallet",
+        "slug": "leather-bifold-wallet-with-rfid-protection",
+        "lang": "ar",
+        "mode": "dark",
+        "width": 390,
+        "colors": 4
+      }
+    ],
+    "errors": [],
+    "authorization": {
+      "anonymous": {
+        "products.cost_price": 401,
+        "store_subscriptions.admin_notes": 401,
+        "store_invitations.token_hash": 401,
+        "orders.delivery_token": 401,
+        "order_items.unit_cost": 401,
+        "platform_billing_secrets.paymob_api_key": 401,
+        "platform_billing_secrets.paymob_hmac_secret": 401,
+        "ai_usage_reservations.id": 401,
+        "private": 406
+      },
+      "buyer": {
+        "products.cost_price": 403,
+        "store_subscriptions.admin_notes": 403,
+        "store_invitations.token_hash": 403,
+        "orders.delivery_token": 403,
+        "order_items.unit_cost": 403,
+        "platform_billing_secrets.paymob_api_key": 403,
+        "platform_billing_secrets.paymob_hmac_secret": 403,
+        "ai_usage_reservations.id": 403,
+        "private": 406
+      },
+      "merchant": {
+        "products.cost_price": 403,
+        "store_subscriptions.admin_notes": 403,
+        "store_invitations.token_hash": 403,
+        "orders.delivery_token": 403,
+        "order_items.unit_cost": 403,
+        "platform_billing_secrets.paymob_api_key": 403,
+        "platform_billing_secrets.paymob_hmac_secret": 403,
+        "ai_usage_reservations.id": 403,
+        "private": 406
+      }
+    }
+  },
+  "android": {
+    "defaultVersionCode": 56,
+    "defaultVersionName": "1.6.0",
+    "unitTests": {
+      "githubDebug": 206,
+      "githubRelease": 206,
+      "playstoreDebug": 206,
+      "playstoreRelease": 206
+    },
+    "unitTestFailures": 0,
+    "check": "passed",
+    "lintGithubDebug": {
+      "errors": 0,
+      "warnings": 89
+    },
+    "verifyGithubDebugManifestContract": "passed",
+    "assembleGithubRelease": "passed with R8",
+    "emulator": "emulator-5580",
+    "imageComparisonScale": "mean absolute RGB channel difference, 0–255",
+    "verifiedViews": {
+      "nanaimo-ringspun-tee": [
+        {
+          "color": "أسود",
+          "view": 1,
+          "stock": 15,
+          "mean_rgb_error": 0.1
+        },
+        {
+          "color": "أسود",
+          "view": 2,
+          "stock": 15,
+          "mean_rgb_error": 0.16
+        },
+        {
+          "color": "أسود",
+          "view": 3,
+          "stock": 15,
+          "mean_rgb_error": 0.36
+        },
+        {
+          "color": "كحلي",
+          "view": 1,
+          "stock": 14,
+          "mean_rgb_error": 0.11
+        },
+        {
+          "color": "كحلي",
+          "view": 2,
+          "stock": 14,
+          "mean_rgb_error": 0.09
+        },
+        {
+          "color": "كحلي",
+          "view": 3,
+          "stock": 14,
+          "mean_rgb_error": 0.16
+        },
+        {
+          "color": "زيتي",
+          "view": 1,
+          "stock": 14,
+          "mean_rgb_error": 0.11
+        },
+        {
+          "color": "زيتي",
+          "view": 2,
+          "stock": 14,
+          "mean_rgb_error": 0.09
+        },
+        {
+          "color": "زيتي",
+          "view": 3,
+          "stock": 14,
+          "mean_rgb_error": 0.42
+        },
+        {
+          "color": "أبيض",
+          "view": 1,
+          "stock": 0,
+          "mean_rgb_error": 0.06
+        },
+        {
+          "color": "أبيض",
+          "view": 2,
+          "stock": 0,
+          "mean_rgb_error": 0.05
+        },
+        {
+          "color": "أبيض",
+          "view": 3,
+          "stock": 0,
+          "mean_rgb_error": 0.21
+        }
+      ],
+      "leather-bifold-wallet-with-rfid-protection": [
+        {
+          "color": "جملي",
+          "view": 1,
+          "stock": 9,
+          "mean_rgb_error": 0.22
+        },
+        {
+          "color": "جملي",
+          "view": 2,
+          "stock": 9,
+          "mean_rgb_error": 0.31
+        },
+        {
+          "color": "جملي",
+          "view": 3,
+          "stock": 9,
+          "mean_rgb_error": 0.42
+        },
+        {
+          "color": "أسود",
+          "view": 1,
+          "stock": 10,
+          "mean_rgb_error": 0.22
+        },
+        {
+          "color": "أسود",
+          "view": 2,
+          "stock": 10,
+          "mean_rgb_error": 0.32
+        },
+        {
+          "color": "أسود",
+          "view": 3,
+          "stock": 10,
+          "mean_rgb_error": 0.43
+        },
+        {
+          "color": "كحلي",
+          "view": 1,
+          "stock": 12,
+          "mean_rgb_error": 0.23
+        },
+        {
+          "color": "كحلي",
+          "view": 2,
+          "stock": 12,
+          "mean_rgb_error": 0.31
+        },
+        {
+          "color": "كحلي",
+          "view": 3,
+          "stock": 12,
+          "mean_rgb_error": 0.43
+        },
+        {
+          "color": "عنابي",
+          "view": 1,
+          "stock": 0,
+          "mean_rgb_error": 0.22
+        },
+        {
+          "color": "عنابي",
+          "view": 2,
+          "stock": 0,
+          "mean_rgb_error": 0.32
+        },
+        {
+          "color": "عنابي",
+          "view": 3,
+          "stock": 0,
+          "mean_rgb_error": 0.42
+        }
+      ]
+    },
+    "lightboxGestures": [
+      "double tap",
+      "two-pointer pinch",
+      "page swipe"
+    ]
+  }
+}

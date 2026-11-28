@@ -33,7 +33,8 @@ const loadProduct = cache(async (storeId: string, id: string) => {
   const isUuid = UUID_RE.test(id);
   const query = db
     .from("products")
-    .select(productFields + ",image_paths,color_images,product_variants(color,size,stock)")
+    .select(productFields + ",image_paths,color_images,color_galleries,product_variants(color,size,stock)")
+    .eq("product_variants.listed", true)
     .eq("store_id", storeId)
     .eq("is_active", true);
   return (isUuid ? query.eq("id", id) : query.eq("slug", id))

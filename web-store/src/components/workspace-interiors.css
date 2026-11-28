@@ -35,6 +35,13 @@
 .ws-content .admin-flash-pill { background: var(--card); color: var(--ws-danger); }
 .ws-content :is(.admin-flash-error,.admin-flash-pct-inline) { color: var(--ws-danger); }
 .ws-content .admin-flash-card { border-color: var(--line); background: var(--card); }
+.admin-color-galleries { min-inline-size: 0; display: grid; gap: 1rem; padding: 1rem; border: 1px solid var(--line); border-radius: var(--pt-radius); }
+.admin-color-galleries legend { padding-inline: .3rem; font-weight: 600; }
+.admin-color-galleries p { margin: 0; color: var(--muted); }
+.admin-color-gallery { display: grid; gap: .35rem; min-inline-size: 0; }
+.admin-color-gallery textarea { inline-size: 100%; resize: vertical; }
+.admin-color-previews { display: flex; gap: .4rem; flex-wrap: wrap; }
+.admin-color-previews img { inline-size: 3.5rem; block-size: 3.5rem; object-fit: cover; border: 1px solid var(--line); border-radius: var(--pt-radius); }
 .ws-preview-modes { display: inline-flex; padding: 3px; border: 1px solid var(--line); border-radius: var(--pt-radius); background: var(--card); }
 .ws-content .ws-preview-modes button { min-block-size: 34px; padding: .3rem .7rem; border: 1px solid transparent; color: var(--muted); background: transparent; font-size: .8rem; }
 .ws-content .ws-preview-modes button[aria-pressed=true] { color: var(--ink); background: var(--surface); border-color: var(--line); }
