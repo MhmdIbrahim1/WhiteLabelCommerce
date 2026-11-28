@@ -1,5 +1,7 @@
 package com.whitelabel.commerce.app.navigation
 
+import com.whitelabel.commerce.BuildConfig
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -123,13 +125,19 @@ fun WhiteLabelAppShell(
 
     fun handleHeroRoute(link: String) {
         val clean = link.trim()
-        val productIdMatch = Regex("^/products?/([0-9a-fA-F-]{8,64}).*$").matchEntire(clean)
+        val productKey = parseProductDeepLink(clean, BuildConfig.STORE_SLUG, BuildConfig.LINK_ROOT_HOST)
         val orderIdMatch = Regex("^/orders/([0-9a-fA-F-]{8,64}).*$").matchEntire(clean)
         val categoryPathMatch = Regex("^/category/([^/?#]+).*$").matchEntire(clean)
         when {
             clean == "/" -> navigateToTab(AppRoutes.HOME)
-            productIdMatch != null ->
-                navController.navigate(AppRoutes.productDetail(productIdMatch.groupValues[1]))
+            productKey != null -> {
+                val current = navController.currentBackStackEntry
+                val currentProduct = current?.takeIf { it.destination.route == AppRoutes.PRODUCT_DETAIL }
+                    ?.arguments?.getString("productId")
+                if (currentProduct != productKey) {
+                    navController.navigate(AppRoutes.productDetail(productKey))
+                }
+            }
             orderIdMatch != null ->
                 navController.navigate(AppRoutes.orderDetail(orderIdMatch.groupValues[1]))
             categoryPathMatch != null -> {
@@ -424,6 +432,7 @@ fun WhiteLabelAppShell(
 
             composable(AppRoutes.ORDERS) {
                 OrdersScreen(
+                    onOpenProduct = { navController.navigate(AppRoutes.productDetail(it)) },
                     initialOrderNumber = pendingTrackOrder?.first,
                     initialPhone = pendingTrackOrder?.second,
                     initialRetry = pendingOrderRetry,
@@ -452,6 +461,8 @@ fun WhiteLabelAppShell(
             ) { backStackEntry ->
                 val orderId = backStackEntry.arguments?.getString("orderId").orEmpty()
                 OrderDetailScreen(
+                    onOpenProduct = { navController.navigate(AppRoutes.productDetail(it)) },
+                    onOpenCart = { navigateToTab(AppRoutes.CART) },
                     orderId = orderId,
                     onRetryPayment = { retry ->
                         pendingOrderRetry = retry
@@ -474,6 +485,7 @@ fun WhiteLabelAppShell(
                 arguments = listOf(navArgument("productId") { type = NavType.StringType }),
             ) {
                 ProductDetailScreen(
+                    onBuyNow = { navController.navigate(AppRoutes.CHECKOUT) },
                     onBack = { navController.popBackStack() },
                     onSearch = ::openSearch,
                     onAddedToCart = { msg, photo -> showBanner(msg, showCartAction = true, image = photo) },

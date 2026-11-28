@@ -80,7 +80,6 @@ import com.whitelabel.commerce.core.data.remote.PhoneNormalizer
 import com.whitelabel.commerce.core.designsystem.LocalBrandColors
 import com.whitelabel.commerce.core.designsystem.components.BrandEmptyState
 import com.whitelabel.commerce.core.designsystem.components.CarrierLocalizer
-import com.whitelabel.commerce.core.designsystem.components.ColorSwatchMapper
 import com.whitelabel.commerce.core.designsystem.components.OrderStatusBadge
 import com.whitelabel.commerce.core.designsystem.components.OrderTimelineStepper
 import com.whitelabel.commerce.core.designsystem.formatPrice
@@ -126,6 +125,7 @@ fun OrdersScreen(
     initialRetry: OrderRetrySelection? = null,
     onConsumeRetry: () -> Unit = {},
     onOpenOrderDetail: (orderId: String) -> Unit = {},
+    onOpenProduct: (String) -> Unit,
     onOpenSupport: (orderId: String?) -> Unit,
     onOpenAccount: () -> Unit = {},
     onShowMessage: (String) -> Unit,
@@ -457,6 +457,7 @@ fun OrdersScreen(
                             HorizontalDivider(color = brandColors.hairline)
                             ItemizedReceiptRows(
                                 receipt = matched,
+                                onOpenProduct = onOpenProduct,
                                 locale = state.storeSettings.locale,
                             )
                         }
@@ -497,6 +498,7 @@ fun OrdersScreen(
             items(visibleReceipts, key = { receiptListKey(it.orderNumber) }) { receipt ->
                 SavedReceiptCard(
                     receipt = receipt,
+                    onOpenProduct = onOpenProduct,
                     locale = state.storeSettings.locale,
                     isRefreshing = state.tracking.refreshingOrderNumber == receipt.orderNumber,
                     hasOnlinePaymentEnabled = enabledOnlineMethods.isNotEmpty(),
@@ -1016,7 +1018,7 @@ internal fun PaymentAndShippingSummary(
         }
         window.remainingMillis?.let { remaining ->
             val minutes = (remaining + 59_999) / 60_000
-            Text(localized("الوقت المتبقي للدفع: ⁦$minutes⁩ دقيقة", "Payment window: $minutes min remaining"),
+            Text(localized("الوقت المتبقي للدفع: \u2066$minutes\u2069 دقيقة", "Payment window: $minutes min remaining"),
                 style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"))
         }
         if (hasOnlinePaymentEnabled && window.canRetry) {
@@ -1047,6 +1049,7 @@ internal fun PaymentAndShippingSummary(
 @Composable
 private fun SavedReceiptCard(
     receipt: SavedOrderReceipt,
+    onOpenProduct: (String) -> Unit,
     locale: String,
     isRefreshing: Boolean,
     hasOnlinePaymentEnabled: Boolean,
@@ -1135,7 +1138,7 @@ private fun SavedReceiptCard(
 
             HorizontalDivider(color = brandColors.hairline)
 
-            ItemizedReceiptRows(receipt = receipt, locale = locale)
+            ItemizedReceiptRows(receipt = receipt, locale = locale, onOpenProduct = onOpenProduct)
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1173,31 +1176,21 @@ private fun SavedReceiptCard(
 @Composable
 private fun ItemizedReceiptRows(
     receipt: SavedOrderReceipt,
+    onOpenProduct: (String) -> Unit,
     locale: String,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         receipt.items.forEach { item ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                val variant = listOfNotNull(
-                    item.size,
-                    item.color?.let(ColorSwatchMapper::displayLabel),
-                ).joinToString(" • ")
-                Text(
-                    text = "${item.quantity} × ${item.displayName}" +
-                        if (variant.isNotEmpty()) " ($variant)" else "",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f),
-                )
-                Text(
-                    text = formatPrice(item.lineTotal, receipt.currency, locale),
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
+            OrderProductRow(
+                productId = item.productId,
+                name = item.displayName,
+                size = item.size,
+                color = item.color,
+                quantity = item.quantity,
+                lineTotal = formatPrice(item.lineTotal, receipt.currency, locale),
+                onOpenProduct = onOpenProduct,
+                thumbnail = { ReceiptThumbnail(item.imageUrl) },
+            )
         }
         Spacer(modifier = Modifier.height(2.dp))
         Row(

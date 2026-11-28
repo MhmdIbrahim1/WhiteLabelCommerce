@@ -1,6 +1,19 @@
 package com.whitelabel.commerce.feature.catalog
 
+import android.content.Intent
+import androidx.compose.material.icons.rounded.CreditCard
+import androidx.compose.material.icons.rounded.LocalShipping
+import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.Sync
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
+import com.whitelabel.commerce.BuildConfig
 import com.whitelabel.commerce.core.designsystem.components.BannerFeedback
+import com.whitelabel.commerce.core.designsystem.components.RecentlyViewedRow
+import com.whitelabel.commerce.core.domain.model.PaymentMethod
+import com.whitelabel.commerce.core.domain.model.StoreSettings
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -12,6 +25,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -28,7 +42,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.AddShoppingCart
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Checklist
@@ -66,7 +79,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
@@ -75,7 +87,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil.compose.SubcomposeAsyncImage
 import com.whitelabel.commerce.core.designsystem.LocalBrandColors
 import com.whitelabel.commerce.core.designsystem.LocalStoreSettings
 import com.whitelabel.commerce.core.designsystem.components.BrandEmptyState
@@ -83,7 +94,6 @@ import com.whitelabel.commerce.core.designsystem.components.ColorSwatchMapper
 import com.whitelabel.commerce.core.designsystem.components.FlashRoseColor
 import com.whitelabel.commerce.core.designsystem.components.FlashSaleCountdownPill
 import com.whitelabel.commerce.core.designsystem.components.ProductCard
-import com.whitelabel.commerce.core.designsystem.components.ProductImageFallback
 import com.whitelabel.commerce.core.designsystem.components.RatingAmberColor
 import com.whitelabel.commerce.core.designsystem.components.RatingAmberTextColor
 import com.whitelabel.commerce.core.designsystem.components.WishlistHeartIconButton
@@ -98,6 +108,7 @@ fun ProductDetailScreen(
     onBack: () -> Unit,
     onSearch: () -> Unit,
     onAddedToCart: (String, String?) -> Unit,
+    onBuyNow: () -> Unit,
     onProductClick: (String) -> Unit = {},
     onOpenAccount: () -> Unit = {},
     onShowMessage: (String) -> Unit = {},
@@ -107,15 +118,21 @@ fun ProductDetailScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    LaunchedEffect(lifecycle, viewModel) {
-        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { viewModel.observeReviewReplies() }
+    val productId = state.product?.id
+    LaunchedEffect(lifecycle, viewModel, productId) {
+        if (productId != null) lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            viewModel.observeReviewReplies(productId)
+        }
     }
+    val recent by viewModel.recentlyViewed.collectAsStateWithLifecycle(initialValue = emptyList())
+    val context = LocalContext.current
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val brandColors = LocalBrandColors.current
     val settings = LocalStoreSettings.current
     var showSizeGuide by remember { mutableStateOf(false) }
     var showWriteReview by remember { mutableStateOf(false) }
-    var showRestockInput by remember { mutableStateOf(false) }
-    var restockPhone by remember { mutableStateOf("") }
+    var showRestockInput by remember(productId, state.selectedSize, state.selectedColor) { mutableStateOf(false) }
+    var restockPhone by remember(productId, state.selectedSize, state.selectedColor) { mutableStateOf("") }
     var flashExpired by remember(state.product?.id, state.product?.flashSaleEndsAt) {
         mutableStateOf(false)
     }
@@ -123,8 +140,11 @@ fun ProductDetailScreen(
     Scaffold(
         modifier = modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
+        // The app shell already places this destination inside the system bars.
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
+                windowInsets = WindowInsets(0, 0, 0, 0),
                 title = {
                     Text(
                         text = state.product?.displayName ?: localized("تفاصيل المنتج", "Product details"),
@@ -142,7 +162,20 @@ fun ProductDetailScreen(
                 },
                 actions = {
                     SearchAction(onSearch)
-                    if (state.product != null) {
+                    state.product?.let { product ->
+                        val shareLabel = localized("مشاركة المنتج", "Share product")
+                        IconButton(onClick = {
+                            val url = buildProductShareUrl(BuildConfig.WEB_STORE_BASE_URL, BuildConfig.STORE_SLUG, product.slug, product.id)
+                            val message = buildProductShareText(product, settings.storeName, settings.currency, settings.locale, url, rtl)
+                            val intent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_SUBJECT, product.displayName)
+                                putExtra(Intent.EXTRA_TEXT, message)
+                            }
+                            context.startActivity(Intent.createChooser(intent, shareLabel))
+                        }) {
+                            Icon(Icons.Rounded.Share, contentDescription = shareLabel)
+                        }
                         WishlistHeartIconButton(
                             isWishlisted = state.isWishlisted,
                             onClick = {
@@ -171,70 +204,19 @@ fun ProductDetailScreen(
             )
         },
         bottomBar = {
-            val product = state.product
-            if (product != null) {
-                Surface(
-                    color = MaterialTheme.colorScheme.surface,
-                    shadowElevation = 6.dp,
-                ) {
-                    Column {
-                        HorizontalDivider(color = brandColors.hairline)
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                            horizontalArrangement = Arrangement.spacedBy(14.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column {
-                                Text(
-                                    text = localized("الإجمالي", "Total"),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                val unitEffective = if (!flashExpired) product.effectivePrice() else product.price
-                                Text(
-                                    text = formatPrice(
-                                        amount = unitEffective * state.quantity.coerceAtLeast(1),
-                                        currencyCode = settings.currency,
-                                        localeTag = settings.locale,
-                                    ),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = if (!flashExpired && product.isFlashSaleActive()) {
-                                        FlashRoseColor
-                                    } else {
-                                        MaterialTheme.colorScheme.primary
-                                    },
-                                    fontWeight = FontWeight.Bold,
-                                )
-                            }
-
-                            Button(
-                                onClick = { viewModel.addToCart { text -> onAddedToCart(text, product.imageFor(state.selectedColor)) } },
-                                enabled = state.canAddToCart,
-                                shape = MaterialTheme.shapes.small,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(48.dp),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.AddShoppingCart,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp),
-                                )
-                                Text(
-                                    text = if (product.isInStock) {
-                                        localized("أضف إلى السلة", "Add to cart")
-                                    } else {
-                                        localized("نفذت الكمية", "Out of stock")
-                                    },
-                                    style = MaterialTheme.typography.labelLarge,
-                                    modifier = Modifier.padding(start = 8.dp),
-                                )
-                            }
-                        }
-                    }
-                }
+            state.product?.let { product ->
+                PurchaseBar(
+                    state = state,
+                    total = formatPrice(
+                        (if (flashExpired) product.price else product.effectivePrice()) * state.quantity,
+                        settings.currency, settings.locale,
+                    ),
+                    onAdd = {
+                        val image = product.imageFor(state.selectedColor)
+                        viewModel.addToCart(onShowMessage) { message -> onAddedToCart(message, image) }
+                    },
+                    onBuy = { viewModel.addToCart(onShowMessage) { onBuyNow() } },
+                )
             }
         },
     ) { innerPadding ->
@@ -272,8 +254,6 @@ fun ProductDetailScreen(
             else -> {
                 val product = state.product!!
                 val inventory = remember(product) { product.inventory }
-                val gallery = remember(product) { (listOfNotNull(product.imageUrl) + product.galleryUrls + product.colorImages.values).distinct() }
-                var activeImage by remember(product, state.selectedColor) { mutableStateOf(product.imageFor(state.selectedColor)) }
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
@@ -282,33 +262,7 @@ fun ProductDetailScreen(
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    // 1. High-Res Product Image Preview
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(0.9f)
-                            .clip(MaterialTheme.shapes.large)
-                            .background(MaterialTheme.colorScheme.surfaceVariant),
-                    ) {
-                        if (!activeImage.isNullOrBlank()) {
-                            SubcomposeAsyncImage(
-                                model = activeImage,
-                                contentDescription = product.displayName,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize(),
-                                loading = {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .background(rememberShimmerBrush()),
-                                    )
-                                },
-                                error = { ProductImageFallback() },
-                            )
-                        } else {
-                            ProductImageFallback()
-                        }
-
+                    ProductGallery(product, state.selectedColor) {
                         val activeFlash = !flashExpired && product.isFlashSaleActive()
                         val flashPct = if (activeFlash) product.flashSavingsPercent() else null
                         if (flashPct != null) {
@@ -440,43 +394,41 @@ fun ProductDetailScreen(
                             )
                         }
 
-                        if (gallery.size > 1) {
-                            androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                items(gallery.size, key = { gallery[it] }) { index ->
-                                    IconButton(onClick = { activeImage = gallery[index] }) {
-                                        coil.compose.AsyncImage(gallery[index], localized("صورة المنتج", "Product image") + " " + (index + 1),
-                                            Modifier.size(42.dp), contentScale = ContentScale.Crop)
-                                    }
-                                }
-                            }
-                        }
-
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Surface(
                                 color = when {
-                                    !product.isInStock -> MaterialTheme.colorScheme.errorContainer
+                                    state.selectedStock <= 0 -> MaterialTheme.colorScheme.errorContainer
                                     state.selectedStock in 1..5 -> brandColors.warning.copy(alpha = 0.16f)
                                     else -> brandColors.success.copy(alpha = 0.14f)
                                 },
                                 contentColor = when {
-                                    !product.isInStock -> MaterialTheme.colorScheme.error
+                                    state.selectedStock <= 0 -> MaterialTheme.colorScheme.error
                                     state.selectedStock in 1..5 -> brandColors.warning
                                     else -> brandColors.success
                                 },
                                 shape = MaterialTheme.shapes.extraSmall,
                             ) {
                                 Text(
-                                    text = com.whitelabel.commerce.core.domain.model.stockLabel(state.selectedStock),
-                                    style = MaterialTheme.typography.labelMedium,
+                                    text = when {
+                                        state.selectedStock <= 0 -> localized("نفذت كمية هذا الخيار", "Selected option out of stock")
+                                        state.selectedStock <= 5 -> {
+                                            val count = "\u2066${state.selectedStock}\u2069"
+                                            localized("متبقي $count قطع", "Only $count left")
+                                        }
+                                        else -> localized("متوفر", "In stock")
+                                    },
+                                    style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
                                     fontWeight = FontWeight.SemiBold,
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                                 )
                             }
                         }
                     }
+
+                    TrustHighlights(settings)
 
                     // 3. Size Selector Chips + Size & Measurements Guide Trigger
                     if (product.sizes.isNotEmpty()) {
@@ -512,10 +464,9 @@ fun ProductDetailScreen(
                                     val selected = state.selectedSize == size
                                     val available = inventory.stock(state.selectedColor, size, product.stock) > 0
                                     FilterChip(
-                                        selected = selected && available,
-                                        enabled = available,
+                                        selected = selected,
                                         onClick = { viewModel.selectSize(size) },
-                                        leadingIcon = if (selected && available) {
+                                        leadingIcon = if (selected) {
                                             {
                                                 Icon(
                                                     imageVector = Icons.Rounded.Check,
@@ -566,8 +517,7 @@ fun ProductDetailScreen(
                                     val available = inventory.colorStock(colorName, product.stock) > 0
                                     val swatchColor = ColorSwatchMapper.resolveOrNull(colorName)
                                     FilterChip(
-                                        selected = selected && available,
-                                        enabled = available,
+                                        selected = selected,
                                         onClick = { viewModel.selectColor(colorName) },
                                         leadingIcon = swatchColor?.let { resolved ->
                                             {
@@ -604,7 +554,7 @@ fun ProductDetailScreen(
                     }
 
                     // 5. Quantity Stepper OR Back-in-Stock ("Notify Me") Card
-                    if (!product.isInStock) {
+                    if (state.selectedStock <= 0) {
                         Card(
                             colors = CardDefaults.cardColors(
                                 containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f),
@@ -648,7 +598,7 @@ fun ProductDetailScreen(
                                             modifier = Modifier.size(18.dp),
                                         )
                                         Text(
-                                            text = localized("نبّهني عند التوفر", "Notify Me When Available"),
+                                            text = localized("نبّهني عند توفر هذا الخيار", "Notify Me When This Option Is Back"),
                                             modifier = Modifier.padding(start = 8.dp),
                                         )
                                     }
@@ -751,7 +701,7 @@ fun ProductDetailScreen(
                         }
                     }
 
-                    if (product.isInStock && state.quantity >= state.remaining) {
+                    if (state.selectedStock > 0 && state.quantity >= state.remaining) {
                         Text(com.whitelabel.commerce.core.domain.model.quantityLimitHint(), style = MaterialTheme.typography.bodySmall)
                     }
 
@@ -889,6 +839,14 @@ fun ProductDetailScreen(
                         }
                     }
 
+                    RecentlyViewedRow(
+                        products = recent.filter { it.id != product.id },
+                        onProductClick = onProductClick,
+                        onQuickAdd = { item ->
+                            if (item.colors.isNotEmpty() || item.sizes.isNotEmpty()) onProductClick(item.id)
+                            else viewModel.quickAddRelated(item)
+                        },
+                    )
                     Spacer(modifier = Modifier.height(12.dp))
                 }
             }
@@ -916,5 +874,82 @@ fun ProductDetailScreen(
             },
             onDismiss = { showWriteReview = false },
         )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PurchaseBar(state: ProductDetailUiState, total: String, onAdd: () -> Unit, onBuy: () -> Unit) {
+    Surface(color = MaterialTheme.colorScheme.surface) {
+        Column {
+            HorizontalDivider(color = LocalBrandColors.current.hairline)
+            FlowRow(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Column(Modifier.align(Alignment.CenterVertically).padding(end = 8.dp)) {
+                    Text(localized("الإجمالي", "Total"), style = MaterialTheme.typography.labelSmall)
+                    Text(
+                        "\u2066$total\u2069", style = MaterialTheme.typography.titleMedium.copy(fontFeatureSettings = "tnum"),
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+                if (state.selectedStock <= 0) {
+                    Button(onClick = {}, enabled = false, shape = MaterialTheme.shapes.small) {
+                        Text(localized("هذا الخيار غير متوفر", "Option unavailable"))
+                    }
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        val inset = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                        OutlinedButton(
+                            onClick = onAdd, enabled = state.canAddToCart,
+                            contentPadding = inset, shape = MaterialTheme.shapes.small,
+                        ) { Text(localized("أضف للسلة", "Add")) }
+                        Button(
+                            onClick = onBuy, enabled = state.canAddToCart,
+                            contentPadding = inset, shape = MaterialTheme.shapes.small,
+                        ) { Text(localized("اشتري الآن", "Buy Now")) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TrustHighlights(settings: StoreSettings) {
+    val shipping = if (settings.cartIncentiveEnabled && settings.freeShippingThreshold > 0) {
+        val threshold = "\u2066" + formatPrice(settings.freeShippingThreshold, settings.currency, settings.locale) + "\u2069"
+        localized("شحن مجاني للطلبات فوق $threshold", "Free shipping over $threshold")
+    } else localized("توصيل سريع لكل المحافظات", "Fast nationwide delivery")
+    val methods = settings.paymentMethods
+    val cod = PaymentMethod.COD in methods
+    val online = PaymentMethod.CARD in methods || PaymentMethod.WALLET in methods
+    val payment = when {
+        cod && online -> localized("الدفع عند الاستلام أو إلكترونياً", "COD & online payment")
+        cod -> localized("الدفع عند الاستلام", "Cash on delivery")
+        online -> localized("دفع إلكتروني", "Online payment")
+        else -> null
+    }
+    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = MaterialTheme.shapes.medium) {
+        FlowRow(
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            TrustHighlight(Icons.Rounded.LocalShipping, shipping)
+            payment?.let { TrustHighlight(Icons.Rounded.CreditCard, it) }
+            TrustHighlight(Icons.Rounded.Sync, localized("إرجاع واستبدال سهل", "Easy returns & exchanges"))
+        }
+    }
+}
+
+@Composable
+private fun TrustHighlight(icon: ImageVector, text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp))
+        Text(text, style = MaterialTheme.typography.bodySmall)
     }
 }

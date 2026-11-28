@@ -12,6 +12,7 @@ import com.whitelabel.commerce.core.data.remote.dto.AbandonedCartSessionKeys
 import com.whitelabel.commerce.core.data.remote.dto.MarkAbandonedCartRecoveredParamsDto
 import com.whitelabel.commerce.core.data.remote.dto.UpsertAbandonedCartParamsDto
 import com.whitelabel.commerce.core.domain.model.CartItem
+import com.whitelabel.commerce.core.domain.model.OrderItem
 import com.whitelabel.commerce.core.domain.model.Product
 import com.whitelabel.commerce.core.domain.model.SavedOrderReceipt
 import com.whitelabel.commerce.core.domain.repository.CartRepository
@@ -96,51 +97,17 @@ class CartRepositoryImpl @Inject constructor(
         val totalStock = row?.stock ?: product.stock
         val override = if (row == null) product.maxOrderQty else row.limit
         var added = 0
-        val normalizedSize = selectedSize?.trim()?.takeIf { it.isNotEmpty() }
-        val normalizedColor = selectedColor?.trim()?.takeIf { it.isNotEmpty() }
-
         updateCart { current ->
-            val targetKey = "${product.id}|${normalizedSize.orEmpty()}|${normalizedColor.orEmpty()}"
-            val existingIndex = current.indexOfFirst { it.toDomain().lineKey == targetKey }
+            added = current.addSelection(product, quantity, selectedSize, selectedColor, available, totalStock, override,
+                storeRepository.storeSettings.value.defaultMaxOrderQty)
+        }
+        return added
+    }
 
-            val room = current.map { it.toDomain() }.remainingQuantity(product.id, normalizedSize, normalizedColor,
-                available, totalStock, override, storeRepository.storeSettings.value.defaultMaxOrderQty)
-            added = minOf(quantity, room.coerceAtLeast(0))
-            if (added == 0) return@updateCart
-            val effectiveUnit = product.effectivePrice()
-            if (existingIndex >= 0) {
-                val existing = current[existingIndex]
-                current[existingIndex] = existing.copy(
-                    productName = product.name,
-                    productNameEn = product.nameEn,
-                    unitPrice = effectiveUnit,
-                    regularPrice = product.price,
-                    flashSalePrice = product.flashSalePrice,
-                    flashSaleStartsAt = product.flashSaleStartsAt,
-                    flashSaleEndsAt = product.flashSaleEndsAt,
-                    oldPrice = product.oldPrice,
-                    imageUrl = product.imageFor(normalizedColor),
-                    quantity = existing.quantity + added,
-                    maxStock = available, productStock = totalStock, maxOrderQty = override,
-                )
-            } else {
-                current += CartItemEntity(
-                    productId = product.id,
-                    productName = product.name,
-                    productNameEn = product.nameEn,
-                    unitPrice = effectiveUnit,
-                    regularPrice = product.price,
-                    flashSalePrice = product.flashSalePrice,
-                    flashSaleStartsAt = product.flashSaleStartsAt,
-                    flashSaleEndsAt = product.flashSaleEndsAt,
-                    oldPrice = product.oldPrice,
-                    imageUrl = product.imageFor(normalizedColor),
-                    quantity = added,
-                    maxStock = available, productStock = totalStock, maxOrderQty = override,
-                    selectedSize = normalizedSize,
-                    selectedColor = normalizedColor,
-                )
-            }
+    override suspend fun addOrderItems(items: List<OrderItem>, products: Map<String, Product>): Long {
+        var added = 0L
+        updateCart { current ->
+            added = current.addOrderItems(items, products, storeRepository.storeSettings.value.defaultMaxOrderQty)
         }
         return added
     }
@@ -316,4 +283,65 @@ class CartRepositoryImpl @Inject constructor(
     private companion object {
         val KEY_CART_ITEMS = stringPreferencesKey("${BuildConfig.STORE_ID}_cart_items_json")
     }
+}
+
+/** Apply selections in receipt order against the existing cart and preceding accepted lines. */
+internal fun MutableList<CartItemEntity>.addOrderItems(
+    items: List<OrderItem>,
+    products: Map<String, Product>,
+    defaultLimit: Int?,
+): Long = items.sumOf { line ->
+    val product = products[line.productId?.trim()] ?: return@sumOf 0L
+    val size = line.size?.trim()?.takeIf(String::isNotEmpty)
+    val color = line.color?.trim()?.takeIf(String::isNotEmpty)
+    if (!product.isActive) return@sumOf 0L
+    // Older shared-stock products have no variant rows. Still require the exact original options.
+    if (!product.inventory.tracked && (!matchesOption(color, product.colors) || !matchesOption(size, product.sizes))) {
+        return@sumOf 0L
+    }
+    val skuStock = product.inventory.stock(color, size, product.stock)
+    addSelection(product, line.quantity, size, color, skuStock, product.stock, product.maxOrderQty, defaultLimit).toLong()
+}
+
+private fun matchesOption(value: String?, options: List<String>): Boolean =
+    if (value == null) options.isEmpty() else value in options
+
+private fun MutableList<CartItemEntity>.addSelection(
+    product: Product,
+    quantity: Int,
+    selectedSize: String?,
+    selectedColor: String?,
+    skuStock: Int,
+    productStock: Int,
+    productLimit: Int?,
+    defaultLimit: Int?,
+): Int {
+    val size = selectedSize?.trim()?.takeIf(String::isNotEmpty)
+    val color = selectedColor?.trim()?.takeIf(String::isNotEmpty)
+    val room = map(CartItemEntity::toDomain).remainingQuantity(
+        product.id, size, color, skuStock, productStock, productLimit, defaultLimit,
+    )
+    val added = minOf(quantity, room)
+    if (added <= 0) return 0
+    val index = indexOfFirst { it.productId == product.id && it.selectedSize.orEmpty() == size.orEmpty() && it.selectedColor.orEmpty() == color.orEmpty() }
+    val line = CartItemEntity(
+        productId = product.id,
+        productName = product.name,
+        productNameEn = product.nameEn,
+        unitPrice = product.effectivePrice(),
+        regularPrice = product.price,
+        flashSalePrice = product.flashSalePrice,
+        flashSaleStartsAt = product.flashSaleStartsAt,
+        flashSaleEndsAt = product.flashSaleEndsAt,
+        oldPrice = product.oldPrice,
+        imageUrl = product.imageFor(color),
+        quantity = added + (getOrNull(index)?.quantity ?: 0),
+        maxStock = skuStock,
+        productStock = productStock,
+        maxOrderQty = productLimit,
+        selectedSize = size,
+        selectedColor = color,
+    )
+    if (index < 0) add(line) else this[index] = line
+    return added
 }

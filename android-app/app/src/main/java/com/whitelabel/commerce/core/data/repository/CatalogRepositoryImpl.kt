@@ -195,6 +195,18 @@ class CatalogRepositoryImpl @Inject constructor(
             ?.toDomain()
     }
 
+    override suspend fun getProductsByIds(productIds: List<String>): Result<List<Product>> = runSuspendCatching {
+        if (productIds.isEmpty()) return@runSuspendCatching emptyList()
+        val byId = supabase.from("products").select(Columns.raw(PRODUCT_COLUMNS)) {
+            filter {
+                eq("store_id", BuildConfig.STORE_ID)
+                eq("is_active", true)
+                isIn("id", productIds)
+            }
+        }.decodeList<ProductDto>().associateBy { it.id }
+        productIds.mapNotNull { byId[it]?.toDomain() }
+    }
+
     override suspend fun getProductBySlug(slug: String): Result<Product?> = runSuspendCatching {
         supabase
             .from("products")

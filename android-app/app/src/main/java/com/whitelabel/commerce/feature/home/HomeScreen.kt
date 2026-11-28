@@ -111,6 +111,7 @@ fun HomeScreen(
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val recentlyViewed by viewModel.recentlyViewed.collectAsStateWithLifecycle(initialValue = emptyList())
     val settings = LocalStoreSettings.current
 
     PullToRefreshBox(
@@ -358,6 +359,22 @@ fun HomeScreen(
                                 }
                             }
                         }
+                    }
+                }
+
+                if (recentlyViewed.isNotEmpty()) {
+                    item(key = "recently_viewed", span = { GridItemSpan(maxLineSpan) }) {
+                        com.whitelabel.commerce.core.designsystem.components.RecentlyViewedRow(
+                            products = recentlyViewed,
+                            onProductClick = onProductClick,
+                            onQuickAdd = { product ->
+                                viewModel.quickAddToCart(product)
+                                onShowMessage(
+                                    localized("تمت إضافة \"${product.displayName}\" إلى السلة", "Added \"${product.displayName}\" to cart"),
+                                    product.imageUrl,
+                                )
+                            },
+                        )
                     }
                 }
 

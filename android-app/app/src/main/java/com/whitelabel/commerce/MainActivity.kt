@@ -22,6 +22,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.whitelabel.commerce.app.MainViewModel
 import com.whitelabel.commerce.app.navigation.WhiteLabelAppShell
+import com.whitelabel.commerce.app.navigation.parseProductDeepLink
 import com.whitelabel.commerce.core.designsystem.WhiteLabelCommerceTheme
 import com.whitelabel.commerce.core.notifications.NotificationChannels
 import com.whitelabel.commerce.core.updater.AppUpdateDialog
@@ -43,6 +44,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun extractDeepLink(intent: Intent?): String? {
+        if (intent?.action == Intent.ACTION_VIEW) {
+            return intent.dataString?.takeIf {
+                parseProductDeepLink(it, BuildConfig.STORE_SLUG, BuildConfig.LINK_ROOT_HOST) != null
+            }
+        }
         return intent?.getStringExtra(NotificationChannels.EXTRA_DEEP_LINK)
             ?.trim()
             ?.takeIf { it.isNotEmpty() }
@@ -57,8 +63,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        extractDeepLink(intent)?.let { pendingDeepLinkState.value = it }
-        extractNotificationId(intent)?.let { pendingNotificationIdState.value = it }
+        if (savedInstanceState == null) {
+            extractDeepLink(intent)?.let { pendingDeepLinkState.value = it }
+            extractNotificationId(intent)?.let { pendingNotificationIdState.value = it }
+        }
 
         setContent {
             val ready by androidx.compose.runtime.produceState(false) {

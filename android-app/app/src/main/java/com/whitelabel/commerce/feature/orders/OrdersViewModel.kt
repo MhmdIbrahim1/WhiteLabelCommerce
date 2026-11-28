@@ -4,6 +4,7 @@ import com.whitelabel.commerce.core.domain.model.OrderCardSummary
 import com.whitelabel.commerce.core.domain.model.HistoryFilter
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.whitelabel.commerce.core.data.remote.runSuspendCatching
 import com.whitelabel.commerce.core.designsystem.localized
 import com.whitelabel.commerce.core.domain.model.AuthSessionState
 import com.whitelabel.commerce.core.domain.model.GuestOrderTracking
@@ -17,6 +18,8 @@ import com.whitelabel.commerce.core.domain.model.SavedOrderReceipt
 import com.whitelabel.commerce.core.domain.model.StoreSettings
 import com.whitelabel.commerce.core.domain.model.trackingSummary
 import com.whitelabel.commerce.core.domain.repository.AuthRepository
+import com.whitelabel.commerce.core.domain.repository.CartRepository
+import com.whitelabel.commerce.core.domain.repository.CatalogRepository
 import com.whitelabel.commerce.core.domain.repository.OrderRepository
 import com.whitelabel.commerce.core.domain.repository.StoreRepository
 import com.whitelabel.commerce.core.domain.repository.WalletRepository
@@ -54,7 +57,15 @@ data class OrderTrackingFormState(
     val isSubmittingReturn: Boolean = false,
     val returnSubmitError: String? = null,
     val refreshedWalletBalance: Double? = null,
+    val buyAgain: BuyAgainState = BuyAgainState.Idle,
 )
+
+sealed interface BuyAgainState {
+    data object Idle : BuyAgainState
+    data object Loading : BuyAgainState
+    data object Failed : BuyAgainState
+    data class Added(val quantity: Long, val unavailable: Long) : BuyAgainState
+}
 
 sealed interface SwitchToCodOutcome {
     data object Success : SwitchToCodOutcome
@@ -86,6 +97,8 @@ data class OrdersUiState(
 class OrdersViewModel @Inject constructor(
     private val supabase: io.github.jan.supabase.SupabaseClient,
     private val orderRepository: OrderRepository,
+    private val catalogRepository: CatalogRepository,
+    private val cartRepository: CartRepository,
     private val authRepository: AuthRepository,
     private val walletRepository: WalletRepository,
     storeRepository: StoreRepository,
@@ -292,6 +305,7 @@ class OrdersViewModel @Inject constructor(
             trackingState.update {
                 it.copy(
                     detailOrderId = cleanId, detailOrder = null, detailReturnRequest = null,
+                    buyAgain = if (it.detailOrderId == cleanId) it.buyAgain else BuyAgainState.Idle,
                     isLoadingDetail = true,
                     returnSubmitError = null,
                 )
@@ -316,6 +330,27 @@ class OrdersViewModel @Inject constructor(
 
             if (returnReq?.status == ReturnRequestStatus.REFUNDED || returnReq?.walletCredited == true) {
                 refreshWalletBalance()
+            }
+        }
+    }
+
+    fun buyAgain() {
+        val state = trackingState.value
+        val order = state.detailOrder ?: return
+        if (state.buyAgain == BuyAgainState.Loading) return
+        trackingState.update { it.copy(buyAgain = BuyAgainState.Loading) }
+        viewModelScope.launch {
+            val result = runSuspendCatching {
+                val products = order.items.mapNotNull { it.productId?.trim()?.takeIf(String::isNotEmpty) }
+                    .distinct().mapNotNull { id ->
+                        catalogRepository.getProductById(id).getOrThrow()?.let { product -> id to product }
+                    }.toMap()
+                val added = cartRepository.addOrderItems(order.items, products)
+                val requested = order.items.sumOf { it.quantity.coerceAtLeast(0).toLong() }
+                BuyAgainState.Added(added, requested - added)
+            }.getOrElse { BuyAgainState.Failed }
+            trackingState.update {
+                if (it.detailOrderId == order.id) it.copy(buyAgain = result) else it
             }
         }
     }

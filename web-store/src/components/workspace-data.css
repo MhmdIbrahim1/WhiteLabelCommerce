@@ -134,6 +134,8 @@ html:has(.ws-inspector[open]) { overflow: hidden; }
 .ws-settings-page .fields small { font-size: .8rem; font-weight: 450; }
 .ws-settings-page :is(#general,#payments,#rewards,#templates,#domains) { scroll-margin-block-start: 1rem; }
 .ws-settings-page :is(.admin-presets-bar,.admin-specs-editor,.variant-editor) { background: var(--card); border-color: var(--line); color: var(--ink); }
+.variant-bulk-fill { display: flex; align-items: end; flex-wrap: wrap; gap: .6rem 1rem; margin-block: .75rem; }
+.variant-bulk-fill input { font-variant-numeric: tabular-nums; }
 .ws-settings-page :is(.admin-preset-btn,.admin-swatch-chip,.admin-spec-del) { color: var(--ink); border-color: var(--ws-control-line); background: var(--surface); }
 .ws-settings-page :is(.admin-preset-btn.is-active,.admin-swatch-chip.is-picked) { color: var(--pt-on-fill); background: var(--pt-fill); border-color: var(--ws-control-line); }
 .ws-settings-page .template-choice { background: var(--pt-surface); color: var(--pt-ink); border-color: var(--pt-line); border-radius: var(--pt-radius); }

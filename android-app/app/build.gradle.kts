@@ -162,6 +162,14 @@ val validateReleaseStorefrontOrigin = tasks.register("validateReleaseStorefrontO
     }
 }
 
+// Debug builds may point checkout at the emulator while still opening published storefront links.
+val linkRootHost = if (validReleaseStorefrontOrigin(webStoreBaseUrl, resolvedStoreSlug)) {
+    val host = URI(webStoreBaseUrl).host.lowercase()
+    if (resolvedStoreSlug.isEmpty()) host else host.removePrefix("$resolvedStoreSlug.")
+} else "shopstage.live"
+val linkTenantHost = if (resolvedStoreSlug.isEmpty()) linkRootHost else "$resolvedStoreSlug.$linkRootHost"
+val linkTenantPath = if (resolvedStoreSlug.isEmpty()) "/products/" else "/s/$resolvedStoreSlug/products/"
+
 androidComponents.onVariants(androidComponents.selector().withBuildType("release")) { variant ->
     variant.lifecycleTasks.registerPreBuild(validateReleaseStorefrontOrigin)
 }
@@ -182,6 +190,10 @@ android {
 
         // The manifest merger XML-escapes the placeholder when serializing the attribute.
         manifestPlaceholders["appName"] = resolvedStoreName
+        manifestPlaceholders["linkTenantHost"] = linkTenantHost
+        manifestPlaceholders["linkRootHost"] = linkRootHost
+        manifestPlaceholders["linkTenantPath"] = linkTenantPath
+        buildConfigField("String", "LINK_ROOT_HOST", "\"$linkRootHost\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -394,6 +406,14 @@ tasks.register("verifyGithubDebugManifestContract") {
             .getNamedItemNS(androidNamespace, "label")?.nodeValue.orEmpty()
         val actualVersionCode = manifest.getAttributeNS(androidNamespace, "versionCode")
         val actualVersionName = manifest.getAttributeNS(androidNamespace, "versionName")
+
+        val linkData = document.getElementsByTagName("data")
+        val productRoutes = (0 until linkData.length).map { linkData.item(it) as org.w3c.dom.Element }
+            .filter { it.getAttributeNS(androidNamespace, "scheme") == "https" }
+            .map { it.getAttributeNS(androidNamespace, "host") to it.getAttributeNS(androidNamespace, "pathPrefix") }
+        check(linkTenantHost to "/products/" in productRoutes && linkRootHost to linkTenantPath in productRoutes) {
+            "Merged manifest is missing a tenant product URL"
+        }
 
         if (actualLabel != resolvedStoreName) {
             throw GradleException(

@@ -5,6 +5,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { notificationPermissions } from "@/lib/team";
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import {
   buildTrackingUrl,
   isSafeHttpUrl,
@@ -32,6 +33,7 @@ import {
 import type { ProductReview } from "@/lib/reviews-wishlist";
 import { resolveEffectivePrice } from "@/lib/flash-sale";
 import { normalizeSpecs } from "@/lib/specs";
+import { availableRestockKeys, type Variant } from "@/lib/variant-stock";
 import { pagination } from "@/lib/workflow";
 import { directoryHref, isRecordId } from "@/lib/workspace-directory";
 import { numberField, quickProductChange } from "@/lib/catalog-quick-edit";
@@ -244,24 +246,31 @@ export async function saveProduct(f: FormData) {
     if (uploaded.error) finish(destination, false);
   }
   const previous = text(f, "previous_image");
+  const variants: Variant[] = JSON.parse(text(f, "variants") || "[]");
+  const originalVariants: Variant[] = JSON.parse(text(f, "original_variants") || "[]");
+  let previousOptions: Set<string> | null = null;
   let previousStock: number | null = null;
   let previousEffectivePrice: number | null = null;
   if (id) {
     const { data: existingProd } = await db
       .from("products")
       .select(
-        "stock,price,flash_sale_price,flash_sale_starts_at,flash_sale_ends_at",
+        "stock,price,is_active,colors,sizes,flash_sale_price,flash_sale_starts_at,flash_sale_ends_at",
       )
       .eq("id", id)
       .eq("store_id", storeId)
       .maybeSingle<{
         stock: number;
         price: number;
+        is_active: boolean;
+        colors: string[];
+        sizes: string[];
         flash_sale_price: number | null;
         flash_sale_starts_at: string | null;
         flash_sale_ends_at: string | null;
       }>();
     if (existingProd) {
+      previousOptions = availableRestockKeys({ ...existingProd, product_variants: originalVariants });
       previousStock = Number(existingProd.stock ?? 0);
       previousEffectivePrice = resolveEffectivePrice({
         price: Number(existingProd.price ?? 0),
@@ -274,8 +283,8 @@ export async function saveProduct(f: FormData) {
   const values = image ? { ...row, image_path: image } : row;
   const result = await db.rpc("save_catalog_product", {
     p_store: storeId, p_id: id || null, p_fields: { ...values, color_images: JSON.parse(text(f, "color_images") || "{}") },
-    p_variants: JSON.parse(text(f, "variants") || "[]"),
-    p_original_variants: JSON.parse(text(f, "original_variants") || "[]"),
+    p_variants: variants,
+    p_original_variants: originalVariants,
     p_original_stock: Number(text(f, "original_stock")), p_previous_image: previous,
   });
   if (result.error && image) await bucket.remove([image]);
@@ -299,6 +308,11 @@ export async function saveProduct(f: FormData) {
       flash_sale_ends_at: flashSaleEndsAt,
     });
     notifyCatalogChanges(storeId, id, previousStock, stock, previousEffectivePrice, nextEffectivePrice);
+    if (previousOptions) {
+      const available = availableRestockKeys({ ...row, stock, product_variants: variants });
+      const replenished = [...available].filter(key => !previousOptions.has(key));
+      if (replenished.length) after(async () => { await notifyBackInStock(id, storeId, replenished); });
+    }
   }
   finish(destination, !result.error);
 }
@@ -306,7 +320,6 @@ export async function saveProduct(f: FormData) {
 function notifyCatalogChanges(storeId: string, id: string, beforeStock: number | null, stock: number,
   beforePrice: number | null, price: number) {
   if (beforeStock !== null && beforeStock <= 0 && stock > 0) {
-    void notifyBackInStock(id, storeId);
     void notifyWishlistProductAlert({ storeId, productId: id, kind: "restock" });
   }
   if (beforePrice !== null && price < beforePrice) {
@@ -318,7 +331,7 @@ export async function quickSaveProduct(expectedStore: string, id: string, form: 
   const { db, storeId } = await requireAdmin("manage_products");
   if (expectedStore !== storeId || !isRecordId(id)) return "changed";
   const { data: current, error } = await db.from("products")
-    .select("stock,price,flash_sale_price,flash_sale_starts_at,flash_sale_ends_at,product_variants(color,size,stock)")
+    .select("stock,price,is_active,colors,sizes,flash_sale_price,flash_sale_starts_at,flash_sale_ends_at,product_variants(color,size,stock)")
     .eq("store_id", storeId).eq("id", id).eq("product_variants.listed", true).maybeSingle();
   if (error || !current) return "changed";
   const variants = current.product_variants;
@@ -331,6 +344,10 @@ export async function quickSaveProduct(expectedStore: string, id: string, form: 
   });
   if (quotaFailure(saved.error)?.resource === "products") return "quota";
   if (saved.error) return saved.error.message === "inventory_changed" ? "inventory_changed" : "invalid";
+  if ((!current.is_active || current.stock === 0) && change.fields.is_active && change.stock > 0) {
+    const replenished = [...availableRestockKeys({ ...current, stock: change.stock, is_active: true })];
+    after(async () => { await notifyBackInStock(id, storeId, replenished); });
+  }
   notifyCatalogChanges(storeId, id, current.stock, change.stock, resolveEffectivePrice(current), resolveEffectivePrice({ ...current, price: change.price }));
   revalidatePath("/admin", "layout");
   revalidatePath("/", "layout");

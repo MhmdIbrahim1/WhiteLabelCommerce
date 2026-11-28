@@ -68,6 +68,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
@@ -90,7 +93,7 @@ import com.whitelabel.commerce.core.domain.model.ReturnRequestType
 import com.whitelabel.commerce.core.domain.model.ReturnSubmissionItem
 import com.whitelabel.commerce.core.domain.model.StoreSettings
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun OrderDetailScreen(
     orderId: String,
@@ -98,6 +101,8 @@ fun OrderDetailScreen(
     onSearch: () -> Unit,
     onOpenSupport: (orderId: String) -> Unit,
     onOpenAccount: () -> Unit,
+    onOpenProduct: (String) -> Unit,
+    onOpenCart: () -> Unit,
     onReviewProduct: (String) -> Unit,
     onRetryPayment: (OrderRetrySelection) -> Unit,
     onShowMessage: (String) -> Unit,
@@ -358,35 +363,15 @@ fun OrderDetailScreen(
                                     fontWeight = FontWeight.Bold,
                                 )
                                 order.items.forEach { line ->
-                                    val variant = listOfNotNull(
-                                        line.size,
-                                        line.color?.let(ColorSwatchMapper::displayLabel),
-                                    ).joinToString(" • ")
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.Top,
-                                    ) {
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(
-                                                text = "${line.quantity} × ${line.productName}",
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                fontWeight = FontWeight.SemiBold,
-                                            )
-                                            if (variant.isNotEmpty()) {
-                                                Text(
-                                                    text = variant,
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                )
-                                            }
-                                        }
-                                        Text(
-                                            text = formatPrice(line.lineTotal, order.currency, locale),
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            fontWeight = FontWeight.Bold,
-                                        )
-                                    }
+                                    OrderProductRow(
+                                        productId = line.productId,
+                                        name = line.productName,
+                                        size = line.size,
+                                        color = line.color,
+                                        quantity = line.quantity,
+                                        lineTotal = formatPrice(line.lineTotal, order.currency, locale),
+                                        onOpenProduct = onOpenProduct,
+                                    )
                                 }
 
                                 HorizontalDivider(color = brandColors.hairline)
@@ -442,11 +427,28 @@ fun OrderDetailScreen(
                     }
 
                     item {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(onClick = { printOrderInvoice(context, order, locale) }) { Text(localized("طباعة الفاتورة","Print invoice")) }
-                            val product = order.items.firstOrNull { it.productId != null }?.productId
-                            if (product != null && order.status == OrderStatus.DELIVERED) {
-                                OutlinedButton(onClick = { onReviewProduct(product) }) { Text(localized("تقييم المنتج","Review product")) }
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                if (order.items.isNotEmpty()) {
+                                    Button(onClick = viewModel::buyAgain, enabled = state.tracking.buyAgain != BuyAgainState.Loading) {
+                                        Text(if (state.tracking.buyAgain == BuyAgainState.Loading) localized("جارٍ الإضافة…", "Adding…")
+                                            else localized("إعادة الطلب", "Buy Again"))
+                                    }
+                                }
+                                OutlinedButton(onClick = { printOrderInvoice(context, order, locale) }) {
+                                    Text(localized("طباعة الفاتورة", "Print invoice"))
+                                }
+                                val product = order.items.firstNotNullOfOrNull { it.productId?.takeIf(String::isNotBlank) }
+                                if (product != null && order.status == OrderStatus.DELIVERED) {
+                                    OutlinedButton(onClick = { onReviewProduct(product) }) { Text(localized("تقييم المنتج", "Review product")) }
+                                }
+                            }
+                            when (val feedback = state.tracking.buyAgain) {
+                                is BuyAgainState.Added -> BuyAgainBanner(feedback, onOpenCart)
+                                BuyAgainState.Failed -> com.whitelabel.commerce.core.designsystem.components.BannerFeedback(
+                                    localized("تعذرت إعادة الطلب. حاول مجدداً.", "Couldn’t add this order. Please try again."),
+                                )
+                                else -> Unit
                             }
                         }
                     }
@@ -503,6 +505,32 @@ fun OrderDetailScreen(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun BuyAgainBanner(result: BuyAgainState.Added, onOpenCart: () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite },
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        shape = MaterialTheme.shapes.medium,
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            val quantity = "\u2066${result.quantity}\u2069"
+            Text(
+                localized("أُضيف إلى السلة: $quantity قطعة", "Added to cart: $quantity " + if (result.quantity == 1L) "item" else "items"),
+                style = MaterialTheme.typography.titleSmall,
+            )
+            if (result.unavailable > 0) {
+                val count = "\u2066${result.unavailable}\u2069"
+                Text(
+                    localized("الكمية غير المتاحة بسبب المخزون أو حد الطلب: $count",
+                        "Unavailable due to stock or order limits: $count"),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            TextButton(onClick = onOpenCart) { Text(localized("عرض السلة", "View Cart")) }
         }
     }
 }

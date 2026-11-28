@@ -3,6 +3,7 @@ package com.whitelabel.commerce.feature.home
 import com.whitelabel.commerce.core.designsystem.localized
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.whitelabel.commerce.core.data.local.RecentlyViewedStore
 import com.whitelabel.commerce.core.domain.model.Category
 import com.whitelabel.commerce.core.domain.model.Product
 import com.whitelabel.commerce.core.domain.model.StoreSettings
@@ -51,8 +52,10 @@ class HomeViewModel @Inject constructor(
     private val catalogRepository: CatalogRepository,
     private val cartRepository: CartRepository,
     private val wishlistRepository: WishlistRepository,
+    recentlyViewedStore: RecentlyViewedStore,
 ) : ViewModel() {
 
+    val recentlyViewed = recentlyViewedStore.products(catalogRepository)
     private val localState = MutableStateFlow(HomeUiState())
     private var searchJob: Job? = null
 

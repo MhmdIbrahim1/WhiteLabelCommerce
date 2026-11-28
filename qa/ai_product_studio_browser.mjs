@@ -663,7 +663,9 @@ async function workflow(staff, lang, mode, width) {
     assert.deepEqual(await usage(), { fills: 5, photos: 2 });
     assert.deepEqual(await storedObjects(), []);
     await field("price").fill("125");
-    await field("stock").fill("3");
+    await page.getByLabel(en ? "Set quantity for all options" : "تعيين نفس الكمية لكل الخيارات").fill("3");
+    await button(en ? "Apply to all" : "تطبيق على الكل").click();
+    assert.equal(await field("stock").inputValue(), "3");
     await Promise.all([page.waitForURL(u => u.pathname === "/admin/products" && u.searchParams.get("result") === "ok"),
       button(en ? "Save Product" : "حفظ المنتج").click()]);
     const rows = await rawSql("select name,name_en,description,description_en,category_id,slug,colors,specifications,stock,image_path from public.products where " + storeWhere);
