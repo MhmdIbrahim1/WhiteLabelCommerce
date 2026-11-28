@@ -9,7 +9,7 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class SavedOrderLineEntity(
-    val productId: String,
+    val productId: String = "",
     val productName: String,
     val productNameEn: String? = null,
     val unitPrice: Double,

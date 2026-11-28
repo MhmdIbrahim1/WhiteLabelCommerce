@@ -40,6 +40,8 @@ interface CatalogRepository {
 
     suspend fun getProductById(productId: String): Result<Product?>
 
+    suspend fun getProductsByIds(productIds: List<String>): Result<List<Product>>
+
     suspend fun getProductBySlug(slug: String): Result<Product?>
 
     suspend fun getRelatedProducts(

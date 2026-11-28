@@ -172,22 +172,32 @@ export function AdminProductForm({
 
   const selectedColors = parseList(colorsValue);
   const selectedSizes = parseList(sizesValue);
-  const [sharedStock, setSharedStock] = useState(String(p?.stock ?? 0));
-  const [trackVariants, setTrackVariants] = useState(Boolean(p?.product_variants?.length));
-  const [stockByKey, setStockByKey] = useState<Record<string, number>>(() =>
-    Object.fromEntries((p?.product_variants ?? []).map(v => [variantKey(v.color, v.size), v.stock])));
-  const [photos, setPhotos] = useState<Record<string, string>>(p?.color_images ?? {});
   const hasOptions = selectedSizes.length > 0 || selectedColors.length > 0;
+  const [sharedStock, setSharedStock] = useState(String(p?.stock ?? 0));
+  const [trackVariants, setTrackVariants] = useState(!hasOptions || Boolean(p?.product_variants?.length));
+  // Clearing the last option starts a fresh selection, including preset and Studio edits.
+  if (!hasOptions && !trackVariants) setTrackVariants(true);
+  const [stockByKey, setStockByKey] = useState<Record<string, number> | null>(() =>
+    p?.product_variants?.length
+      ? Object.fromEntries(p.product_variants.map(v => [variantKey(v.color, v.size), v.stock]))
+      : null);
+  const [bulkQuantity, setBulkQuantity] = useState("");
+  const [photos, setPhotos] = useState<Record<string, string>>(p?.color_images ?? {});
   const options = hasOptions ? (selectedColors.length ? selectedColors : [""]).flatMap(color =>
     (selectedSizes.length ? selectedSizes : [""]).map(size => ({ color, size }))) : [];
+  function distributedStock() {
+    const total = /^\d+$/.test(sharedStock) ? Number(sharedStock) : 0;
+    return Object.fromEntries(options.map(({ color, size }, i) => [
+      variantKey(color, size), Math.floor(total / options.length) + (i < total % options.length ? 1 : 0),
+    ]));
+  }
+  const quantities = stockByKey ?? distributedStock();
   const variants = trackVariants ? options.map(({ color, size }) =>
-    ({ color, size, stock: stockByKey[variantKey(color, size)] ?? 0 })) : [];
+    ({ color, size, stock: quantities[variantKey(color, size)] ?? 0 })) : [];
+  const maxBulkQuantity = Math.floor(2147483647 / Math.max(1, options.length));
+  const canBulkFill = /^\d+$/.test(bulkQuantity) && Number(bulkQuantity) <= maxBulkQuantity;
   function distributeStock() {
-    const total = Number(sharedStock);
-    const base = Math.floor(total / options.length);
-    const extra = total % options.length;
-    setStockByKey(Object.fromEntries(options.map(({ color, size }, i) =>
-      [variantKey(color, size), base + (i < extra ? 1 : 0)])));
+    setStockByKey(distributedStock());
     setTrackVariants(true);
   }
   const colorPhotos = Object.fromEntries(selectedColors.filter(color => photos[color]?.trim()).map(color => [color, photos[color].trim()]));
@@ -509,13 +519,24 @@ export function AdminProductForm({
         </div>}
         <label><input type="checkbox" checked={trackVariants} onChange={e => setTrackVariants(e.target.checked)} />
           {isEn ? "Assign stock by color and size" : "تحديد المخزون حسب اللون والمقاس"}</label>
+        {trackVariants && <div className="variant-bulk-fill">
+          <label>{isEn ? "Set quantity for all options" : "تعيين نفس الكمية لكل الخيارات"}
+            <input type="number" dir="ltr" min={0} max={maxBulkQuantity} step={1} value={bulkQuantity}
+              onChange={event => setBulkQuantity(event.target.value)} />
+          </label>
+          <button type="button" className="btn-outline-admin" disabled={!canBulkFill}
+            onClick={() => setStockByKey(Object.fromEntries(options.map(({ color, size }) =>
+              [variantKey(color, size), Number(bulkQuantity)])))}>
+            {isEn ? "Apply to all" : "تطبيق على الكل"}
+          </button>
+        </div>}
         {selectedColors.map(color => <label key={color}>{isEn ? "Image for " : "صورة اللون "}{color}
           <input type="url" dir="ltr" placeholder="https://" value={photos[color] ?? ""}
             onChange={e => setPhotos({ ...photos, [color]: e.target.value })} /></label>)}
         {variants.map(({ color, size, stock }) => <label key={variantKey(color, size)}>
           {[color, size].filter(Boolean).join(" / ")}
           <input type="number" min={0} step={1} required value={stock}
-            onChange={e => setStockByKey({ ...stockByKey, [variantKey(color, size)]: Number(e.target.value) })} /></label>)}
+            onChange={e => setStockByKey({ ...quantities, [variantKey(color, size)]: Number(e.target.value) })} /></label>)}
       </fieldset>}
       <div className="wide admin-swatches-row">
         <small>

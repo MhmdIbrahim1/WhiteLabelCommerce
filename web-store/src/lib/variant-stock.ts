@@ -3,6 +3,28 @@ import type { Lang } from "./i18n";
 export type Variant = { color: string; size: string; stock: number };
 export const variantKey = (color: string, size: string) => JSON.stringify([color, size]);
 
+type RestockInventory = {
+  is_active: boolean; stock: number; colors: string[]; sizes: string[]; product_variants: Variant[];
+};
+
+// Both storefronts subscribe using "size / color"; an empty key watches the whole product.
+export function availableRestockKeys(product: RestockInventory) {
+  const keys = new Set<string>();
+  if (!product.is_active || product.stock <= 0) return keys;
+  keys.add("");
+  const add = (size: string, color: string) => keys.add([size, color].filter(Boolean).join(" / "));
+  if (product.product_variants.length) {
+    for (const variant of product.product_variants) {
+      if (variant.stock > 0) add(variant.size, variant.color);
+    }
+  } else {
+    for (const color of product.colors.length ? product.colors : [""]) {
+      for (const size of product.sizes.length ? product.sizes : [""]) add(size, color);
+    }
+  }
+  return keys;
+}
+
 export function indexVariants(rows: Variant[] = []) {
   const pairs = new Map<string, number>();
   const colors = new Map<string, number>();

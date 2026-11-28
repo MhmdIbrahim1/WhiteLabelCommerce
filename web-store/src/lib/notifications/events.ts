@@ -1,5 +1,6 @@
 import { adminDb } from "@/lib/supabase/admin";
 import { localizeCarrierLabel } from "@/lib/shipping";
+import { availableRestockKeys } from "@/lib/variant-stock";
 import {
   dispatchNotification,
   dispatchPushForExistingNotification,
@@ -293,72 +294,72 @@ export async function notifyOrderStatusChanged(params: {
 }
 
 /**
- * Fires when an admin replenishes stock (> 0) for a previously out-of-stock product.
+ * Notify matching subscriptions only while the replenished option is still on sale.
  */
 export async function notifyBackInStock(
   productId: string,
   storeId: string,
+  replenished: string[],
 ): Promise<number> {
   try {
     const db = adminDb();
     const { data: prod } = await db
       .from("products")
-      .select("id,name,name_en,stock")
+      .select("id,name,name_en,stock,is_active,colors,sizes,product_variants(color,size,stock)")
       .eq("id", productId)
       .eq("store_id", storeId)
-      .maybeSingle<{ id: string; name: string; name_en: string | null; stock: number }>();
+      .eq("product_variants.listed", true)
+      .maybeSingle();
 
-    if (!prod || prod.stock <= 0) return 0;
-
-    const { data: subs } = await db
-      .from("back_in_stock_subscriptions")
-      .select("id,user_id,phone,push_token,variant_key")
-      .eq("store_id", storeId)
-      .eq("product_id", productId)
-      .is("notified_at", null);
-
-    const waiting = (subs ?? []) as {
-      id: string;
-      user_id: string | null;
-      phone: string | null;
-      push_token: string | null;
-      variant_key: string;
-    }[];
-
-    if (waiting.length === 0) return 0;
+    if (!prod) return 0;
+    const live = availableRestockKeys(prod);
+    const eligible = new Set(replenished.filter(key => live.has(key)));
+    if (!eligible.size) return 0;
 
     const nameEn = prod.name_en?.trim() || prod.name;
-    const notifiedIds: string[] = [];
+    let cursor: string | undefined;
+    let sent = 0;
+    const pageSize = 100;
+    for (;;) {
+      let query = db.from("back_in_stock_subscriptions")
+        .select("id,user_id,phone,push_token,variant_key")
+        .eq("store_id", storeId).eq("product_id", productId).is("notified_at", null)
+        .order("id").limit(pageSize);
+      if (cursor) query = query.gt("id", cursor);
+      const { data: subscriptions } = await query.throwOnError();
+      if (!subscriptions.length) break;
 
-    for (const sub of waiting) {
-      await dispatchNotification({
-        storeId,
-        userId: sub.user_id,
-        phone: sub.phone,
-        explicitTokens: sub.push_token
-          ? [{ token: sub.push_token, platform: "android", locale: "ar" }]
-          : undefined,
-        targetRole: "customer",
-        category: "back_in_stock",
-        titleAr: `توفر المنتج من جديد!`,
-        titleEn: `Back in Stock!`,
-        bodyAr: `"${prod.name}" عاد للمخزون الآن — اطلبه قبل نفاد الكمية.`,
-        bodyEn: `"${nameEn}" is back in stock now — grab yours before it sells out.`,
-        deepLink: `/products/${prod.id}`,
-        dedupeKey: `restock:${sub.id}`,
-        data: { product_id: prod.id, variant_key: sub.variant_key },
-      });
-      notifiedIds.push(sub.id);
+      const notifiedIds: string[] = [];
+      for (const sub of subscriptions) {
+        if (!eligible.has(sub.variant_key)) continue;
+        await dispatchNotification({
+          storeId,
+          userId: sub.user_id,
+          phone: sub.phone,
+          explicitTokens: sub.push_token
+            ? [{ token: sub.push_token, platform: "android", locale: "ar" }]
+            : undefined,
+          targetRole: "customer",
+          category: "back_in_stock",
+          titleAr: `توفر المنتج من جديد!`,
+          titleEn: `Back in Stock!`,
+          bodyAr: `"${prod.name}" عاد للمخزون الآن — اطلبه قبل نفاد الكمية.`,
+          bodyEn: `"${nameEn}" is back in stock now — grab yours before it sells out.`,
+          deepLink: `/products/${prod.id}`,
+          dedupeKey: `restock:${sub.id}`,
+          data: { product_id: prod.id, variant_key: sub.variant_key },
+        });
+        notifiedIds.push(sub.id);
+      }
+      if (notifiedIds.length) {
+        await db.from("back_in_stock_subscriptions").update({ notified_at: new Date().toISOString() })
+          .in("id", notifiedIds).throwOnError();
+        sent += notifiedIds.length;
+      }
+      if (subscriptions.length < pageSize) break;
+      cursor = subscriptions[subscriptions.length - 1].id;
     }
-
-    if (notifiedIds.length > 0) {
-      await db
-        .from("back_in_stock_subscriptions")
-        .update({ notified_at: new Date().toISOString() })
-        .in("id", notifiedIds);
-    }
-
-    return notifiedIds.length;
+    return sent;
   } catch (err) {
     console.error("[notifications] notifyBackInStock failed", {
       code: err instanceof Error ? err.message : "unknown",

@@ -156,8 +156,14 @@ data class ProductVariant(val color: String, val size: String, val stock: Int)
 class VariantInventory(variants: List<ProductVariant>) {
     private val pairs = variants.associate { (it.color to it.size) to it.stock }
     private val colorTotals = variants.groupingBy { it.color }.fold(0) { n, v -> n + v.stock }
-    private val firstSizes = variants.filter { it.stock > 0 }.associate { it.color to it.size }
+    private val firstSizes = buildMap {
+        for (variant in variants) {
+            if (variant.stock > 0 && variant.color !in this) put(variant.color, variant.size)
+        }
+    }
     val first = variants.firstOrNull { it.stock > 0 }
+    val totalStock = variants.sumOf { it.stock }
+    val hasAnyInStockVariant = first != null
     val tracked = pairs.isNotEmpty()
     fun stock(color: String?, size: String?, fallback: Int) =
         if (tracked) pairs[color.orEmpty() to size.orEmpty()] ?: 0 else fallback
@@ -216,10 +222,10 @@ data class Product(
         get() = localized(name, nameEn?.takeIf { it.isNotBlank() } ?: name)
 
     val isInStock: Boolean
-        get() = stock > 0
+        get() = if (inventory.tracked) inventory.hasAnyInStockVariant else stock > 0
 
     val isLowStock: Boolean
-        get() = stock in 1..5
+        get() = (if (inventory.tracked) inventory.totalStock else stock) in 1..5
 
     fun isFlashSaleActive(nowMillis: Long = System.currentTimeMillis()): Boolean =
         FlashSalePricing.isActive(price, flashSalePrice, flashSaleStartsAt, flashSaleEndsAt, nowMillis, oldPrice)
@@ -243,8 +249,10 @@ data class Product(
         get() = isFlashSaleActive() || (oldPrice != null && oldPrice > price)
 
     val discountPercent: Int?
+        get() = flashSavingsPercent() ?: regularDiscountPercent
+
+    val regularDiscountPercent: Int?
         get() {
-            flashSavingsPercent()?.let { return it }
             val previous = oldPrice ?: return null
             if (previous <= 0.0 || previous <= price) return null
             return (((previous - price) / previous) * 100.0).roundToInt().coerceIn(1, 99)

@@ -78,7 +78,11 @@ data class ProductDto(
         colors = colors,
         imagePath = imagePath,
         variants = variants.map { com.whitelabel.commerce.core.domain.model.ProductVariant(it.color, it.size, it.stock) },
-        colorImages = colorImages,
+        colorImages = buildMap {
+            for ((color, path) in this@ProductDto.colorImages) {
+                SupabaseStorageUrls.resolveProductImageUrl(path)?.let { put(color, it) }
+            }
+        },
         galleryUrls = gallery.orEmpty().mapNotNull(SupabaseStorageUrls::resolveProductImageUrl),
         imageUrl = SupabaseStorageUrls.resolveProductImageUrl(imagePath),
         specifications = specifications.map { it.toDomain() }.filter { it.isValid },

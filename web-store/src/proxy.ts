@@ -20,7 +20,7 @@ const redirectPath = "/platform-redirect";
 const PLATFORM_REDIRECT_HEADER = "x-wlc-platform-redirect";
 const controlPlane = /^\/(?:admin|super-admin|create-store|api\/admin)(?:\/|$)/;
 const tenantApi = /^\/api\/(?:auth\/password-reset(?:\/complete)?|abandoned-cart|catalog-search|cart-upsells|payments\/paymob\/initiate|notifications\/(?:back-in-stock|cart-heartbeat|inbox|register))$/;
-const assetPath = /^(?:\/_next\/static\/|\/_next\/(?:image|webpack-hmr)(?:\/|$)|\/(?:favicon\.ico|store-collection\.jpg|firebase-messaging-sw\.js)$)/;
+const assetPath = /^(?:\/_next\/static\/|\/_next\/(?:image|webpack-hmr)(?:\/|$)|\/(?:favicon\.ico|store-collection\.jpg|firebase-messaging-sw\.js|\.well-known\/assetlinks\.json)$)/;
 
 function cleanRoutingHeaders(request: NextRequest) {
   const outgoing = new Headers(request.headers);

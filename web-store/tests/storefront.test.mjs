@@ -9,7 +9,7 @@ import { resolveUiConfig, uiConfigFromTemplate } from "../src/lib/ui-config.ts";
 import { contrastRatio } from "../src/lib/theme-contrast.ts";
 import { formatSavings, lineEffectivePrice, nextSaleBoundary, parseFlashSaleForm, productPricePresentation } from "../src/lib/flash-sale.ts";
 import { formatMoney } from "../src/lib/i18n.ts";
-import { remainingQuantity } from "../src/lib/variant-stock.ts";
+import { availableRestockKeys, remainingQuantity } from "../src/lib/variant-stock.ts";
 import { storefrontImageSrc, storefrontMediaPatterns } from "../src/lib/storefront-media.ts";
 
 const enabled = { motion_enabled: true, sticky_cta_enabled: true };
@@ -62,6 +62,17 @@ test("enabling Flash Sale requires a positive discount and a valid end after the
   ]) {
     assert.equal(parseFlashSaleForm(flashForm({ ...sale, flash_sale_enabled: "on", ...overrides }), sale.price), null);
   }
+});
+
+test("restock subscriptions distinguish available options, shared stock and unpublished products", () => {
+  const product = { stock: 5, is_active: true, colors: ["أحمر", "بني"], sizes: ["M"],
+    product_variants: [{ size: "M", color: "أحمر", stock: 0 }, { size: "M", color: "بني", stock: 5 }] };
+  assert.deepEqual([...availableRestockKeys(product)], ["", "M / بني"]);
+  assert.deepEqual([...availableRestockKeys({ ...product, product_variants: [] })], ["", "M / أحمر", "M / بني"]);
+  assert.deepEqual([...availableRestockKeys({ ...product, product_variants: [], sizes: [] })], ["", "أحمر", "بني"]);
+  assert.deepEqual([...availableRestockKeys({ ...product, product_variants: [], colors: [] })], ["", "M"]);
+  assert.equal(availableRestockKeys({ ...product, stock: 0 }).size, 0);
+  assert.equal(availableRestockKeys({ ...product, is_active: false }).size, 0);
 });
 
 test("all five sectors resolve distinct palettes, media frames and merchandising rhythms in the initial HTML", () => {

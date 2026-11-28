@@ -3,6 +3,8 @@ package com.whitelabel.commerce.feature.catalog
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.whitelabel.commerce.core.data.local.RecentlyViewedStore
+import com.whitelabel.commerce.core.data.remote.runSuspendCatching
 import com.whitelabel.commerce.core.designsystem.localized
 import com.whitelabel.commerce.core.domain.model.AuthSessionState
 import com.whitelabel.commerce.core.domain.model.Product
@@ -19,6 +21,7 @@ import com.whitelabel.commerce.core.notifications.FcmTokenManager
 import com.whitelabel.commerce.core.notifications.NotificationRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -36,6 +39,7 @@ import com.whitelabel.commerce.core.domain.model.remainingQuantity
 import com.whitelabel.commerce.core.domain.model.quantityLimitHint
 import com.whitelabel.commerce.core.domain.repository.StoreRepository
 import javax.inject.Inject
+import java.util.UUID
 
 data class ProductDetailUiState(
     val product: Product? = null,
@@ -60,6 +64,7 @@ data class ProductDetailUiState(
     val isSubmittingReview: Boolean = false,
     val reviewSubmitError: String? = null,
     val relatedProducts: List<Product> = emptyList(),
+    val isAdding: Boolean = false,
 ) {
     val selectedStock: Int get() = product?.let { it.inventory.stock(selectedColor, selectedSize, it.stock) } ?: 0
     val remaining: Int get() = product?.let {
@@ -68,11 +73,17 @@ data class ProductDetailUiState(
     val canAddToCart: Boolean
         get() {
             val p = product ?: return false
-            if (!p.isInStock || quantity <= 0 || quantity > remaining) return false
+            if (isAdding || selectedStock <= 0 || quantity <= 0 || quantity > remaining) return false
             if (p.sizes.isNotEmpty() && selectedSize.isNullOrBlank()) return false
             if (p.colors.isNotEmpty() && selectedColor.isNullOrBlank()) return false
             return true
         }
+
+    fun selectOption(color: String?, size: String?) =
+        if (selectedColor == color && selectedSize == size) this else copy(
+            selectedColor = color, selectedSize = size, quantity = 1,
+            restockSubscribed = false, isSubscribingRestock = false, restockError = null,
+        )
 }
 
 @HiltViewModel
@@ -86,9 +97,12 @@ class ProductDetailViewModel @Inject constructor(
     private val reviewRepository: ReviewRepository,
     private val wishlistRepository: WishlistRepository,
     private val authRepository: AuthRepository,
+    private val recentlyViewedStore: RecentlyViewedStore,
 ) : ViewModel() {
 
-    private val productId: String = checkNotNull(savedStateHandle["productId"])
+    private val productRoute: String = checkNotNull(savedStateHandle["productId"])
+    private var restockJob: Job? = null
+    val recentlyViewed = recentlyViewedStore.products(catalogRepository)
 
     private val _uiState = MutableStateFlow(ProductDetailUiState())
     val uiState: StateFlow<ProductDetailUiState> = combine(
@@ -101,7 +115,7 @@ class ProductDetailViewModel @Inject constructor(
         val current = state.copy(
             cartLines = cart,
             defaultLimit = settings.defaultMaxOrderQty,
-            isWishlisted = productId in wishIds,
+            isWishlisted = state.product?.id in wishIds,
             wishlistedProductIds = wishIds,
             isSignedIn = session is AuthSessionState.SignedIn,
             userId = (session as? AuthSessionState.SignedIn)?.userId,
@@ -111,7 +125,6 @@ class ProductDetailViewModel @Inject constructor(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = ProductDetailUiState(
-            isWishlisted = productId in wishlistRepository.wishlistedProductIds.value,
             wishlistedProductIds = wishlistRepository.wishlistedProductIds.value,
             isSignedIn = authRepository.sessionState.value is AuthSessionState.SignedIn,
         ),
@@ -120,28 +133,27 @@ class ProductDetailViewModel @Inject constructor(
     init {
         loadProduct()
         viewModelScope.launch {
-            authRepository.sessionState.map { (it as? AuthSessionState.SignedIn)?.userId }
-                .distinctUntilChanged().collectLatest { userId ->
-                    _uiState.update { it.copy(eligibility = ReviewEligibility(), followUpFailed = false) }
-                    if (userId != null) {
-                        val result = reviewRepository.checkEligibility(productId)
-                        _uiState.update { it.copy(eligibility = result.getOrDefault(ReviewEligibility())) }
-                    }
+            combine(authRepository.sessionState, _uiState.map { it.product?.id }.distinctUntilChanged()) { session, id ->
+                (session as? AuthSessionState.SignedIn)?.userId to id
+            }.distinctUntilChanged().collectLatest { (userId, productId) ->
+                _uiState.update { it.copy(eligibility = ReviewEligibility(), followUpFailed = false) }
+                if (userId != null && productId != null) {
+                    val result = reviewRepository.checkEligibility(productId)
+                    _uiState.update { it.copy(eligibility = result.getOrDefault(ReviewEligibility())) }
                 }
+            }
         }
     }
 
     fun loadProduct() {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
-            val productDeferred = async { catalogRepository.getProductById(productId) }
-            val reviewsDeferred = async { reviewRepository.getPublishedReviews(productId) }
-            val relatedDeferred = async { catalogRepository.getRelatedProducts(productId, limit = 6) }
-
-            val productResult = productDeferred.await()
-            val reviewsResult = reviewsDeferred.await()
-            val relatedResult = relatedDeferred.await()
-
+            val isUuid = runCatching { UUID.fromString(productRoute).toString().equals(productRoute, true) }.getOrDefault(false)
+            val productResult = if (isUuid) {
+                catalogRepository.getProductById(productRoute)
+            } else {
+                catalogRepository.getProductBySlug(productRoute)
+            }
             productResult
                 .onSuccess { product ->
                     if (product == null) {
@@ -157,15 +169,22 @@ class ProductDetailViewModel @Inject constructor(
                                 product = product,
                                 selectedSize = product.inventory.first?.size?.ifEmpty { null } ?: product.sizes.firstOrNull(),
                                 selectedColor = product.inventory.first?.color?.ifEmpty { null } ?: product.colors.firstOrNull(),
-                                quantity = if (product.stock > 0) 1 else 0,
-                                reviews = reviewsResult.getOrDefault(it.reviews),
-                                relatedProducts = relatedResult.getOrDefault(emptyList()),
+                                quantity = 1,
                                 isLoading = false,
                             )
                         }
+                        launch { runSuspendCatching { recentlyViewedStore.record(product.id) } }
+                        val reviews = async { reviewRepository.getPublishedReviews(product.id) }
+                        val related = async { catalogRepository.getRelatedProducts(product.id, limit = 6) }
+                        val reviewsResult = reviews.await()
+                        val relatedResult = related.await()
+                        _uiState.update { it.copy(
+                            reviews = reviewsResult.getOrDefault(it.reviews),
+                            relatedProducts = relatedResult.getOrDefault(emptyList()),
+                        ) }
                     }
                 }
-                .onFailure { error ->
+                .onFailure {
                     _uiState.update {
                         it.copy(
                             isLoading = false,
@@ -177,14 +196,18 @@ class ProductDetailViewModel @Inject constructor(
     }
 
     fun selectSize(size: String) {
-        _uiState.update { it.copy(selectedSize = size, quantity = 1) }
+        if (_uiState.value.selectedSize == size) return
+        restockJob?.cancel()
+        _uiState.update { it.selectOption(it.selectedColor, size) }
     }
 
     fun selectColor(color: String) {
+        if (_uiState.value.selectedColor == color) return
+        restockJob?.cancel()
         _uiState.update { state ->
             val p = state.product ?: return@update state
-            val size = if (p.inventory.stock(color, state.selectedSize, p.stock) > 0) state.selectedSize else p.inventory.firstSize(color)
-            state.copy(selectedColor = color, selectedSize = size, quantity = 1)
+            val size = p.inventory.firstSize(color) ?: state.selectedSize ?: p.sizes.firstOrNull()
+            state.selectOption(color, size)
         }
     }
 
@@ -198,31 +221,31 @@ class ProductDetailViewModel @Inject constructor(
         if (quantity > 1) _uiState.update { it.copy(quantity = quantity - 1) }
     }
 
-    fun addToCart(onAdded: (String) -> Unit) {
+    fun addToCart(onFailure: (String) -> Unit, onAdded: (String) -> Unit) {
         val state = uiState.value
         val product = state.product ?: return
-        if (!state.canAddToCart) return
+        if (!state.canAddToCart || _uiState.value.isAdding) return
+        _uiState.update { it.copy(isAdding = true) }
 
         viewModelScope.launch {
-            val added = cartRepository.addProduct(
+            val added = runSuspendCatching { cartRepository.addProduct(
                 product = product,
                 quantity = state.quantity,
                 selectedSize = state.selectedSize,
                 selectedColor = state.selectedColor,
-            )
-            onAdded(
-                if (added == 0) quantityLimitHint() else localized(
-                    "تمت إضافة ${added} × \"${product.displayName}\" إلى السلة",
-                    "Added ${added} × ${product.displayName} to cart",
-                ),
-            )
+            ) }
+            _uiState.update { it.copy(isAdding = false) }
+            added.onSuccess { count ->
+                if (count <= 0) onFailure(quantityLimitHint()) else onAdded(localized(
+                    "تمت إضافة $count × \"${product.displayName}\" إلى السلة",
+                    "Added $count × ${product.displayName} to cart",
+                ))
+            }.onFailure { onFailure(localized("تعذر تحديث السلة.", "Could not update your cart.")) }
         }
     }
 
     fun toggleWishlist(onOutcome: (WishlistToggleOutcome) -> Unit) {
-        viewModelScope.launch {
-            onOutcome(wishlistRepository.toggleWishlist(productId))
-        }
+        _uiState.value.product?.id?.let { toggleWishlistFor(it, onOutcome) }
     }
 
     fun toggleWishlistFor(
@@ -245,7 +268,7 @@ class ProductDetailViewModel @Inject constructor(
         }
     }
 
-    suspend fun observeReviewReplies() {
+    suspend fun observeReviewReplies(productId: String) {
         reviewRepository.replyUpdates(productId).retryWhen { _, _ -> delay(5_000); true }
             .collect { (id, reply) ->
                 _uiState.update { state ->
@@ -258,6 +281,7 @@ class ProductDetailViewModel @Inject constructor(
 
     fun submitFollowUp(reviewId: String, body: String) {
         val state = _uiState.value
+        val productId = state.product?.id ?: return
         val review = state.reviews.find { it.id == reviewId } ?: return
         val userId = (authRepository.sessionState.value as? AuthSessionState.SignedIn)?.userId
         if (state.sendingFollowUp || !ReviewFormatting.validFollowUp(body) ||
@@ -282,6 +306,7 @@ class ProductDetailViewModel @Inject constructor(
         comment: String,
         onSaved: (String) -> Unit,
     ) {
+        val productId = _uiState.value.product?.id ?: return
         viewModelScope.launch {
             _uiState.update { it.copy(isSubmittingReview = true, reviewSubmitError = null) }
             reviewRepository.submitReview(
@@ -337,7 +362,8 @@ class ProductDetailViewModel @Inject constructor(
     fun subscribeBackInStock(phone: String?) {
         val state = _uiState.value
         val product = state.product ?: return
-        viewModelScope.launch {
+        if (state.selectedStock > 0 || restockJob?.isActive == true || state.restockSubscribed) return
+        restockJob = viewModelScope.launch {
             _uiState.update { it.copy(isSubscribingRestock = true, restockError = null) }
             val variantKey = listOfNotNull(state.selectedSize, state.selectedColor)
                 .filter { it.isNotBlank() }

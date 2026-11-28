@@ -1,6 +1,7 @@
 package com.whitelabel.commerce.core.domain.repository
 
 import com.whitelabel.commerce.core.domain.model.CartItem
+import com.whitelabel.commerce.core.domain.model.OrderItem
 import com.whitelabel.commerce.core.domain.model.Product
 import kotlinx.coroutines.flow.Flow
 
@@ -15,6 +16,9 @@ interface CartRepository {
         selectedSize: String? = null,
         selectedColor: String? = null,
     ): Int
+
+    /** Add original selections using freshly loaded products in one local cart transaction. */
+    suspend fun addOrderItems(items: List<OrderItem>, products: Map<String, Product>): Long
 
     suspend fun refreshInventory()
 
