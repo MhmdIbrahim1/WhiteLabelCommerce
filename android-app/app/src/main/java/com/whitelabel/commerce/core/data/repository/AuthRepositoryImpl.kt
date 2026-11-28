@@ -12,8 +12,10 @@ import com.whitelabel.commerce.core.data.remote.runSuspendCatching
 import com.whitelabel.commerce.core.domain.model.AuthSessionState
 import com.whitelabel.commerce.core.domain.model.CustomerProfile
 import com.whitelabel.commerce.core.domain.model.StorefrontAuthInput
+import com.whitelabel.commerce.core.domain.model.oauthRedirectUri
 import com.whitelabel.commerce.core.domain.repository.AuthRepository
 import io.github.jan.supabase.SupabaseClient
+import io.github.jan.supabase.auth.CodeVerifierCache
 import io.github.jan.supabase.auth.OtpType
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.Google
@@ -26,6 +28,10 @@ import io.github.jan.supabase.exceptions.RestException
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.postgrest
 import java.io.IOException
+import java.security.SecureRandom
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import okio.ByteString.Companion.encodeUtf8
+import okio.ByteString.Companion.toByteString
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
@@ -104,6 +110,22 @@ class AuthRepositoryImpl @Inject constructor(
                 this.idToken = idToken
                 nonce = rawNonce
             }
+            resolveMembership(authenticatedStatus())
+        }
+        Unit
+    }
+
+    override suspend fun prepareGoogleOAuthUrl(): Result<String> = runSuspendCatching {
+        supabase.auth.awaitInitialization()
+        sessionLock.withLock { prepareGoogleOAuthUrl(BuildConfig.SUPABASE_URL, oauthRedirectUri, supabase.auth.codeVerifierCache) }
+    }
+
+    override suspend fun exchangeGoogleOAuthCode(code: String): Result<Unit> = runSuspendCatching {
+        supabase.auth.awaitInitialization()
+        sessionLock.withLock {
+            // A successfully consumed callback can also be redelivered by Android.
+            if (supabase.auth.codeVerifierCache.loadCodeVerifier() == null) return@withLock
+            supabase.auth.exchangeCodeForSession(code)
             resolveMembership(authenticatedStatus())
         }
         Unit
@@ -271,6 +293,18 @@ class AuthRepositoryImpl @Inject constructor(
         }.decodeList<CustomerProfileDto>().firstOrNull()?.toDomain(fallbackEmail = email)
 
     private fun Throwable.isNetworkFailure() = this is HttpRequestException || this is IOException
+}
+
+// auth-kt 3.0.3 getOAuthUrl saves its verifier asynchronously. Commit it before another process opens the URL.
+internal suspend fun prepareGoogleOAuthUrl(baseUrl: String, redirectUri: String, cache: CodeVerifierCache): String {
+    val verifier = ByteArray(32).also(SecureRandom()::nextBytes).toByteString().base64Url().trimEnd('=')
+    cache.saveCodeVerifier(verifier)
+    return baseUrl.toHttpUrl().newBuilder().addPathSegments("auth/v1/authorize")
+        .addQueryParameter("provider", "google")
+        .addQueryParameter("redirect_to", redirectUri)
+        .addQueryParameter("code_challenge_method", "S256")
+        .addQueryParameter("code_challenge", verifier.encodeUtf8().sha256().base64Url().trimEnd('='))
+        .build().toString()
 }
 
 /** The persisted marker belongs to this store. A matching owner can reuse their in-memory profile. */

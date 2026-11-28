@@ -3,12 +3,14 @@ package com.whitelabel.commerce.core.data.di
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import com.whitelabel.commerce.BuildConfig
+import com.whitelabel.commerce.core.domain.model.oauthRedirectUri
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.Auth
+import io.github.jan.supabase.auth.FlowType
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.realtime.Realtime
@@ -43,6 +45,11 @@ object SupabaseModule {
         httpEngine = OkHttp.create()
         install(Postgrest)
         install(Auth) {
+            flowType = FlowType.PKCE
+            codeVerifierCache = DataStoreCodeVerifierCache(dataStore)
+            scheme = BuildConfig.OAUTH_CALLBACK_SCHEME
+            host = BuildConfig.OAUTH_CALLBACK_HOST
+            defaultRedirectUrl = oauthRedirectUri
             sessionManager = DataStoreSessionManager(dataStore, json)
             autoLoadFromStorage = true
             alwaysAutoRefresh = true

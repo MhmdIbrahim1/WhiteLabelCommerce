@@ -62,6 +62,7 @@ import com.whitelabel.commerce.core.designsystem.components.WishlistRoseColor
 import com.whitelabel.commerce.core.designsystem.localized
 import com.whitelabel.commerce.core.domain.model.StoreSettings
 import com.whitelabel.commerce.feature.account.AccountScreen
+import com.whitelabel.commerce.feature.account.AccountViewModel
 import com.whitelabel.commerce.feature.cart.CartScreen
 import com.whitelabel.commerce.feature.catalog.CatalogScreen
 import com.whitelabel.commerce.feature.catalog.ProductDetailScreen
@@ -82,6 +83,7 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WhiteLabelAppShell(
+    accountViewModel: AccountViewModel,
     storeSettings: StoreSettings,
     cartItemCount: Int,
     unreadNotificationCount: Int = 0,
@@ -517,6 +519,7 @@ fun WhiteLabelAppShell(
 
             composable(AppRoutes.ACCOUNT) {
                 AccountScreen(
+                    viewModel = accountViewModel,
                     onBack = { navigateToTab(AppRoutes.HOME) },
                     showBackButton = false,
                     onOpenOrders = {

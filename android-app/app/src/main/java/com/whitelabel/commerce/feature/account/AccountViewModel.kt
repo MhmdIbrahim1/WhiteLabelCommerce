@@ -2,6 +2,9 @@ package com.whitelabel.commerce.feature.account
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.whitelabel.commerce.BuildConfig
+import com.whitelabel.commerce.core.data.remote.runSuspendCatching
+import com.whitelabel.commerce.core.domain.model.OAuthCallback
 import com.whitelabel.commerce.core.data.remote.PhoneNormalizer
 import com.whitelabel.commerce.core.domain.model.AccountCounts
 import com.whitelabel.commerce.core.domain.model.AuthSessionState
@@ -24,7 +27,7 @@ import javax.inject.Inject
 
 private val EMAIL_REGEX = Regex("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")
 
-enum class AuthAction { Send, Verify, Google }
+enum class AuthAction { Send, Verify, Google, GoogleBrowser, GoogleCallback }
 
 data class AuthFormState(
     val otpEmail: String = "",
@@ -43,6 +46,9 @@ data class OnboardingFormState(
     val saving: Boolean = false,
     val serverError: String? = null,
 )
+
+internal fun AuthFormState.onBrowserResume(): AuthFormState =
+    if (action == AuthAction.GoogleBrowser) copy(action = null) else this
 
 data class ProfileFormState(
     val fullName: String = "",
@@ -76,7 +82,9 @@ internal fun AccountUiState.withSession(next: AuthSessionState): AccountUiState 
     val member = next as? AuthSessionState.SignedIn
     val sameGate = previous != null && member != null && previous.userId == member.userId &&
         previous.enrolled == member.enrolled && previous.membershipResolved == member.membershipResolved
-    val base = if (sameGate) copy(session = next) else AccountUiState(session = next, storeSettings = storeSettings)
+    val base = if (sameGate || (session == AuthSessionState.Loading && next == AuthSessionState.SignedOut))
+        copy(session = next)
+    else AccountUiState(session = next, storeSettings = storeSettings)
     if (member == null || !member.membershipResolved || !member.enrolled) return base
     if (sameGate && previous?.profile == member.profile) return base
     val profile = member.profile
@@ -122,7 +130,6 @@ class AccountViewModel @Inject constructor(
         it.copy(otpCode = StorefrontAuthInput.normalizeOtp(value), emailError = null)
     }
     fun resetOtpEmailStep() = updateAuth { it.copy(otpSent = false, otpCode = "", emailError = null) }
-    fun clearAuthErrors() = updateAuth { it.copy(emailError = null, googleError = null) }
 
     fun sendEmailOtp() {
         val form = state.value.authForm
@@ -168,19 +175,38 @@ class AccountViewModel @Inject constructor(
         }
     }
 
-    fun onGoogleResult(result: GoogleIdTokenResult) {
+    suspend fun signInWithGoogle(native: suspend () -> GoogleIdTokenResult, openBrowser: (String) -> Unit) {
         if (state.value.authForm.action != null) return
-        when (result) {
-            GoogleIdTokenResult.Cancelled -> clearAuthErrors()
-            GoogleIdTokenResult.Unavailable -> updateAuth { it.copy(googleError = "google_unavailable") }
-            is GoogleIdTokenResult.Error -> updateAuth { it.copy(googleError = authErrorDetail(result.cause)) }
-            is GoogleIdTokenResult.Success -> {
-                updateAuth { it.copy(action = AuthAction.Google, emailError = null, googleError = null) }
-                viewModelScope.launch {
-                    val failure = authRepository.signInWithGoogleIdToken(result.idToken, result.rawNonce).exceptionOrNull()
-                    updateAuth { it.copy(action = null, googleError = failure?.let(::authErrorDetail)) }
+        updateAuth { it.copy(action = AuthAction.Google, emailError = null, googleError = null) }
+        try {
+            val result = runSuspendCatching {
+                startHybridGoogleSignIn(BuildConfig.IS_WHITE_LABEL_TENANT, BuildConfig.GOOGLE_WEB_CLIENT_ID,
+                    native, authRepository::signInWithGoogleIdToken) {
+                    openBrowser(authRepository.prepareGoogleOAuthUrl().getOrThrow())
                 }
             }
+            updateAuth { form ->
+                if (form.action != AuthAction.Google) form else form.copy(
+                    action = if (result.getOrNull() == true) AuthAction.GoogleBrowser else null,
+                    googleError = result.exceptionOrNull()?.let(::authErrorDetail),
+                )
+            }
+        } finally {
+            updateAuth { if (it.action == AuthAction.Google) it.copy(action = null) else it }
+        }
+    }
+
+    fun onBrowserResume() = updateAuth { it.onBrowserResume() }
+
+    internal fun onOAuthCallback(callback: OAuthCallback) {
+        if (state.value.authForm.action == AuthAction.GoogleCallback) return
+        val action = if (callback is OAuthCallback.Code) AuthAction.GoogleCallback else null
+        val error = (callback as? OAuthCallback.Failure)?.let { googleCallbackError(it.error) }
+        // A new process can receive the callback before the stored session finishes loading.
+        state.update { it.copy(authForm = it.authForm.copy(action = action, googleError = error, emailError = null)) }
+        if (callback is OAuthCallback.Code) viewModelScope.launch {
+            val failure = authRepository.exchangeGoogleOAuthCode(callback.value).exceptionOrNull()
+            state.update { it.copy(authForm = it.authForm.copy(action = null, googleError = failure?.let(::authErrorDetail))) }
         }
     }
 

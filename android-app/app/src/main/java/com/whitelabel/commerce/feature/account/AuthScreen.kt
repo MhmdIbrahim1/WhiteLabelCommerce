@@ -86,14 +86,12 @@ internal fun AuthScreen(
     onResetOtpEmail: () -> Unit,
     onSendOtp: () -> Unit,
     onVerifyOtp: () -> Unit,
-    onGoogleStart: () -> Unit,
-    onGoogleResult: (GoogleIdTokenResult) -> Unit,
+    onGoogleSignIn: suspend (suspend () -> GoogleIdTokenResult, (String) -> Unit) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var googleSheetOpen by remember { mutableStateOf(false) }
-    val busy = form.action != null || googleSheetOpen
+    val busy = form.action != null
 
     Column(
         modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(16.dp),
@@ -120,23 +118,17 @@ internal fun AuthScreen(
             )
         }
 
-        if (BuildConfig.GOOGLE_WEB_CLIENT_ID.isNotBlank()) {
+        if (BuildConfig.SUPABASE_URL != "https://unconfigured.invalid") {
             OutlinedButton(
                 onClick = {
-                    if (!googleSheetOpen) {
-                        googleSheetOpen = true
-                        onGoogleStart()
-                        scope.launch {
-                            try {
-                                val activity = generateSequence(context) { (it as? ContextWrapper)?.baseContext }
-                                    .filterIsInstance<Activity>().firstOrNull()
-                                val result = activity?.let { GoogleSignInBridge.signIn(it, BuildConfig.GOOGLE_WEB_CLIENT_ID) }
-                                    ?: GoogleIdTokenResult.Unavailable
-                                onGoogleResult(result)
-                            } finally {
-                                googleSheetOpen = false
-                            }
-                        }
+                    val activity = generateSequence(context) { (it as? ContextWrapper)?.baseContext }
+                        .filterIsInstance<Activity>().firstOrNull()
+                    scope.launch {
+                        onGoogleSignIn(
+                            { activity?.let { GoogleSignInBridge.signIn(it, BuildConfig.GOOGLE_WEB_CLIENT_ID) }
+                                ?: GoogleIdTokenResult.Unavailable },
+                            { url -> GoogleSignInBridge.openBrowser(activity ?: error("google_unavailable"), url) },
+                        )
                     }
                 },
                 enabled = !busy,
@@ -148,7 +140,7 @@ internal fun AuthScreen(
                 ),
             ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (googleSheetOpen || form.action == AuthAction.Google) InlineSpinner()
+                    if (form.action in setOf(AuthAction.Google, AuthAction.GoogleBrowser, AuthAction.GoogleCallback)) InlineSpinner()
                     else Image(painterResource(R.drawable.ic_google_g), null, Modifier.size(20.dp))
                     Text(localized("المتابعة باستخدام Google", "Continue with Google"))
                 }

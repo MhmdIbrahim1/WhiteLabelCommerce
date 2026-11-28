@@ -1,6 +1,12 @@
 package com.whitelabel.commerce.feature.account
 
 import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
+import androidx.browser.customtabs.CustomTabsClient
+import androidx.browser.customtabs.CustomTabsIntent
+import androidx.browser.customtabs.CustomTabsService
 import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
@@ -29,6 +35,30 @@ object GoogleSignInBridge {
 
     fun sha256Hex(rawNonce: String): String =
         MessageDigest.getInstance("SHA-256").digest(rawNonce.toByteArray(Charsets.UTF_8)).lowercaseHex()
+
+    fun openBrowser(activity: Activity, url: String) {
+        val uri = Uri.parse(url)
+        // Keep the tab out of the merchant task so a callback can restore MainActivity after process death.
+        val browserFlags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK
+        val services = activity.packageManager.queryIntentServices(Intent(CustomTabsService.ACTION_CUSTOM_TABS_CONNECTION), 0)
+        val provider = CustomTabsClient.getPackageName(activity, services.map { it.serviceInfo.packageName })
+        if (provider != null) {
+            val tab = CustomTabsIntent.Builder().build()
+            tab.intent.setPackage(provider)
+            tab.intent.addFlags(browserFlags)
+            try {
+                tab.launchUrl(activity, uri)
+                return
+            } catch (_: ActivityNotFoundException) {
+                // The selected provider may have been disabled after discovery.
+            }
+        }
+        try {
+            activity.startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(browserFlags))
+        } catch (_: ActivityNotFoundException) {
+            error("google_unavailable")
+        }
+    }
 
     suspend fun signIn(activity: Activity, webClientId: String): GoogleIdTokenResult {
         if (webClientId.isBlank()) return GoogleIdTokenResult.Unavailable
@@ -75,4 +105,26 @@ object GoogleSignInBridge {
             append(digits[byte.toInt() and 0x0f])
         }
     }
+}
+
+/** Returns true when the browser owns the in-progress sign-in. */
+internal suspend fun startHybridGoogleSignIn(
+    whiteLabel: Boolean,
+    webClientId: String,
+    native: suspend () -> GoogleIdTokenResult,
+    exchange: suspend (String, String) -> Result<Unit>,
+    openBrowser: suspend () -> Unit,
+): Boolean {
+    if (!whiteLabel && webClientId.isNotBlank()) {
+        when (val result = native()) {
+            GoogleIdTokenResult.Cancelled -> return false
+            is GoogleIdTokenResult.Success -> {
+                val failure = exchange(result.idToken, result.rawNonce).exceptionOrNull() ?: return false
+                if (authErrorDetail(failure) != "google_unavailable") throw failure
+            }
+            GoogleIdTokenResult.Unavailable, is GoogleIdTokenResult.Error -> Unit
+        }
+    }
+    openBrowser()
+    return true
 }

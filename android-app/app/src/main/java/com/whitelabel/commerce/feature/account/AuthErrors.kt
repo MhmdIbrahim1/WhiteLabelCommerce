@@ -9,15 +9,22 @@ import java.io.IOException
 internal fun authErrorDetail(error: Throwable): String {
     if (generateSequence(error) { it.cause }.any { it is IOException || it is HttpRequestException }) return "network"
     if (error is RestException && error.statusCode == 429) return "rate_limit"
+    if (error.message.orEmpty().contains("unacceptable audience", ignoreCase = true)) return "google_unavailable"
     if (error is AuthRestException) {
         val detail = error.message.orEmpty().lowercase()
-        if ("unacceptable audience" in detail || error.error == "provider_disabled") return "google_unavailable"
+        if (error.error == "provider_disabled") return "google_unavailable"
         if (error.error == "unexpected_failure" && "sending" in detail) return "email_delivery"
     }
     return ((error as? RestException)?.error ?: error.message.orEmpty()).lowercase()
 }
 
+internal fun googleCallbackError(code: String): String = when (code) {
+    "provider_disabled" -> "google_unavailable"
+    else -> "google_retry"
+}
+
 internal fun mapAuthError(raw: String): String = when {
+    raw == "google_retry" -> localized("تعذّر تسجيل الدخول باستخدام Google. حاول مرة أخرى.", "Google sign-in couldn’t finish. Please try again.")
     raw == "network" -> localized("تحقق من اتصالك بالإنترنت ثم أعد المحاولة.", "Check your connection and try again.")
     "invalid_name" in raw -> localized("أدخل اسمًا من حرفين إلى ١٠٠ حرف.", "Enter a name between 2 and 100 characters.")
     "phone_already_in_use" in raw -> localized(

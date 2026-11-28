@@ -58,7 +58,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.whitelabel.commerce.core.designsystem.LocalBrandColors
 import com.whitelabel.commerce.core.designsystem.components.EgyptCascadingAddressFields
@@ -81,7 +80,7 @@ fun AccountScreen(
     showBackButton: Boolean = true,
     onShowMessage: (String) -> Unit,
     modifier: Modifier = Modifier,
-    viewModel: AccountViewModel = hiltViewModel(),
+    viewModel: AccountViewModel,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -117,8 +116,7 @@ fun AccountScreen(
                 onResetOtpEmail = viewModel::resetOtpEmailStep,
                 onSendOtp = viewModel::sendEmailOtp,
                 onVerifyOtp = viewModel::verifyEmailOtp,
-                onGoogleStart = viewModel::clearAuthErrors,
-                onGoogleResult = viewModel::onGoogleResult,
+                onGoogleSignIn = viewModel::signInWithGoogle,
                 modifier = modifier,
             )
             return

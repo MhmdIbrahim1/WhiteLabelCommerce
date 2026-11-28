@@ -13,6 +13,10 @@ interface AuthRepository {
 
     suspend fun signInWithGoogleIdToken(idToken: String, rawNonce: String): Result<Unit>
 
+    suspend fun prepareGoogleOAuthUrl(): Result<String>
+
+    suspend fun exchangeGoogleOAuthCode(code: String): Result<Unit>
+
     suspend fun completeStoreCustomerOnboarding(fullName: String, phone: String): Result<Unit>
 
     suspend fun refreshProfile(): Result<CustomerProfile?>

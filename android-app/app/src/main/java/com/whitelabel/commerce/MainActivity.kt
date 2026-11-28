@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.viewModels
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -23,24 +24,49 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.whitelabel.commerce.app.MainViewModel
 import com.whitelabel.commerce.app.navigation.WhiteLabelAppShell
 import com.whitelabel.commerce.app.navigation.parseProductDeepLink
+import com.whitelabel.commerce.core.domain.model.parseOAuthCallback
+import com.whitelabel.commerce.feature.account.AccountViewModel
 import com.whitelabel.commerce.core.designsystem.WhiteLabelCommerceTheme
 import com.whitelabel.commerce.core.notifications.NotificationChannels
 import com.whitelabel.commerce.core.updater.AppUpdateDialog
 import com.whitelabel.commerce.core.updater.AppUpdateViewModel
 import com.whitelabel.commerce.core.updater.PlayStoreUpdater
 import dagger.hilt.android.AndroidEntryPoint
+import okio.ByteString.Companion.encodeUtf8
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
+    private val accountViewModel by viewModels<AccountViewModel>()
+    private var consumedCallbackDigest: String? = null
     private val pendingDeepLinkState = mutableStateOf<String?>(null)
     private val pendingNotificationIdState = mutableStateOf<String?>(null)
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        extractDeepLink(intent)?.let { pendingDeepLinkState.value = it }
-        extractNotificationId(intent)?.let { pendingNotificationIdState.value = it }
+        routeIntent(intent)
+    }
+
+    private fun routeIntent(intent: Intent, restoring: Boolean = false) {
+        val data = intent.dataString
+        val callback = if (intent.action == Intent.ACTION_VIEW) parseOAuthCallback(data) else null
+        if (callback != null) {
+            val digest = data.orEmpty().encodeUtf8().sha256().hex()
+            intent.data = null
+            if (restoring && digest == consumedCallbackDigest) return
+            consumedCallbackDigest = digest
+            pendingDeepLinkState.value = "/account"
+            accountViewModel.onOAuthCallback(callback)
+        } else if (!restoring) {
+            extractDeepLink(intent)?.let { pendingDeepLinkState.value = it }
+            extractNotificationId(intent)?.let { pendingNotificationIdState.value = it }
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString("consumedOAuthCallbackDigest", consumedCallbackDigest)
     }
 
     private fun extractDeepLink(intent: Intent?): String? {
@@ -63,10 +89,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        if (savedInstanceState == null) {
-            extractDeepLink(intent)?.let { pendingDeepLinkState.value = it }
-            extractNotificationId(intent)?.let { pendingNotificationIdState.value = it }
-        }
+        consumedCallbackDigest = savedInstanceState?.getString("consumedOAuthCallbackDigest")
+        routeIntent(intent, restoring = savedInstanceState != null)
 
         setContent {
             val ready by androidx.compose.runtime.produceState(false) {
@@ -127,6 +151,7 @@ class MainActivity : ComponentActivity() {
             }
 
             androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+                accountViewModel.onBrowserResume()
                 mainViewModel.refreshStoreSettings()
                 mainViewModel.syncPushToken()
                 onPauseOrDispose {}
@@ -161,6 +186,7 @@ class MainActivity : ComponentActivity() {
                 darkTheme = useDarkTheme,
             ) {
                 WhiteLabelAppShell(
+                    accountViewModel = accountViewModel,
                     storeSettings = settings,
                     cartItemCount = uiState.cartItemCount,
                     unreadNotificationCount = uiState.unreadNotificationCount,

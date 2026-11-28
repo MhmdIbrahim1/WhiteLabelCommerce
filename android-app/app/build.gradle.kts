@@ -129,6 +129,9 @@ val resolvedStoreSlug = resolveConfigValue(
 require(resolvedStoreSlug.isEmpty() || Regex("^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$").matches(resolvedStoreSlug)) {
     "Invalid storeSlug"
 }
+val oauthCallbackScheme = "shopstage"
+val oauthCallbackHost = resolvedStoreSlug.ifEmpty { appPackage.lowercase().replace('_', '-') }
+val oauthCallbackPath = "/auth-callback"
 
 val resolvedStoreName = (
     (project.findProperty("storeName") as? String)
@@ -193,6 +196,12 @@ android {
         manifestPlaceholders["linkTenantHost"] = linkTenantHost
         manifestPlaceholders["linkRootHost"] = linkRootHost
         manifestPlaceholders["linkTenantPath"] = linkTenantPath
+        manifestPlaceholders["oauthCallbackScheme"] = oauthCallbackScheme
+        manifestPlaceholders["oauthCallbackHost"] = oauthCallbackHost
+        manifestPlaceholders["oauthCallbackPath"] = oauthCallbackPath
+        buildConfigField("String", "OAUTH_CALLBACK_SCHEME", "\"$oauthCallbackScheme\"")
+        buildConfigField("String", "OAUTH_CALLBACK_HOST", "\"$oauthCallbackHost\"")
+        buildConfigField("String", "OAUTH_CALLBACK_PATH", "\"$oauthCallbackPath\"")
         buildConfigField("String", "LINK_ROOT_HOST", "\"$linkRootHost\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -304,6 +313,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.browser)
 
     // Native Sign in with Google
     implementation(libs.androidx.credentials.core)
@@ -384,20 +394,14 @@ tasks.named("check") { dependsOn(verifyReleaseStorefrontOriginContract) }
 // manifest merger. Invoke with the same -PstoreName/-PVERSION_* arguments used
 // by build-store-apk.yml; special characters must round-trip as raw text.
 tasks.register("verifyGithubDebugManifestContract") {
+    val mergedManifest = tasks.named("processGithubDebugMainManifest").map {
+        it.outputs.files.asFileTree.matching { include("**/AndroidManifest.xml") }.singleFile
+    }
     dependsOn("processGithubDebugMainManifest")
     doLast {
-        val candidates = fileTree(layout.buildDirectory.dir("intermediates")) {
-            include("**/githubDebug/**/AndroidManifest.xml")
-        }.files.filter { manifest ->
-            val normalized = manifest.invariantSeparatorsPath
-            normalized.contains("merged_manifest") || normalized.contains("merged_manifests")
-        }
-        val manifestFile = candidates.maxByOrNull { it.lastModified() }
-            ?: throw GradleException("Merged githubDebug AndroidManifest.xml was not produced.")
-
         val document = DocumentBuilderFactory.newInstance().apply {
             isNamespaceAware = true
-        }.newDocumentBuilder().parse(manifestFile)
+        }.newDocumentBuilder().parse(mergedManifest.get())
         val androidNamespace = "http://schemas.android.com/apk/res/android"
         val manifest = document.documentElement
         val application = document.getElementsByTagName("application").item(0)
@@ -408,7 +412,13 @@ tasks.register("verifyGithubDebugManifestContract") {
         val actualVersionName = manifest.getAttributeNS(androidNamespace, "versionName")
 
         val linkData = document.getElementsByTagName("data")
-        val productRoutes = (0 until linkData.length).map { linkData.item(it) as org.w3c.dom.Element }
+        val routes = (0 until linkData.length).map { linkData.item(it) as org.w3c.dom.Element }
+        val oauthRoute = routes.single { it.getAttributeNS(androidNamespace, "scheme") == oauthCallbackScheme }
+        check(oauthRoute.getAttributeNS(androidNamespace, "host") == oauthCallbackHost &&
+            oauthRoute.getAttributeNS(androidNamespace, "path") == oauthCallbackPath) {
+            "Merged manifest must match $oauthCallbackScheme://$oauthCallbackHost$oauthCallbackPath"
+        }
+        val productRoutes = routes
             .filter { it.getAttributeNS(androidNamespace, "scheme") == "https" }
             .map { it.getAttributeNS(androidNamespace, "host") to it.getAttributeNS(androidNamespace, "pathPrefix") }
         check(linkTenantHost to "/products/" in productRoutes && linkRootHost to linkTenantPath in productRoutes) {
@@ -431,7 +441,8 @@ tasks.register("verifyGithubDebugManifestContract") {
             )
         }
         logger.lifecycle(
-            "Verified merged manifest label='$actualLabel', versionCode=$actualVersionCode, versionName=$actualVersionName",
+            "Verified merged manifest label='$actualLabel', versionCode=$actualVersionCode, versionName=$actualVersionName, " +
+                "callback=$oauthCallbackScheme://$oauthCallbackHost$oauthCallbackPath",
         )
     }
 }
