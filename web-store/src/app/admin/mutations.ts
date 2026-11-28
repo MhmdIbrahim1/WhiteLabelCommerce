@@ -30,7 +30,7 @@ import {
   validateTiktokPixelId,
 } from "@/lib/marketing";
 import type { ProductReview } from "@/lib/reviews-wishlist";
-import { resolveEffectivePrice } from "@/lib/flash-sale";
+import { parseFlashSaleForm, resolveEffectivePrice } from "@/lib/flash-sale";
 import { normalizeSpecs } from "@/lib/specs";
 import { pagination } from "@/lib/workflow";
 import { directoryHref, isRecordId } from "@/lib/workspace-directory";
@@ -120,56 +120,13 @@ export async function saveProduct(f: FormData) {
   const { db, storeId } = await requireAdmin("manage_products"),
     id = text(f, "id"),
     oldPrice = text(f, "old_price"),
-    costPriceRaw = text(f, "cost_price"),
-    flashPriceRaw = text(f, "flash_sale_price"),
-    flashStartsRaw = text(f, "flash_sale_starts_at"),
-    flashEndsRaw = text(f, "flash_sale_ends_at");
+    costPriceRaw = text(f, "cost_price");
   const price = numberField(text(f, "price")),
     stock = numberField(text(f, "stock"), true),
     costPrice = costPriceRaw ? numberField(costPriceRaw) : 0;
 
-  let flashSalePrice: number | null = null;
-  let flashSaleStartsAt: string | null = null;
-  let flashSaleEndsAt: string | null = null;
-
-  if (flashPriceRaw) {
-    const parsedFlash = numberField(flashPriceRaw);
-    if (
-      parsedFlash === null ||
-      parsedFlash <= 0 ||
-      (price !== null && parsedFlash >= price)
-    ) {
-      finish(destination, false);
-    }
-    flashSalePrice = parsedFlash;
-  }
-
-  if (flashStartsRaw) {
-    const ms = Date.parse(flashStartsRaw);
-    if (!Number.isFinite(ms)) finish(destination, false);
-    flashSaleStartsAt = new Date(ms).toISOString();
-  }
-
-  if (flashEndsRaw) {
-    const ms = Date.parse(flashEndsRaw);
-    if (!Number.isFinite(ms)) finish(destination, false);
-    flashSaleEndsAt = new Date(ms).toISOString();
-  }
-
-  if (flashSalePrice !== null && !flashSaleEndsAt) {
-    finish(destination, false);
-  }
-  if (
-    flashSaleStartsAt &&
-    flashSaleEndsAt &&
-    Date.parse(flashSaleEndsAt) <= Date.parse(flashSaleStartsAt)
-  ) {
-    finish(destination, false);
-  }
-  if (flashSalePrice === null) {
-    flashSaleStartsAt = null;
-    flashSaleEndsAt = null;
-  }
+  const flashSale = parseFlashSaleForm(f, price);
+  if (!flashSale) finish(destination, false);
 
   let parsedSpecs: ReturnType<typeof normalizeSpecs> = [];
   const rawSpecs = text(f, "specifications");
@@ -197,9 +154,7 @@ export async function saveProduct(f: FormData) {
     ...orderLimitField(f, "max_order_qty", destination),
     stock,
     old_price: oldPrice ? numberField(oldPrice) : null,
-    flash_sale_price: flashSalePrice,
-    flash_sale_starts_at: flashSaleStartsAt,
-    flash_sale_ends_at: flashSaleEndsAt,
+    ...flashSale,
     sizes: list(text(f, "sizes")),
     colors: list(text(f, "colors")),
     specifications: parsedSpecs,
@@ -292,12 +247,7 @@ export async function saveProduct(f: FormData) {
     finish(destination, false, "plan_limit_reached");
   }
   if (!result.error && id) {
-    const nextEffectivePrice = resolveEffectivePrice({
-      price,
-      flash_sale_price: flashSalePrice,
-      flash_sale_starts_at: flashSaleStartsAt,
-      flash_sale_ends_at: flashSaleEndsAt,
-    });
+    const nextEffectivePrice = resolveEffectivePrice({ price, ...flashSale });
     notifyCatalogChanges(storeId, id, previousStock, stock, previousEffectivePrice, nextEffectivePrice);
   }
   finish(destination, !result.error);
@@ -318,7 +268,7 @@ export async function quickSaveProduct(expectedStore: string, id: string, form: 
   const { db, storeId } = await requireAdmin("manage_products");
   if (expectedStore !== storeId || !isRecordId(id)) return "changed";
   const { data: current, error } = await db.from("products")
-    .select("stock,price,flash_sale_price,flash_sale_starts_at,flash_sale_ends_at,product_variants(color,size,stock)")
+    .select("stock,price,old_price,flash_sale_price,flash_sale_starts_at,flash_sale_ends_at,product_variants(color,size,stock)")
     .eq("store_id", storeId).eq("id", id).eq("product_variants.listed", true).maybeSingle();
   if (error || !current) return "changed";
   const variants = current.product_variants;

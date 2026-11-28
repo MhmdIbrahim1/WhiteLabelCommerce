@@ -18,22 +18,50 @@ function parseTimestamp(value: string | null | undefined): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+/** A separately reduced flash price compares to the selling price. Featuring an existing
+ * discount keeps its original compare-at price. */
+export function flashCompareAt(input: FlashSalePriceInput): number | null {
+  const regular = Number(input.price);
+  const flash = Number(input.flash_sale_price);
+  if (!Number.isFinite(regular) || !Number.isFinite(flash) || flash <= 0) return null;
+  if (flash < regular) return regular;
+  const previous = Number(input.old_price);
+  return flash === regular && Number.isFinite(previous) && previous > regular ? previous : null;
+}
+
+export function parseFlashSaleForm(form: FormData, regularPrice: number | null) {
+  const enabled = form.get("flash_sale_enabled");
+  const priceText = String(form.get("flash_sale_price") ?? "").trim();
+  // Older product forms expressed the same choice by setting or clearing the flash price.
+  if (enabled === "off" || (enabled === null && !priceText)) {
+    return { flash_sale_price: null, flash_sale_starts_at: null, flash_sale_ends_at: null };
+  }
+  if (regularPrice === null || (enabled !== null && enabled !== "on")) return null;
+
+  const price = Number(priceText);
+  const compareAt = flashCompareAt({ price: regularPrice, old_price: Number(form.get("old_price")), flash_sale_price: price });
+  const startText = String(form.get("flash_sale_starts_at") ?? "").trim();
+  const startsAt = parseTimestamp(startText);
+  const endsAt = parseTimestamp(String(form.get("flash_sale_ends_at") ?? "").trim());
+  if (compareAt === null || endsAt === null || (startText && startsAt === null) ||
+      (startsAt !== null && startsAt >= endsAt)) {
+    return null;
+  }
+  return {
+    flash_sale_price: price,
+    flash_sale_starts_at: startsAt === null ? null : new Date(startsAt).toISOString(),
+    flash_sale_ends_at: new Date(endsAt).toISOString(),
+  };
+}
+
 /**
- * Returns true ONLY when a flash sale price is set, strictly lower than regular price,
- * has a valid future end timestamp, and (if a start timestamp is set) has already started.
+ * A configured discount appears in Flash Sale from its optional start up to its end.
  */
 export function isFlashSaleActive(
   input: FlashSalePriceInput,
   nowMs: number = Date.now(),
 ): boolean {
-  const regular = Number(input.price);
-  const flash =
-    input.flash_sale_price === null || input.flash_sale_price === undefined
-      ? NaN
-      : Number(input.flash_sale_price);
-
-  if (!Number.isFinite(regular) || !Number.isFinite(flash)) return false;
-  if (flash <= 0 || flash >= regular) return false;
+  if (flashCompareAt(input) === null) return false;
 
   const endsMs = parseTimestamp(input.flash_sale_ends_at);
   if (endsMs === null || endsMs <= nowMs) return false;
@@ -69,33 +97,20 @@ export function lineEffectivePrice(
     line.flash_sale_price !== undefined ||
     line.flash_sale_ends_at !== undefined
   ) {
-    return resolveEffectivePrice(
-      {
-        price: basePrice,
-        flash_sale_price: line.flash_sale_price ?? null,
-        flash_sale_starts_at: line.flash_sale_starts_at ?? null,
-        flash_sale_ends_at: line.flash_sale_ends_at ?? null,
-      },
-      nowMs,
-    );
+    return resolveEffectivePrice({ ...line, price: basePrice }, nowMs);
   }
   return line.price;
 }
 
 /**
- * Returns integer percentage savings (1..99) for an active flash sale compared to regular price,
- * or null if the flash sale is not active.
+ * Returns integer percentage savings (1..99) for an active flash sale.
  */
 export function getFlashSavingsPercent(
   input: FlashSalePriceInput,
   nowMs: number = Date.now(),
 ): number | null {
   if (!isFlashSaleActive(input, nowMs)) return null;
-  const regular = Number(input.price);
-  const flash = Number(input.flash_sale_price);
-  if (regular <= 0 || flash >= regular) return null;
-  const pct = Math.round(((regular - flash) / regular) * 100);
-  return Math.max(1, Math.min(99, pct));
+  return getRegularSavingsPercent({ price: Number(input.flash_sale_price), old_price: flashCompareAt(input) });
 }
 
 /**
@@ -117,11 +132,13 @@ export function getRegularSavingsPercent(
 
 export function productPricePresentation(product: FlashSalePriceInput, now: number) {
   const flash = isFlashSaleActive(product, now);
-  const savings = flash ? getFlashSavingsPercent(product, now) : getRegularSavingsPercent(product);
+  const current = Number(flash ? product.flash_sale_price : product.price);
+  const compareAt = flash ? flashCompareAt(product) : product.old_price;
+  const savings = getRegularSavingsPercent({ price: current, old_price: compareAt });
   return {
     flash,
-    current: resolveEffectivePrice(product, now),
-    compareAt: savings === null ? null : Number(flash ? product.price : product.old_price),
+    current,
+    compareAt: savings === null ? null : Number(compareAt),
     savings,
   };
 }

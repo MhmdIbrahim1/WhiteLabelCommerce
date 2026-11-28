@@ -33,7 +33,7 @@
 .ws-content :is(.badge.shipped,.badge.confirmed,.badge.in_progress) { color: var(--ws-info); }
 .ws-content :is(.danger,.badge.cancelled,.domain-status[data-state="error"],.admin-flash-price-text) { color: var(--ws-danger); }
 .ws-content .admin-flash-pill { background: var(--card); color: var(--ws-danger); }
-.ws-content :is(.admin-flash-error,.admin-flash-pct-inline,.admin-flash-summary .with-icon svg) { color: var(--ws-danger); }
+.ws-content :is(.admin-flash-error,.admin-flash-pct-inline) { color: var(--ws-danger); }
 .ws-content .admin-flash-card { border-color: var(--line); background: var(--card); }
 .ws-preview-modes { display: inline-flex; padding: 3px; border: 1px solid var(--line); border-radius: var(--pt-radius); background: var(--card); }
 .ws-content .ws-preview-modes button { min-block-size: 34px; padding: .3rem .7rem; border: 1px solid transparent; color: var(--muted); background: transparent; font-size: .8rem; }

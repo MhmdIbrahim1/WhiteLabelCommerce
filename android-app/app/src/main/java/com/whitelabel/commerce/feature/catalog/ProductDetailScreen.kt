@@ -403,11 +403,7 @@ fun ProductDetailScreen(
 
                         val detailFlashActive = !flashExpired && product.isFlashSaleActive()
                         val detailEffectivePrice = if (detailFlashActive) product.effectivePrice() else product.price
-                        val detailStrikePrice = if (detailFlashActive) {
-                            product.price
-                        } else {
-                            product.oldPrice?.takeIf { it > product.price }
-                        }
+                        val detailStrikePrice = product.displayStrikePrice()
 
                         Row(
                             verticalAlignment = Alignment.CenterVertically,

@@ -583,9 +583,10 @@ private fun CartUpsellStrip(
                                         color = if (flashActive) FlashRoseColor else MaterialTheme.colorScheme.primary,
                                         maxLines = 1,
                                     )
-                                    if (flashActive) {
+                                    val strikePrice = product.displayStrikePrice()
+                                    if (flashActive && strikePrice != null) {
                                         Text(
-                                            text = formatPrice(product.price, currency, locale),
+                                            text = formatPrice(strikePrice, currency, locale),
                                             style = MaterialTheme.typography.labelSmall.copy(
                                                 textDecoration = TextDecoration.LineThrough,
                                             ),

@@ -9,6 +9,7 @@ import com.whitelabel.commerce.core.domain.model.StoreSettings
 import com.whitelabel.commerce.core.domain.model.WishlistToggleOutcome
 import com.whitelabel.commerce.core.domain.repository.CartRepository
 import com.whitelabel.commerce.core.domain.repository.CatalogRepository
+import com.whitelabel.commerce.core.domain.repository.FlashSaleFeed
 import com.whitelabel.commerce.core.domain.repository.StoreRepository
 import com.whitelabel.commerce.core.domain.repository.WishlistRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -32,6 +33,8 @@ data class HomeUiState(
     val storeSettings: StoreSettings = StoreSettings(),
     val categories: List<Category> = emptyList(),
     val featuredProducts: List<Product> = emptyList(),
+    val flashSales: FlashSaleFeed = FlashSaleFeed(emptyList(), null),
+    val flashSalesLoadFailed: Boolean = false,
     val wishlistedProductIds: Set<String> = emptySet(),
     val searchQuery: String = "",
     val searchResults: List<Product> = emptyList(),
@@ -55,6 +58,7 @@ class HomeViewModel @Inject constructor(
 
     private val localState = MutableStateFlow(HomeUiState())
     private var searchJob: Job? = null
+    private var flashJob: Job? = null
 
     val uiState: StateFlow<HomeUiState> = combine(
         storeRepository.storeSettings,
@@ -79,6 +83,7 @@ class HomeViewModel @Inject constructor(
     }
 
     fun loadHomeData(isPullRefresh: Boolean = false) {
+        if (isPullRefresh) refreshFlashSales()
         viewModelScope.launch {
             localState.update {
                 it.copy(
@@ -94,6 +99,7 @@ class HomeViewModel @Inject constructor(
 
             val categoriesResult = categoriesDeferred.await()
             val productsResult = productsDeferred.await()
+            if (isPullRefresh) flashJob?.join()
             val firstError = categoriesResult.exceptionOrNull() ?: productsResult.exceptionOrNull()
 
             localState.update { prev ->
@@ -105,6 +111,17 @@ class HomeViewModel @Inject constructor(
                     isRefreshing = false,
                     errorMessage = if (firstError == null) null else localized("تعذر تحميل المتجر. حاول مرة أخرى.", "Could not load the store. Please try again."),
                 )
+            }
+        }
+    }
+
+    fun refreshFlashSales() {
+        if (flashJob?.isActive == true) return
+        flashJob = viewModelScope.launch {
+            catalogRepository.getFlashSales(limit = 8).onSuccess { feed ->
+                localState.update { it.copy(flashSales = feed, flashSalesLoadFailed = false) }
+            }.onFailure {
+                localState.update { it.copy(flashSalesLoadFailed = true) }
             }
         }
     }

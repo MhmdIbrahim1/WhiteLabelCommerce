@@ -1,9 +1,14 @@
 package com.whitelabel.commerce
 
 import com.whitelabel.commerce.core.data.remote.dto.ProductDto
+import com.whitelabel.commerce.core.data.repository.flashSalePage
 import com.whitelabel.commerce.core.domain.model.CartItem
 import com.whitelabel.commerce.core.domain.model.FlashSalePricing
 import com.whitelabel.commerce.core.domain.model.Product
+import com.whitelabel.commerce.core.domain.repository.FlashSaleFeed
+import io.github.jan.supabase.annotations.SupabaseExperimental
+import io.github.jan.supabase.postgrest.PropertyConversionMethod
+import io.github.jan.supabase.postgrest.query.PostgrestRequestBuilder
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -14,6 +19,52 @@ import org.junit.Test
 class AovAndFlashSaleTest {
 
     private val json = Json { ignoreUnknownKeys = true }
+
+    @OptIn(SupabaseExperimental::class)
+    @Test
+    fun flashPagesReadTheSelectedStoreByExpiryAcrossCatalogPages() {
+        val request = PostgrestRequestBuilder(PropertyConversionMethod.NONE)
+        request.flashSalePage("cat", 100, 100)
+        assertEquals(listOf("eq.${BuildConfig.STORE_ID}"), request.params["store_id"])
+        assertEquals(listOf("eq.cat"), request.params["category_id"])
+        assertEquals(listOf("flash_sale_ends_at.asc.nullslast,id.asc.nullslast"), request.params["order"])
+        assertEquals(listOf("100"), request.params["limit"])
+        assertEquals(listOf("100"), request.params["offset"])
+    }
+
+    @Test
+    fun existingDiscountEntersFlashOnlyWhenSelectedAndKeepsItsPrice() {
+        val start = "2026-11-28T12:00:00Z"
+        val end = "2026-11-28T13:00:00Z"
+        val now = FlashSalePricing.parseIsoTimestampMillis(start)!!
+        val expires = FlashSalePricing.parseIsoTimestampMillis(end)!!
+        val regularSale = Product(id = "discount", categoryId = "c", name = "Sale", price = 30.0, oldPrice = 100.0)
+        assertFalse(regularSale.isFlashSaleActive(now))
+        val promoted = regularSale.copy(flashSalePrice = 30.0, flashSaleStartsAt = start, flashSaleEndsAt = end)
+        assertFalse(promoted.isFlashSaleActive(now - 1))
+        assertTrue(promoted.isFlashSaleActive(now))
+        assertEquals(30.0, promoted.effectivePrice(now), 0.0)
+        assertEquals(70, promoted.flashSavingsPercent(now))
+        assertEquals(100.0, promoted.displayStrikePrice(now)!!, 0.0)
+        assertFalse(promoted.copy(oldPrice = null).isFlashSaleActive(now))
+        assertFalse(promoted.copy(flashSalePrice = 40.0).isFlashSaleActive(now))
+        assertFalse(promoted.isFlashSaleActive(expires))
+        assertEquals(100.0, promoted.displayStrikePrice(expires)!!, 0.0)
+        val deeperFlash = promoted.copy(flashSalePrice = 15.0)
+        assertEquals(50, deeperFlash.flashSavingsPercent(now))
+        assertEquals(30.0, deeperFlash.displayStrikePrice(now)!!, 0.0)
+    }
+
+    @Test
+    fun flashFeedRefreshesAtFirstOpeningOrExpiryEvenWhenCurrentlyEmpty() {
+        val end = "2026-11-28T13:00:00Z"
+        val expiry = FlashSalePricing.parseIsoTimestampMillis(end)!!
+        val product = Product(id = "deal", categoryId = "c", name = "Deal", price = 10.0, flashSaleEndsAt = end)
+        assertEquals(expiry - 10L, FlashSaleFeed(emptyList(), expiry - 10L).refreshAtMillis)
+        assertEquals(expiry - 10L, FlashSaleFeed(listOf(product), expiry - 10L).refreshAtMillis)
+        assertEquals(expiry, FlashSaleFeed(listOf(product), expiry + 10L).refreshAtMillis)
+        assertNull(FlashSaleFeed(emptyList(), null).refreshAtMillis)
+    }
 
     @Test
     fun activeFlashSaleWindowReturnsDiscountedEffectivePriceAndSavings() {

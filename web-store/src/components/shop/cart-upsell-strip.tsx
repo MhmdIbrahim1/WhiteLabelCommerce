@@ -10,7 +10,7 @@ import { storefrontImageSrc } from "@/lib/storefront-media";
 import { useSaleClock } from "./use-sale-clock";
 import { localizedText } from "@/lib/i18n";
 import { storeHref } from "@/lib/tenant-shared";
-import { isFlashSaleActive, resolveEffectivePrice } from "@/lib/flash-sale";
+import { productPricePresentation, resolveEffectivePrice } from "@/lib/flash-sale";
 import { useLanguage } from "@/components/language-provider";
 import { change, type Line, useCartScope, useDefaultOrderLimit, readInventory, inventoryForLine } from "./cart-store";
 
@@ -164,8 +164,7 @@ export function CartUpsellStrip({
           const title = localizedText(lang, item.name, item.name_en);
           const detailHref = storeHref(basePath, "/products/" + item.id);
           const image = storefrontImageSrc(item.image_url, 384);
-          const flashActive = isFlashSaleActive(item, now);
-          const effective = resolveEffectivePrice(item, now);
+          const { flash: flashActive, current: effective, compareAt } = productPricePresentation(item, now);
           const needsOptions = item.sizes.length > 0 || item.colors.length > 0;
 
           return (
@@ -195,8 +194,8 @@ export function CartUpsellStrip({
                   <strong className={flashActive ? "is-flash" : ""}>
                     <bdi dir="ltr">{money(effective, currency, lang)}</bdi>
                   </strong>
-                  {flashActive && (
-                    <del><bdi dir="ltr">{money(item.price, currency, lang)}</bdi></del>
+                  {flashActive && compareAt !== null && (
+                    <del><bdi dir="ltr">{money(compareAt, currency, lang)}</bdi></del>
                   )}
                 </div>
               </div>

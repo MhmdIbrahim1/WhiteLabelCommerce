@@ -62,6 +62,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -89,7 +90,7 @@ import com.whitelabel.commerce.core.designsystem.components.rememberShimmerBrush
 import com.whitelabel.commerce.core.designsystem.localized
 import com.whitelabel.commerce.core.designsystem.parseHexColorOrDefault
 import com.whitelabel.commerce.core.domain.model.Category
-import com.whitelabel.commerce.core.domain.model.FlashSalePricing
+import com.whitelabel.commerce.core.designsystem.components.rememberFlashSaleTime
 import com.whitelabel.commerce.core.domain.model.Product
 import com.whitelabel.commerce.core.domain.model.PromoBannerCampaign
 import com.whitelabel.commerce.core.domain.model.StoreSettings
@@ -112,6 +113,11 @@ fun HomeScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val settings = LocalStoreSettings.current
+    val saleTime = rememberFlashSaleTime(state.flashSales.refreshAtMillis, viewModel::refreshFlashSales)
+    val activeFlashDeals = remember(state.flashSales, saleTime) {
+        val now = System.currentTimeMillis()
+        state.flashSales.products.filter { it.isInStock && it.isFlashSaleActive(now) }
+    }
 
     PullToRefreshBox(
         isRefreshing = state.isRefreshing,
@@ -262,10 +268,13 @@ fun HomeScreen(
                     }
                 }
 
-                // 1b. Flash Deals Horizontal Strip (rendered ONLY when active flash deals exist)
-                val activeFlashDeals = state.featuredProducts
-                    .filter { it.isInStock && it.isFlashSaleActive() }
-                    .sortedBy { FlashSalePricing.parseIsoTimestampMillis(it.flashSaleEndsAt) ?: Long.MAX_VALUE }
+                if (state.flashSalesLoadFailed && activeFlashDeals.isEmpty()) {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        TextButton(onClick = viewModel::refreshFlashSales) {
+                            Text(localized("تعذر تحميل العروض المؤقتة. أعد المحاولة", "Could not load flash deals. Try again"))
+                        }
+                    }
+                }
                 if (activeFlashDeals.isNotEmpty()) {
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         Surface(

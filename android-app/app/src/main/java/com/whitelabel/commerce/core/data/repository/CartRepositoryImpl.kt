@@ -46,6 +46,7 @@ private data class InventoryRow(
     val id: String,
     val stock: Int,
     val price: Double,
+    @SerialName("old_price") val oldPrice: Double? = null,
     @SerialName("flash_sale_price") val salePrice: Double? = null,
     @SerialName("flash_sale_starts_at") val saleStartsAt: String? = null,
     @SerialName("flash_sale_ends_at") val saleEndsAt: String? = null,
@@ -147,7 +148,7 @@ class CartRepositoryImpl @Inject constructor(
 
     private suspend fun inventory(ids: List<String>) = runSuspendCatching {
         supabase.from("products").select(Columns.raw(
-            "id,stock,price,flash_sale_price,flash_sale_starts_at,flash_sale_ends_at,max_order_qty,product_variants(color,size,stock)"
+            "id,stock,price,old_price,flash_sale_price,flash_sale_starts_at,flash_sale_ends_at,max_order_qty,product_variants(color,size,stock)"
         )) {
             filter { eq("store_id", BuildConfig.STORE_ID); eq("is_active", true); isIn("id", ids) }
         }.decodeList<InventoryRow>().associateBy { it.id }
@@ -164,8 +165,9 @@ class CartRepositoryImpl @Inject constructor(
                     if (row == null) line.copy(maxStock = 0, productStock = 0)
                     else line.copy(
                         regularPrice = row.price,
+                        oldPrice = row.oldPrice,
                         unitPrice = com.whitelabel.commerce.core.domain.model.FlashSalePricing.effectivePrice(
-                            row.price, row.salePrice, row.saleStartsAt, row.saleEndsAt,
+                            row.price, row.salePrice, row.saleStartsAt, row.saleEndsAt, oldPrice = row.oldPrice,
                         ),
                         flashSalePrice = row.salePrice,
                         flashSaleStartsAt = row.saleStartsAt,

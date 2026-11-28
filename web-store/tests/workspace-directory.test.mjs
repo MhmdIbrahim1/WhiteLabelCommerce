@@ -100,7 +100,7 @@ test("closing a drawer handles a replaced row and a row removed by the current f
   }
 });
 
-const inventory = { stock: 5, flash_sale_price: null, product_variants: [] };
+const inventory = { stock: 5, old_price: null, flash_sale_price: null, product_variants: [] };
 function productForm(patch = {}) {
   const form = new FormData();
   for (const [key, value] of Object.entries({ name: " قميص ", name_en: "Shirt", price: "90.50", original_stock: "5", stock: "4", visibility: "active", ...patch })) {
@@ -127,6 +127,8 @@ test("variant totals stay read-only and stale inventory cannot enter the quick-s
 
 test("quick prices respect flash offers and shared stock is a nonnegative PostgreSQL integer", () => {
   assert.equal(quickProductChange({ ...inventory, flash_sale_price: 91 }, productForm()), "flash_price");
+  assert.equal(quickProductChange({ ...inventory, flash_sale_price: 90.5 }, productForm()), "flash_price");
+  assert.equal(quickProductChange({ ...inventory, flash_sale_price: 90.5, old_price: 100 }, productForm()).price, 90.5);
   for (const patch of [{ price: "" }, { price: "-1" }, { name: " " }, { stock: "0.5" }, { stock: "2147483648" }, { visibility: "" }])
     assert.equal(quickProductChange(inventory, productForm(patch)), "invalid");
 });

@@ -14,13 +14,13 @@ export async function catalogCategories(context?: Awaited<ReturnType<typeof requ
   }
 }
 
-export const productColumns = "id,name,name_en,slug,price,stock,is_active,image_path,category_id,flash_sale_price,flash_sale_starts_at,flash_sale_ends_at" as const;
+export const productColumns = "id,name,name_en,slug,price,old_price,stock,is_active,image_path,category_id,flash_sale_price,flash_sale_starts_at,flash_sale_ends_at" as const;
 
 export async function editorProduct(id: string) {
   const { storeId } = await requireAdmin("manage_products");
   // Cost is private. Only the authorized full editor reads it via the server client.
   const result = await adminDb().from("products").select(productColumns +
-    ",cost_price,description,description_en,old_price,max_order_qty,sizes,colors,color_images,product_variants(color,size,stock),image_paths,specifications")
+    ",cost_price,description,description_en,max_order_qty,sizes,colors,color_images,product_variants(color,size,stock),image_paths,specifications")
     .eq("store_id", storeId).eq("id", id).eq("product_variants.listed", true).maybeSingle<AdminProductItem>();
   return result.error ? checked(result) : result.data;
 }

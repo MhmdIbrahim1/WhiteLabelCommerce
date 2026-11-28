@@ -7,7 +7,7 @@ import { storefrontPresets, resolveStorefrontPreset } from "../src/lib/storefron
 import { resolveStorefrontTheme } from "../src/lib/storefront-theme.ts";
 import { resolveUiConfig, uiConfigFromTemplate } from "../src/lib/ui-config.ts";
 import { contrastRatio } from "../src/lib/theme-contrast.ts";
-import { formatSavings, lineEffectivePrice, nextSaleBoundary, productPricePresentation } from "../src/lib/flash-sale.ts";
+import { formatSavings, lineEffectivePrice, nextSaleBoundary, parseFlashSaleForm, productPricePresentation } from "../src/lib/flash-sale.ts";
 import { formatMoney } from "../src/lib/i18n.ts";
 import { remainingQuantity } from "../src/lib/variant-stock.ts";
 import { storefrontImageSrc, storefrontMediaPatterns } from "../src/lib/storefront-media.ts";
@@ -16,8 +16,53 @@ const enabled = { motion_enabled: true, sticky_cta_enabled: true };
 const keys = ["fashion_editorial", "tech_precision", "beauty_maison", "gourmet_craft", "commerce_signature"];
 const start = Date.parse("2026-09-02T10:00:00Z");
 const end = start + 60_000;
-const sale = { price: 120, old_price: 150, flash_sale_price: 90,
+const flashOffer = { flash_sale_price: 90,
   flash_sale_starts_at: new Date(start).toISOString(), flash_sale_ends_at: new Date(end).toISOString() };
+const sale = { price: 120, old_price: 150, ...flashOffer };
+
+function flashForm(fields) {
+  const form = new FormData();
+  for (const [name, value] of Object.entries(fields)) form.set(name, String(value));
+  return form;
+}
+
+test("disabling Flash Sale restores ordinary pricing even when old flash fields are submitted", () => {
+  const cleared = parseFlashSaleForm(flashForm({ ...sale, flash_sale_enabled: "off" }), sale.price);
+  assert.deepEqual(cleared, { flash_sale_price: null, flash_sale_starts_at: null, flash_sale_ends_at: null });
+  assert.deepEqual(productPricePresentation({ price: 30, old_price: 100, ...cleared }, start),
+    { flash: false, current: 30, compareAt: 100, savings: 70 });
+  assert.deepEqual(parseFlashSaleForm(flashForm({ old_price: 100 }), 30), cleared);
+});
+
+test("checked and legacy flash offers preserve the same price and window", () => {
+  for (const mode of [{ flash_sale_enabled: "on" }, {}]) {
+    assert.deepEqual(parseFlashSaleForm(flashForm({ ...flashOffer, ...mode }), sale.price), flashOffer);
+  }
+  const immediate = { ...flashOffer, flash_sale_starts_at: "" };
+  assert.deepEqual(parseFlashSaleForm(flashForm({ ...immediate, flash_sale_enabled: "on" }), sale.price),
+    { ...flashOffer, flash_sale_starts_at: null });
+});
+
+test("featuring a regular 70% discount keeps its price, percentage and original comparison across the time window", () => {
+  const product = { ...flashOffer, price: 30, old_price: 100, flash_sale_price: 30 };
+  const fields = parseFlashSaleForm(flashForm({ ...product, flash_sale_enabled: "on" }), product.price);
+  assert.deepEqual(fields, { ...flashOffer, flash_sale_price: 30 });
+  const expected = { flash: false, current: 30, compareAt: 100, savings: 70 };
+  assert.deepEqual(productPricePresentation(product, start - 1), expected);
+  assert.deepEqual(productPricePresentation(product, start), { ...expected, flash: true });
+  assert.deepEqual(productPricePresentation(product, end), expected);
+});
+
+test("enabling Flash Sale requires a positive discount and a valid end after the optional start", () => {
+  for (const overrides of [
+    { flash_sale_price: "" }, { flash_sale_price: 0 }, { flash_sale_price: 121 },
+    { flash_sale_price: 120, old_price: "" }, { flash_sale_price: 120, old_price: 120 },
+    { flash_sale_price: "invalid" }, { flash_sale_ends_at: "" }, { flash_sale_ends_at: "invalid" },
+    { flash_sale_starts_at: "invalid" }, { flash_sale_starts_at: sale.flash_sale_ends_at },
+  ]) {
+    assert.equal(parseFlashSaleForm(flashForm({ ...sale, flash_sale_enabled: "on", ...overrides }), sale.price), null);
+  }
+});
 
 test("all five sectors resolve distinct palettes, media frames and merchandising rhythms in the initial HTML", () => {
   assert.deepEqual(Object.keys(storefrontPresets).sort(), [...keys].sort());

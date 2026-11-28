@@ -1360,7 +1360,7 @@ details details,
   gap: 0.5rem;
 }
 
-/* Phase 11A: Admin Flash Sale Pill & Collapsible Form Card */
+/* Admin flash sale indicator and product editor */
 .admin-flash-pill {
   display: inline-flex;
   align-items: center;
@@ -1384,20 +1384,6 @@ details details,
   border-radius: var(--radius);
   background: color-mix(in srgb, #be123c 3%, var(--wash));
   padding: 0.75rem 0.95rem;
-}
-
-.admin-flash-summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-  cursor: pointer;
-  list-style: none;
-}
-
-.admin-flash-summary .with-icon svg {
-  color: #be123c;
 }
 
 .admin-flash-body {
@@ -1425,24 +1411,11 @@ details details,
   font-size: 0.82rem;
 }
 
-.admin-flash-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.65rem;
-  flex-wrap: wrap;
-}
-
 .admin-flash-presets {
   display: flex;
   align-items: center;
   gap: 0.4rem;
   flex-wrap: wrap;
-}
-
-.admin-flash-clear-btn {
-  color: #b91c1c;
-  border-color: rgba(185, 28, 28, 0.3);
 }
 
 .admin-flash-error {

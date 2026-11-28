@@ -12,7 +12,7 @@ const messages = {
   saved: ["Product saved.", "تم حفظ المنتج."],
   changed: ["This product is no longer available in this store.", "لم يعد المنتج متاحاً في هذا المتجر."],
   inventory_changed: ["Inventory changed while you were editing. Reload the current stock before saving.", "تغيّر المخزون أثناء التعديل. حدّث الكمية المعروضة قبل الحفظ."],
-  flash_price: ["The regular price must be higher than the flash sale price.", "يجب أن يكون السعر الأساسي أعلى من سعر العرض المؤقت."],
+  flash_price: ["This selling price would invalidate the flash discount. Adjust prices in the full editor.", "سعر البيع المحدد يلغي خصم الفلاش. عدّل الأسعار في محرر المنتج الكامل."],
   invalid: ["Check the product name, price and stock, then save again.", "راجع اسم المنتج وسعره ومخزونه ثم احفظ التعديلات."],
   unavailable: ["Couldn’t save the product. Try again.", "تعذّر حفظ المنتج. حاول مجدداً."],
 };

@@ -73,6 +73,7 @@ import com.whitelabel.commerce.core.designsystem.LocalBrandColors
 import com.whitelabel.commerce.core.designsystem.LocalStoreSettings
 import com.whitelabel.commerce.core.designsystem.components.BrandEmptyState
 import com.whitelabel.commerce.core.designsystem.components.FlashRoseColor
+import com.whitelabel.commerce.core.designsystem.components.rememberFlashSaleTime
 import com.whitelabel.commerce.core.designsystem.components.ProductCard
 import com.whitelabel.commerce.core.designsystem.components.ProductCardSkeleton
 import com.whitelabel.commerce.core.designsystem.formatPrice
@@ -101,6 +102,10 @@ fun CatalogScreen(
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
     var showFilterSheet by remember { mutableStateOf(false) }
+    val saleTime = if (state.flashDealsOnly) {
+        rememberFlashSaleTime(state.nextFlashRefreshMillis, viewModel::refreshFlashSales)
+    } else null
+    val displayedProducts = remember(state, saleTime) { state.filterAndSort() }
 
     LaunchedEffect(initialCategoryId) {
         if (initialCategoryId != null) {
@@ -344,7 +349,7 @@ fun CatalogScreen(
             }
 
             // 3. Active Filter Bar / Result Count
-            if (!state.isLoading && (state.activeFilterCount > 0 || state.displayedProducts.isNotEmpty())) {
+            if (!state.isLoading && (state.activeFilterCount > 0 || displayedProducts.isNotEmpty())) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -354,13 +359,13 @@ fun CatalogScreen(
                         Text(
                             text = if (state.flashDealsOnly) {
                                 localized(
-                                    "العروض المؤقتة النشطة (${state.displayedProducts.size})",
-                                    "Active Flash Deals (${state.displayedProducts.size})",
+                                    "العروض المؤقتة النشطة (${displayedProducts.size})",
+                                    "Active Flash Deals (${displayedProducts.size})",
                                 )
                             } else {
                                 localized(
-                                    "${state.displayedProducts.size} منتج",
-                                    "${state.displayedProducts.size} products",
+                                    "${displayedProducts.size} منتج",
+                                    "${displayedProducts.size} products",
                                 )
                             },
                             style = MaterialTheme.typography.labelLarge,
@@ -377,11 +382,11 @@ fun CatalogScreen(
             }
 
             val correction = state.correction
-            if (!state.isLoading && correction != null && state.displayedProducts.isNotEmpty()) {
+            if (!state.isLoading && correction != null && displayedProducts.isNotEmpty()) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     com.whitelabel.commerce.core.designsystem.SearchCorrectionBanner(correction, viewModel::searchInstead)
                 }
-            } else if (!state.isLoading && state.isClosestSmartMatch && state.displayedProducts.isNotEmpty()) {
+            } else if (!state.isLoading && state.isClosestSmartMatch && displayedProducts.isNotEmpty()) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     Surface(
                         color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f),
@@ -419,7 +424,7 @@ fun CatalogScreen(
                     }
                 }
 
-                state.errorMessage != null && state.displayedProducts.isEmpty() -> {
+                state.errorMessage != null && displayedProducts.isEmpty() -> {
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         Column(
                             modifier = Modifier
@@ -440,7 +445,7 @@ fun CatalogScreen(
                     }
                 }
 
-                state.displayedProducts.isEmpty() -> {
+                displayedProducts.isEmpty() -> {
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         BrandEmptyState(
                             icon = Icons.Outlined.SearchOff,
@@ -463,7 +468,7 @@ fun CatalogScreen(
                 }
 
                 else -> {
-                    items(state.displayedProducts, key = { it.id }) { product ->
+                    items(displayedProducts, key = { it.id }) { product ->
                         ProductCard(
                             product = product,
                             isWishlisted = product.id in state.wishlistedProductIds,
@@ -498,7 +503,7 @@ fun CatalogScreen(
 
     if (showFilterSheet) {
         CatalogFilterBottomSheet(
-            loadCategory = viewModel::loadCategory,
+            loadCategory = viewModel::previewCategory,
             state = state,
             currency = storeSettings.currency,
             locale = storeSettings.locale,
@@ -526,7 +531,7 @@ fun CatalogScreen(
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun CatalogFilterBottomSheet(
-    loadCategory: suspend (String, String?) -> Result<com.whitelabel.commerce.core.domain.repository.CatalogSearchResult>,
+    loadCategory: suspend (String, String?, Boolean) -> Result<com.whitelabel.commerce.core.domain.repository.CatalogSearchResult>,
     state: CatalogUiState,
     currency: String,
     locale: String,
@@ -571,10 +576,10 @@ private fun CatalogFilterBottomSheet(
 
     val previewProducts by androidx.compose.runtime.produceState(
         initialValue = state.rawProducts,
-        draftCategoryId, state.selectedCategoryId, state.searchQuery, state.exactQuery, state.rawProducts,
+        draftCategoryId, draftFlashOnly, state.selectedCategoryId, state.flashDealsOnly, state.searchQuery, state.exactQuery, state.rawProducts,
     ) {
-        value = if (draftCategoryId == state.selectedCategoryId) state.rawProducts else
-            loadCategory(state.searchQuery, draftCategoryId).getOrNull()?.products.orEmpty()
+        value = if (draftCategoryId == state.selectedCategoryId && draftFlashOnly == state.flashDealsOnly) state.rawProducts else
+            loadCategory(state.searchQuery, draftCategoryId, draftFlashOnly).getOrNull()?.products.orEmpty()
     }
     val previewCount = state.copy(rawProducts = previewProducts).filterAndSort(
         inStock = draftInStock,

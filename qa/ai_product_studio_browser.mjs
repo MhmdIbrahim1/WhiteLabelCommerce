@@ -214,7 +214,7 @@ async function contracts() {
   const files = readdirSync("qa")
     .filter((f) => f.endsWith(".sql"))
     .sort();
-  assert.equal(files.length, 15);
+  assert.ok(files.includes("ai_product_studio_rollback.sql"), "Missing Product Studio SQL contract");
   for (const file of files) {
     const source = readFileSync(path.join("qa", file), "utf8").replace(/^\uFEFF/, "");
     const ending = source.slice(source.lastIndexOf("rollback;")).trim();

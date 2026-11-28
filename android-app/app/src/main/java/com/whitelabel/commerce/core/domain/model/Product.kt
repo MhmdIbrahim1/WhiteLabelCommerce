@@ -62,10 +62,11 @@ object FlashSalePricing {
         flashSaleStartsAt: String?,
         flashSaleEndsAt: String?,
         nowMillis: Long = System.currentTimeMillis(),
+        oldPrice: Double? = null,
     ): Boolean {
         val flash = flashSalePrice ?: return false
         if (!regularPrice.isFinite() || !flash.isFinite()) return false
-        if (flash <= 0.0 || flash >= regularPrice) return false
+        if (flash <= 0.0 || flash > regularPrice || flash >= referencePrice(regularPrice, flash, oldPrice)) return false
         val endsMs = parseIsoTimestampMillis(flashSaleEndsAt) ?: return false
         if (endsMs <= nowMillis) return false
         val startsMs = parseIsoTimestampMillis(flashSaleStartsAt)
@@ -79,7 +80,8 @@ object FlashSalePricing {
         flashSaleStartsAt: String?,
         flashSaleEndsAt: String?,
         nowMillis: Long = System.currentTimeMillis(),
-    ): Double = if (isActive(regularPrice, flashSalePrice, flashSaleStartsAt, flashSaleEndsAt, nowMillis)) {
+        oldPrice: Double? = null,
+    ): Double = if (isActive(regularPrice, flashSalePrice, flashSaleStartsAt, flashSaleEndsAt, nowMillis, oldPrice)) {
         flashSalePrice!!
     } else {
         regularPrice
@@ -91,12 +93,16 @@ object FlashSalePricing {
         flashSaleStartsAt: String?,
         flashSaleEndsAt: String?,
         nowMillis: Long = System.currentTimeMillis(),
+        oldPrice: Double? = null,
     ): Int? {
-        if (!isActive(regularPrice, flashSalePrice, flashSaleStartsAt, flashSaleEndsAt, nowMillis)) return null
+        if (!isActive(regularPrice, flashSalePrice, flashSaleStartsAt, flashSaleEndsAt, nowMillis, oldPrice)) return null
         val flash = flashSalePrice ?: return null
-        if (regularPrice <= 0.0 || flash >= regularPrice) return null
-        return (((regularPrice - flash) / regularPrice) * 100.0).roundToInt().coerceIn(1, 99)
+        val reference = referencePrice(regularPrice, flash, oldPrice)
+        return (((reference - flash) / reference) * 100.0).roundToInt().coerceIn(1, 99)
     }
+
+    fun referencePrice(regularPrice: Double, flashPrice: Double?, oldPrice: Double?): Double =
+        if (flashPrice == regularPrice && oldPrice != null && oldPrice.isFinite() && oldPrice > regularPrice) oldPrice else regularPrice
 
     fun remainingMillis(
         flashSaleEndsAt: String?,
@@ -216,19 +222,19 @@ data class Product(
         get() = stock in 1..5
 
     fun isFlashSaleActive(nowMillis: Long = System.currentTimeMillis()): Boolean =
-        FlashSalePricing.isActive(price, flashSalePrice, flashSaleStartsAt, flashSaleEndsAt, nowMillis)
+        FlashSalePricing.isActive(price, flashSalePrice, flashSaleStartsAt, flashSaleEndsAt, nowMillis, oldPrice)
 
     fun effectivePrice(nowMillis: Long = System.currentTimeMillis()): Double =
-        FlashSalePricing.effectivePrice(price, flashSalePrice, flashSaleStartsAt, flashSaleEndsAt, nowMillis)
+        FlashSalePricing.effectivePrice(price, flashSalePrice, flashSaleStartsAt, flashSaleEndsAt, nowMillis, oldPrice)
 
     fun flashSavingsPercent(nowMillis: Long = System.currentTimeMillis()): Int? =
-        FlashSalePricing.savingsPercent(price, flashSalePrice, flashSaleStartsAt, flashSaleEndsAt, nowMillis)
+        FlashSalePricing.savingsPercent(price, flashSalePrice, flashSaleStartsAt, flashSaleEndsAt, nowMillis, oldPrice)
 
     fun flashRemainingMillis(nowMillis: Long = System.currentTimeMillis()): Long =
         FlashSalePricing.remainingMillis(flashSaleEndsAt, nowMillis)
 
     fun displayStrikePrice(nowMillis: Long = System.currentTimeMillis()): Double? = when {
-        isFlashSaleActive(nowMillis) -> price
+        isFlashSaleActive(nowMillis) -> FlashSalePricing.referencePrice(price, flashSalePrice, oldPrice)
         oldPrice != null && oldPrice > price -> oldPrice
         else -> null
     }

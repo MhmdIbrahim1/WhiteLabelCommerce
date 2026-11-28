@@ -9,9 +9,13 @@ import com.whitelabel.commerce.core.domain.model.WishlistToggleOutcome
 import com.whitelabel.commerce.core.domain.repository.CartRepository
 import com.whitelabel.commerce.core.domain.repository.SearchCorrection
 import com.whitelabel.commerce.core.domain.repository.CatalogRepository
+import com.whitelabel.commerce.core.domain.repository.CatalogSearchResult
+import com.whitelabel.commerce.core.domain.search.LocalCatalogSearch
 import com.whitelabel.commerce.core.domain.repository.WishlistRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -47,6 +51,7 @@ enum class CatalogSortOption(private val arabicText: String) {
 data class CatalogUiState(
     val categories: List<Category> = emptyList(),
     val rawProducts: List<Product> = emptyList(),
+    val nextFlashRefreshMillis: Long? = null,
     val wishlistedProductIds: Set<String> = emptySet(),
     val selectedCategoryId: String? = null,
     val searchQuery: String = "",
@@ -108,7 +113,7 @@ data class CatalogUiState(
                 return@filter false
             }
             if (inStock && !product.isInStock) return@filter false
-            if (flashOnly && !product.isFlashSaleActive(nowMillis)) return@filter false
+            if (flashOnly && (!product.isInStock || !product.isFlashSaleActive(nowMillis))) return@filter false
             if (ratingFloor != null && product.avgRating < ratingFloor) return@filter false
             val effPrice = product.effectivePrice(nowMillis)
             if (minPrice != null && effPrice < minPrice - 0.001) return@filter false
@@ -193,16 +198,24 @@ class CatalogViewModel @Inject constructor(
 
     fun applyExternalFlashDealsOnly() {
         pendingCategory = null
-        val categoryChanged = _uiState.value.selectedCategoryId != null
+        searchJob?.cancel()
         _uiState.update {
             it.copy(
                 selectedCategoryId = null,
                 flashDealsOnly = true,
+                searchQuery = "",
+                exactQuery = false,
+                instantHints = emptyList(),
+                correction = null,
+                isClosestSmartMatch = false,
+                sortOption = CatalogSortOption.RELEVANCE,
+                inStockOnly = false,
+                minRating = null,
+                priceMin = null,
+                priceMax = null,
             )
         }
-        if (categoryChanged || _uiState.value.rawProducts.isEmpty()) {
-            fetchProducts(isPullRefresh = false)
-        }
+        fetchProducts(isPullRefresh = false)
     }
 
     fun loadInitial() {
@@ -268,6 +281,13 @@ class CatalogViewModel @Inject constructor(
 
     fun toggleFlashDealsOnly() {
         _uiState.update { it.copy(flashDealsOnly = !it.flashDealsOnly) }
+        fetchProducts(isPullRefresh = false)
+    }
+
+    fun refreshFlashSales() {
+        if (_uiState.value.flashDealsOnly && fetchJob?.isActive != true) {
+            fetchProducts(isPullRefresh = false, background = true)
+        }
     }
 
     fun toggleFourStarPlus() {
@@ -283,7 +303,7 @@ class CatalogViewModel @Inject constructor(
         priceMin: Double?,
         priceMax: Double?,
     ) {
-        val categoryChanged = _uiState.value.selectedCategoryId != categoryId
+        val scopeChanged = _uiState.value.selectedCategoryId != categoryId || _uiState.value.flashDealsOnly != flashDealsOnly
         _uiState.update {
             it.copy(
                 sortOption = sortOption,
@@ -295,13 +315,13 @@ class CatalogViewModel @Inject constructor(
                 priceMax = priceMax,
             )
         }
-        if (categoryChanged) {
+        if (scopeChanged) {
             fetchProducts(isPullRefresh = false)
         }
     }
 
     fun resetAllFilters() {
-        val hadCategory = _uiState.value.selectedCategoryId != null
+        val scopeChanged = _uiState.value.selectedCategoryId != null || _uiState.value.flashDealsOnly
         _uiState.update {
             it.copy(
                 selectedCategoryId = null,
@@ -313,7 +333,7 @@ class CatalogViewModel @Inject constructor(
                 priceMax = null,
             )
         }
-        if (hadCategory) {
+        if (scopeChanged) {
             fetchProducts(isPullRefresh = false)
         }
     }
@@ -329,36 +349,51 @@ class CatalogViewModel @Inject constructor(
         }
     }
 
-    suspend fun loadCategory(query: String, categoryId: String?) =
-        if (query.isNotBlank()) {
+    suspend fun previewCategory(query: String, categoryId: String?, flashOnly: Boolean): Result<CatalogSearchResult> =
+        loadCategory(query, categoryId, flashOnly).map { it.first }
+
+    private suspend fun loadCategory(query: String, categoryId: String?, flashOnly: Boolean): Result<Pair<CatalogSearchResult, Long?>> {
+        val exact = _uiState.value.exactQuery && _uiState.value.searchQuery == query
+        if (flashOnly) {
+            return catalogRepository.getFlashSales(categoryId = categoryId).map { feed ->
+                val result = if (query.isBlank()) CatalogSearchResult(feed.products) else withContext(Dispatchers.Default) {
+                    LocalCatalogSearch.search(feed.products, _uiState.value.categories, query, exact)
+                }
+                result to feed.refreshAtMillis
+            }
+        }
+        val result = if (query.isNotBlank()) {
             catalogRepository.searchProducts(
                 query = query,
-                exact = _uiState.value.exactQuery && _uiState.value.searchQuery == query,
+                exact = exact,
                 categoryId = categoryId,
             )
         } else {
             catalogRepository.getActiveProducts(
                 categoryId = categoryId,
-            ).map { com.whitelabel.commerce.core.domain.repository.CatalogSearchResult(it, false) }
+            ).map { CatalogSearchResult(it) }
         }
+        return result.map { it to null }
+    }
 
-    private fun fetchProducts(isPullRefresh: Boolean) {
+    private fun fetchProducts(isPullRefresh: Boolean, background: Boolean = false) {
         fetchJob?.cancel()
         fetchJob = viewModelScope.launch {
             _uiState.update {
                 it.copy(
-                    isLoading = !isPullRefresh,
+                    isLoading = !isPullRefresh && !background,
                     isRefreshing = isPullRefresh,
                     errorMessage = null,
                 )
             }
             val current = _uiState.value
-            val result = loadCategory(current.searchQuery, current.selectedCategoryId)
+            val result = loadCategory(current.searchQuery, current.selectedCategoryId, current.flashDealsOnly)
 
-            result.onSuccess { searchResult ->
+            result.onSuccess { (searchResult, refreshAt) ->
                 _uiState.update {
                     it.copy(
                         rawProducts = searchResult.products,
+                        nextFlashRefreshMillis = refreshAt,
                         correction = searchResult.correction,
                         isClosestSmartMatch = searchResult.isClosestSmartMatch,
                         isLoading = false,

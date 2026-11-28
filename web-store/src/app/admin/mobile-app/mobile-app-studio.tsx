@@ -27,11 +27,7 @@ import {
 import { useLanguage } from "@/components/language-provider";
 import { date, money } from "@/lib/brand";
 import { localizedText, translateHomeCopy } from "@/lib/i18n";
-import {
-  getFlashSavingsPercent,
-  isFlashSaleActive,
-  resolveEffectivePrice,
-} from "@/lib/flash-sale";
+import { productPricePresentation, serverNowMs } from "@/lib/flash-sale";
 import { generateQrSvg } from "@/lib/qr-svg";
 import { limitLabel, limitReached, quotaFailure } from "@/lib/billing";
 import { DataCell, StatusDot, WorkspaceEmpty, WorkspaceHeading, WorkspaceTable } from "@/components/workspace-data";
@@ -423,14 +419,8 @@ function AndroidPhoneMockup({
             >
               {preview.products.map((p) => {
                 const title = localizedText(lang, p.name, p.name_en);
-                const flashOn = isFlashSaleActive(p);
-                const flashPct = flashOn ? getFlashSavingsPercent(p) : null;
-                const effPrice = resolveEffectivePrice(p);
-                const strikePrice = flashOn
-                  ? p.price
-                  : p.old_price && p.old_price > p.price
-                    ? p.old_price
-                    : null;
+                const { flash: flashOn, current: effPrice, compareAt: strikePrice, savings } = productPricePresentation(p, serverNowMs());
+                const flashPct = flashOn ? savings : null;
 
                 return (
                   <div

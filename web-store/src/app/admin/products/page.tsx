@@ -7,7 +7,7 @@ import { limitLabel, limitReached } from "@/lib/billing";
 import { QuotaPrompt } from "@/components/quota-prompt";
 import brand, { money } from "@/lib/brand";
 import { photo, searchPattern } from "@/lib/shop";
-import { getFlashSavingsPercent, isFlashSaleActive, resolveEffectivePrice } from "@/lib/flash-sale";
+import { productPricePresentation, resolveEffectivePrice, serverNowMs } from "@/lib/flash-sale";
 import { localizedText } from "@/lib/i18n";
 import { getServerLang } from "@/lib/i18n-server";
 import { pagination } from "@/lib/workflow";
@@ -48,6 +48,7 @@ export default async function Products({ searchParams }: PageProps<"/admin/produ
     db.from("store_settings").select("currency").eq("store_id", storeId).maybeSingle(),
   ]);
   const products = checked(result);
+  const now = serverNowMs();
   const selected = selectedResult?.error ? checked(selectedResult) : selectedResult?.data;
   const category = categories.find(c => c.id === selected?.category_id);
   const currency = settings.data?.currency || brand.currency;
@@ -70,12 +71,14 @@ export default async function Products({ searchParams }: PageProps<"/admin/produ
       {products.length ? <WorkspaceTable columns={columns} caption={en ? "Product catalog" : "دليل المنتجات"}>
         {products.map(p => {
           const title = localizedText(lang, p.name, p.name_en);
+          const pricing = productPricePresentation(p, now);
           const href = directoryHref(path, { q, status, page, inspect: p.id });
           return <InspectRow key={p.id} href={href}>
             <DataCell><Link className="ws-record" href={href} replace scroll={false} prefetch={false} id={"inspect-" + p.id} aria-haspopup="dialog">
               <Thumbnail image={p.image_path} /><span className="ws-cell-stack"><strong dir="auto">{title}</strong><small><bdi dir="ltr">{p.slug}</bdi></small></span></Link></DataCell>
-            <DataCell label={columns[1]}><div className="ws-cell-stack"><strong><bdi dir="ltr">{money(resolveEffectivePrice(p), currency, lang)}</bdi></strong>
-              {isFlashSaleActive(p) && <small><del><bdi dir="ltr">{money(p.price, currency, lang)}</bdi></del> · {en ? "Sale" : "عرض"} <bdi dir="ltr">−{getFlashSavingsPercent(p)}%</bdi></small>}</div></DataCell>
+            <DataCell label={columns[1]}><div className="ws-cell-stack"><strong><bdi dir="ltr">{money(pricing.current, currency, lang)}</bdi></strong>
+              {pricing.compareAt !== null && <small><del><bdi dir="ltr">{money(pricing.compareAt, currency, lang)}</bdi></del> · {pricing.flash
+                ? (en ? "Flash Sale" : "عرض فلاش") : (en ? "Sale" : "خصم عادي")} <bdi dir="ltr">−{pricing.savings}%</bdi></small>}</div></DataCell>
             <DataCell label={columns[2]}><bdi dir="ltr">{p.stock}</bdi></DataCell>
             <DataCell label={columns[3]}><StatusDot status={p.is_active ? "active" : "draft"}>{p.is_active ? active : draft}</StatusDot></DataCell>
             <DataCell><Link className="ws-icon-button" href={href} replace scroll={false} prefetch={false} aria-haspopup="dialog" aria-label={columns[4] + " · " + title}>

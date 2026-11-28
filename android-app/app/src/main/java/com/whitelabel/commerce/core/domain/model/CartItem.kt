@@ -35,6 +35,7 @@ data class CartItem(
         return if (flashSalePrice != null || flashSaleEndsAt != null) {
             FlashSalePricing.effectivePrice(
                 regularPrice = base,
+                oldPrice = oldPrice,
                 flashSalePrice = flashSalePrice,
                 flashSaleStartsAt = flashSaleStartsAt,
                 flashSaleEndsAt = flashSaleEndsAt,

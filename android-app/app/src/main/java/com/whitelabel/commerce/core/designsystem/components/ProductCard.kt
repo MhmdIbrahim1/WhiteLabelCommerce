@@ -80,11 +80,7 @@ fun ProductCard(
     }
     val activeFlash = !flashExpired && product.isFlashSaleActive()
     val effectivePrice = if (activeFlash) product.effectivePrice() else product.price
-    val strikePrice = if (activeFlash) {
-        product.price
-    } else {
-        product.oldPrice?.takeIf { it > product.price }
-    }
+    val strikePrice = product.displayStrikePrice()
     val flashPct = if (activeFlash) product.flashSavingsPercent() else null
     val regularDiscount = if (!activeFlash) {
         val prev = product.oldPrice

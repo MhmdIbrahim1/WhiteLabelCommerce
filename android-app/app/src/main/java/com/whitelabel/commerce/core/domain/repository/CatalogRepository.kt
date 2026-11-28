@@ -1,6 +1,7 @@
 package com.whitelabel.commerce.core.domain.repository
 
 import com.whitelabel.commerce.core.domain.model.Category
+import com.whitelabel.commerce.core.domain.model.FlashSalePricing
 import com.whitelabel.commerce.core.domain.model.Product
 
 data class SearchCorrection(val effective: String, val original: String, val reason: String?)
@@ -11,8 +12,17 @@ data class CatalogSearchResult(
     val correction: SearchCorrection? = null,
 )
 
+data class FlashSaleFeed(val products: List<Product>, val nextStartMillis: Long?) {
+    val refreshAtMillis: Long? = listOfNotNull(
+        nextStartMillis,
+        products.mapNotNull { FlashSalePricing.parseIsoTimestampMillis(it.flashSaleEndsAt) }.minOrNull(),
+    ).minOrNull()
+}
+
 interface CatalogRepository {
     suspend fun getCategories(): Result<List<Category>>
+
+    suspend fun getFlashSales(categoryId: String? = null, limit: Int? = null): Result<FlashSaleFeed>
 
     suspend fun getActiveProducts(
         categoryId: String? = null,

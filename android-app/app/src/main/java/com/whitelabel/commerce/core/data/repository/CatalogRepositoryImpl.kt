@@ -5,19 +5,26 @@ import com.whitelabel.commerce.core.data.remote.dto.CategoryDto
 import com.whitelabel.commerce.core.data.remote.dto.ProductDto
 import com.whitelabel.commerce.core.data.remote.runSuspendCatching
 import com.whitelabel.commerce.core.domain.model.Category
+import com.whitelabel.commerce.core.domain.model.FlashSalePricing
 import com.whitelabel.commerce.core.domain.model.Product
 import com.whitelabel.commerce.core.domain.repository.CatalogRepository
 import com.whitelabel.commerce.core.domain.repository.CatalogSearchResult
+import com.whitelabel.commerce.core.domain.repository.FlashSaleFeed
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
+import io.github.jan.supabase.postgrest.query.PostgrestRequestBuilder
 import io.github.jan.supabase.postgrest.query.Order as SortOrder
 import com.whitelabel.commerce.core.domain.repository.SearchCorrection
 import com.whitelabel.commerce.core.domain.search.LocalCatalogSearch
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -57,6 +64,52 @@ class CatalogRepositoryImpl @Inject constructor(
             .decodeList<CategoryDto>()
             .distinctBy { it.id }
             .map { it.toDomain() }.also { categories = it }
+    }
+
+    override suspend fun getFlashSales(categoryId: String?, limit: Int?): Result<FlashSaleFeed> = runSuspendCatching {
+        coroutineScope {
+            // The active view uses the database clock. Fetch the next opening as well so
+            // an empty strip can appear while the customer is still on the same screen.
+            val nextStart = async { runSuspendCatching { nextFlashStart(categoryId) }.getOrNull() }
+            val products = mutableListOf<Product>()
+            var offset = 0
+            do {
+                val size = minOf(FLASH_PAGE_SIZE, (limit ?: Int.MAX_VALUE) - offset)
+                if (size <= 0) break
+                val ids = supabase.from("storefront_flash_deals").select(Columns.raw("id")) {
+                    flashSalePage(categoryId, offset, size)
+                }.decodeList<JsonObject>().map { it.getValue("id").jsonPrimitive.content }
+                if (ids.isNotEmpty()) {
+                    // Cart and cards need the full variant inventory and gallery.
+                    val byId = supabase.from("products").select(Columns.raw(PRODUCT_COLUMNS)) {
+                        filter {
+                            eq("store_id", BuildConfig.STORE_ID)
+                            eq("is_active", true)
+                            isIn("id", ids)
+                        }
+                    }.decodeList<ProductDto>().associateBy { it.id }
+                    products += ids.mapNotNull { byId[it]?.toDomain() }
+                }
+                offset += ids.size
+            } while (ids.size == size && (limit == null || offset < limit))
+            FlashSaleFeed(products.distinctBy { it.id }, nextStart.await())
+        }
+    }
+
+    private suspend fun nextFlashStart(categoryId: String?): Long? {
+        val next = supabase.from("products").select(Columns.raw("flash_sale_starts_at")) {
+            filter {
+                eq("store_id", BuildConfig.STORE_ID)
+                eq("is_active", true)
+                gt("stock", 0)
+                gt("flash_sale_price", 0)
+                gt("flash_sale_starts_at", "now")
+                if (categoryId != null) eq("category_id", categoryId)
+            }
+            order("flash_sale_starts_at", SortOrder.ASCENDING)
+            limit(1)
+        }.decodeList<JsonObject>().firstOrNull()
+        return FlashSalePricing.parseIsoTimestampMillis(next?.get("flash_sale_starts_at")?.jsonPrimitive?.content)
     }
 
     override suspend fun getActiveProducts(
@@ -249,7 +302,18 @@ class CatalogRepositoryImpl @Inject constructor(
     }
 
     private companion object {
+        const val FLASH_PAGE_SIZE = 100
         const val MAX_CACHE_ENTRIES = 50
         const val CACHE_TTL_MS = 60_000L
     }
+}
+
+internal fun PostgrestRequestBuilder.flashSalePage(categoryId: String?, offset: Int, size: Int) {
+    filter {
+        eq("store_id", BuildConfig.STORE_ID)
+        if (categoryId != null) eq("category_id", categoryId)
+    }
+    order("flash_sale_ends_at", SortOrder.ASCENDING)
+    order("id", SortOrder.ASCENDING)
+    range(offset.toLong(), (offset + size - 1).toLong())
 }
